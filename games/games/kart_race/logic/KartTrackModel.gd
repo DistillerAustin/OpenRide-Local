@@ -176,6 +176,14 @@ func racing_line(s: float) -> float:
 	return _lerp_table(_line, s)
 
 
+## The driving direction at s as a yaw (Node3D.rotation.y: 0 faces -Z, + turns left).
+func yaw_at(s: float) -> float:
+	var u := _lookup(s)
+	var i: int = u[0]
+	var t := _tan[i].lerp(_tan[(i + 1) % _n], u[1])
+	return atan2(-t.x, -t.z)
+
+
 ## The road's banking at s, radians (+ = the right edge higher).
 func banking(s: float) -> float:
 	return _lerp_table(_bank, s)
