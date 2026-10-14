@@ -48,21 +48,22 @@ void fragment() {
 	vec3 col;
 	if (ad < hw) {
 		// Asphalt: two scales of grain plus patchy repairs.
-		float g = vnoise(vec2(d, s) * 9.0) * 0.6 + vnoise(vec2(d, s) * 2.1) * 0.4;
-		float patch = smoothstep(0.62, 0.7, vnoise(vec2(d * 0.35, s * 0.08) + 13.0));
-		col = mix(asphalt, asphalt_dark, 0.35 * patch) * (0.86 + 0.26 * g);
+		// Three texture reads in all (the tablet is fill-rate bound): grain, patches, streaks.
+		float g = vnoise(vec2(d, s) * 9.0);
+		float big = vnoise(vec2(d * 0.35, s * 0.08) + 13.0);
+		col = mix(asphalt, asphalt_dark, 0.35 * smoothstep(0.62, 0.7, big)) * (0.84 + 0.2 * g + 0.1 * big);
 		// Rubbered-in racing line: darker where the karts run.
 		float lane = smoothstep(2.4, 0.4, abs(d - v_line));
 		col *= 1.0 - 0.12 * lane;
 		// Tyre marks: pairs of dark streaks off the line, thicker in corners and off the grid.
-		float streak = vnoise(vec2(d * 3.0, s * 0.11)) * vnoise(vec2(d * 1.3 + 7.0, s * 0.031));
+		float streak = vnoise(vec2(d * 3.0, s * 0.11)) * (0.4 + big);
 		float tyre = max(band(d, v_line - 0.62, 0.11), band(d, v_line + 0.62, 0.11));
 		float marks = tyre * smoothstep(0.28, 0.5, streak) * (0.15 + 0.85 * v_corner);
 		// Launch marks behind every grid box.
 		if (ss < 0.0 && ss > -(grid_first + grid_gap * float(grid_slots)) - 3.0) {
 			float launch = max(max(band(d, -grid_d - 0.55, 0.1), band(d, -grid_d + 0.55, 0.1)),
 				max(band(d, grid_d - 0.55, 0.1), band(d, grid_d + 0.55, 0.1)));
-			marks = max(marks, launch * smoothstep(0.25, 0.6, vnoise(vec2(d * 2.0, s * 0.6))) * 0.8);
+			marks = max(marks, launch * smoothstep(0.15, 0.5, g) * 0.8);
 		}
 		col = mix(col, vec3(0.08, 0.08, 0.09), marks * 0.42);
 		// Edge lines.
@@ -87,15 +88,15 @@ void fragment() {
 		float k = mod(floor(s / 1.0), 2.0);
 		float across = (ad - hw) / kerb_width;
 		col = mix(kerb_a, kerb_b, k) * (0.92 + 0.12 * sin(across * 3.14159));
-		col *= 0.97 + 0.06 * vnoise(vec2(d, s) * 6.0);
+
 	} else {
 		// Verge: mown stripes along the track, with clover noise.
 		float stripe = step(0.5, fract(s / 8.0));
-		float n = vnoise(vec2(d, s) * 1.7) * 0.5 + vnoise(vec2(d, s) * 7.0) * 0.5;
+		float n = vnoise(vec2(d, s) * 3.0);
 		col = mix(grass_a, grass_b, 0.35 + 0.4 * stripe) * (0.85 + 0.3 * n);
 		// Rubber and dust thrown onto the grass just off the kerb.
 		col = mix(col, vec3(0.42, 0.38, 0.3), 0.25 * smoothstep(hw + kerb_width + 0.9, hw + kerb_width, ad));
 	}
 	vec3 lit = col * (hemi(vec3(0.0, 1.0, 0.0)) * 0.55 + sun_color * normalize(sun_dir).y * 1.25) * light_gain;
-	ALBEDO = haze(lit, length(VERTEX));
+	ALBEDO = grade(haze(lit, length(VERTEX)), SCREEN_UV);
 }

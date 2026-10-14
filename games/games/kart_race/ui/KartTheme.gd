@@ -46,7 +46,8 @@ static func display(upright := false) -> Font:
 	return v
 
 
-## A label in the display face with a thick dark outline and a drop shadow.
+## A label in the display face with a thick dark outline, and a drop shadow when it's big (a
+## shadow is another text pass: the small ones skip it to keep the HUD's draw calls down).
 static func label(text: String, size: int, color := INK, upright := false) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -56,10 +57,11 @@ static func label(text: String, size: int, color := INK, upright := false) -> La
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", OUTLINE)
 	l.add_theme_constant_override("outline_size", maxi(6, size / 6))
-	l.add_theme_color_override("font_shadow_color", Color(0.05, 0.0, 0.15, 0.55))
-	l.add_theme_constant_override("shadow_offset_x", maxi(2, size / 24))
-	l.add_theme_constant_override("shadow_offset_y", maxi(3, size / 16))
-	l.add_theme_constant_override("shadow_outline_size", maxi(6, size / 6))
+	if size >= 70:
+		l.add_theme_color_override("font_shadow_color", Color(0.05, 0.0, 0.15, 0.55))
+		l.add_theme_constant_override("shadow_offset_x", maxi(2, size / 24))
+		l.add_theme_constant_override("shadow_offset_y", maxi(3, size / 16))
+		l.add_theme_constant_override("shadow_outline_size", maxi(6, size / 6))
 	return l
 
 

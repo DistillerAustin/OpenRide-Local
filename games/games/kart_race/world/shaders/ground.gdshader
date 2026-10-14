@@ -23,21 +23,21 @@ void vertex() {
 
 void fragment() {
 	vec2 p = v_world.xz;
+	// Three texture reads at most (the tablet is fill-rate bound).
 	float big = vnoise(p * 0.035);
-	float mid = vnoise(p * 0.21 + 5.0);
-	float fine = vnoise(p * 1.9);
-	vec3 col = mix(grass_a, grass_b, smoothstep(0.3, 0.75, big * 0.7 + mid * 0.3));
-	col = mix(col, dry, 0.28 * smoothstep(0.6, 0.85, vnoise(p * 0.06 + 31.0)));
+	float fine = vnoise(p * 0.9);
+	vec3 col = mix(grass_a, grass_b, smoothstep(0.3, 0.75, big * 0.8 + fine * 0.2));
+	col = mix(col, dry, 0.28 * smoothstep(0.62, 0.8, 1.0 - big));
 	col *= 0.86 + 0.24 * fine;
 	// Wildflowers: sparse bright dots, denser in drifts.
 	float dist = length(VERTEX);
 	if (flowers > 0.0 && dist < 140.0) {
-		float drift = smoothstep(0.45, 0.8, vnoise(p * 0.05 + 77.0));
+		float drift = smoothstep(0.45, 0.8, big);
 		float dots = texture(noise_tex, p * 0.9).r;
-		float pick = texture(noise_tex, p * 0.37 + 0.5).r;
+		float pick = fract(fine * 7.31);
 		float f = smoothstep(0.93 - 0.08 * drift, 0.97 - 0.08 * drift, dots) * flowers * smoothstep(140.0, 60.0, dist);
 		vec3 fc = pick < 0.33 ? vec3(1.0, 0.95, 0.35) : (pick < 0.66 ? vec3(0.98, 0.98, 1.0) : vec3(0.95, 0.45, 0.75));
 		col = mix(col, fc, f);
 	}
-	ALBEDO = haze(col * COLOR.rgb * v_light, dist);
+	ALBEDO = grade(haze(col * COLOR.rgb * v_light, dist), SCREEN_UV);
 }

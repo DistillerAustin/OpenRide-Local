@@ -35,5 +35,5 @@ void fragment() {
 	float r = pow(1.0 - max(dot(n, V), 0.0), 3.0);
 	col += rim_color * r * rim * (0.35 + 0.65 * ramp);
 	col = mix(col, vec3(1.0), flash);
-	ALBEDO = haze(col, length(VERTEX));
+	ALBEDO = grade(haze(col, length(VERTEX)), SCREEN_UV);
 }

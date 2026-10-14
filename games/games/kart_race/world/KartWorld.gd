@@ -99,10 +99,16 @@ func build(model: KartTrackModel) -> void:
 	scenery.name = "Scenery"
 	scenery.visible = tuning.get("scenery", true)
 	_built.add_child(scenery)
-	_build_trees(scenery)
-	_build_tyres(scenery)
-	_build_fences(scenery)
-	_build_flowers(scenery)
+	var woods := _sector_kits()
+	var foliage := {}
+	_build_trees(foliage, woods)
+	_build_flowers(foliage)
+	_commit_cells(scenery, foliage, "Foliage", _foliage_mat)
+	_commit_sectors(scenery, woods, "Woods", _foliage_mat)
+	var props := {}
+	_build_tyres(props)
+	_build_fences(props)
+	_commit_cells(scenery, props, "Props", _scenery_mat)
 	_build_grandstand(scenery)
 	_build_gate(scenery)
 	_build_flags(scenery)
@@ -120,6 +126,19 @@ func set_start_lights(stage: int) -> void:
 		var color := Color(1.0, 0.25, 0.15, 0.85) if stage < 6 else Color(0.4, 1.0, 0.5, 0.85)
 		for i in mm.instance_count:
 			mm.set_instance_color(i, color)
+
+
+## Environment glow (a dev switch, KartRace's tuning file [render] glow): two levels over the
+## bright sky, lines and lamps. Off by default: the faked additive halos cost nothing.
+func set_glow(on: bool) -> void:
+	var env := _env.environment
+	env.glow_enabled = on
+	env.glow_intensity = 0.7
+	env.glow_bloom = 0.08
+	env.glow_hdr_threshold = 0.85
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	for i in 7:
+		env.set_glow_level(i, 1.0 if i == 1 or i == 2 else 0.0)
 
 
 func _process(delta: float) -> void:
@@ -334,42 +353,96 @@ func _tree_meshes() -> Array:
 	kit.ao_y0 = 1.0
 	kit.ao_y1 = 5.5
 	kit.ao_min = 0.5
-	kit.add(KartMeshKit.cylinder(0.18, 0.3, 2.4, 6), KartMeshKit.xf(Vector3(0, 1.2, 0)), trunk)
-	for b in [[Vector3(0, 3.6, 0), 1.9], [Vector3(1.1, 3.0, 0.3), 1.3], [Vector3(-1.0, 3.1, -0.4), 1.35],
-			[Vector3(0.2, 4.7, -0.2), 1.3], [Vector3(-0.3, 3.0, 1.0), 1.2]]:
+	kit.add(KartMeshKit.cylinder(0.18, 0.3, 2.4, 5), KartMeshKit.xf(Vector3(0, 1.2, 0)), trunk)
+	for b in [[Vector3(0, 3.6, 0), 1.95], [Vector3(1.1, 3.0, 0.3), 1.35], [Vector3(-1.0, 3.1, -0.4), 1.4],
+			[Vector3(0.1, 4.6, -0.1), 1.3]]:
 		var c := leaf.lerp(Color(0.45, 0.68, 0.22, 1.0), clampf((b[0].y - 3.0) / 1.7, 0.0, 1.0))
 		c.a = clampf(b[0].y / 5.0, 0.0, 1.0)
-		kit.add(KartMeshKit.sphere(b[1], 9, 5), KartMeshKit.xf(b[0]), c)
+		kit.add(KartMeshKit.sphere(b[1], 7, 3), KartMeshKit.xf(b[0]), c)
 	var broad := kit.commit()
 	# Pine: three stacked cones.
 	kit = KartMeshKit.new()
 	kit.ao_y0 = 0.5
 	kit.ao_y1 = 7.0
 	kit.ao_min = 0.45
-	kit.add(KartMeshKit.cylinder(0.15, 0.25, 1.6, 6), KartMeshKit.xf(Vector3(0, 0.8, 0)), trunk)
+	kit.add(KartMeshKit.cylinder(0.15, 0.25, 1.6, 5), KartMeshKit.xf(Vector3(0, 0.8, 0)), trunk)
 	for k in 3:
 		var y := 1.4 + k * 1.7
 		var c := Color(0.16, 0.40, 0.22, clampf(y / 6.0, 0.0, 1.0)).lerp(Color(0.24, 0.5, 0.26, 1.0), k / 3.0)
-		kit.add(KartMeshKit.cylinder(0.0, 2.1 - k * 0.55, 2.6, 8), KartMeshKit.xf(Vector3(0, y + 1.3, 0)), c)
+		kit.add(KartMeshKit.cylinder(0.0, 2.1 - k * 0.55, 2.6, 7), KartMeshKit.xf(Vector3(0, y + 1.3, 0)), c)
 	var pine := kit.commit()
 	# Bush.
 	kit = KartMeshKit.new()
 	kit.ao_y0 = 0.0
 	kit.ao_y1 = 1.4
 	kit.ao_min = 0.5
-	for b in [[Vector3(0, 0.6, 0), 0.9], [Vector3(0.7, 0.5, 0.2), 0.65], [Vector3(-0.6, 0.45, -0.1), 0.7]]:
-		kit.add(KartMeshKit.sphere(b[1], 8, 4), KartMeshKit.xf(b[0]), Color(0.34, 0.58, 0.2, 0.5))
+	for b in [[Vector3(0, 0.6, 0), 0.9], [Vector3(0.7, 0.45, 0.2), 0.65]]:
+		kit.add(KartMeshKit.sphere(b[1], 6, 3), KartMeshKit.xf(b[0]), Color(0.34, 0.58, 0.2, 0.5))
 	var bush := kit.commit()
-	return [broad, pine, bush]
+	# Far pine for the hills: two cones, few sides.
+	kit = KartMeshKit.new()
+	kit.ao_y0 = 0.0
+	kit.ao_y1 = 6.0
+	kit.ao_min = 0.5
+	kit.add(KartMeshKit.cylinder(0.0, 2.0, 3.6, 5), KartMeshKit.xf(Vector3(0, 2.6, 0)), Color(0.18, 0.42, 0.22, 0.6))
+	kit.add(KartMeshKit.cylinder(0.0, 1.4, 2.8, 5), KartMeshKit.xf(Vector3(0, 4.6, 0)), Color(0.24, 0.5, 0.26, 1.0))
+	var far := kit.commit()
+	return [broad, pine, bush, far]
 
 
-func _build_trees(parent: Node3D) -> void:
+## Static scenery is baked into one mesh per cell: the trackside scenery into CELL-metre squares
+## (culled by the frustum and beyond CELL_RANGE metres), the woods on the hills into SECTORS
+## wedges around the circuit's centre (culled by the frustum). One draw call each.
+const SECTORS := 12
+const CELL := 110.0
+const CELL_RANGE := 330.0
+
+
+func _sector_of(p: Vector3) -> int:
+	var a := atan2(p.z - centre.z, p.x - centre.x)
+	return posmod(int(floor((a + PI) / TAU * SECTORS)), SECTORS)
+
+
+func _sector_kits() -> Array:
+	var kits := []
+	for i in SECTORS:
+		kits.append(KartMeshKit.new())
+	return kits
+
+
+func _commit_sectors(parent: Node3D, kits: Array, node_name: String, mat: Material) -> void:
+	for i in kits.size():
+		var kit: KartMeshKit = kits[i]
+		if not kit.is_empty():
+			parent.add_child(KartMeshKit.mesh_node(kit.commit(), mat, "%s%d" % [node_name, i]))
+
+
+## The trackside cell kit for `p` (created on demand).
+func _cell(cells: Dictionary, p: Vector3) -> KartMeshKit:
+	var key := Vector2i(floori((p.x - centre.x) / CELL), floori((p.z - centre.z) / CELL))
+	if not cells.has(key):
+		cells[key] = KartMeshKit.new()
+	return cells[key]
+
+
+func _commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Material) -> void:
+	for key: Vector2i in cells:
+		var kit: KartMeshKit = cells[key]
+		if kit.is_empty():
+			continue
+		var node := KartMeshKit.mesh_node(kit.commit(), mat, "%s_%d_%d" % [node_name, key.x, key.y])
+		node.visibility_range_end = CELL_RANGE
+		node.visibility_range_end_margin = 20.0
+		parent.add_child(node)
+
+
+func _build_trees(cells: Dictionary, kits: Array) -> void:
 	var meshes := _tree_meshes()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(track.def.id) + 7
-	var per: Array = [[], [], []]
+	var placed := 0
 	var tries := 0
-	while per[0].size() + per[1].size() + per[2].size() < 300 and tries < 6000:
+	while placed < 200 and tries < 5000:
 		tries += 1
 		var s := rng.randf_range(0.0, track.length)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
@@ -382,33 +455,31 @@ func _build_trees(parent: Node3D) -> void:
 		var kind := 2 if rng.randf() < 0.22 else (1 if rng.randf() < 0.35 else 0)
 		var size := rng.randf_range(0.8, 1.35)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size, size * rng.randf_range(0.9, 1.25), size))
-		per[kind].append(Transform3D(basis, spot - Vector3.UP * 0.15))
+		var p: Vector3 = spot - Vector3.UP * 0.15
+		_cell(cells, p).add_baked(meshes[kind], Transform3D(basis, p))
+		placed += 1
 	# Woods on the hills' lower slopes.
 	var noise := FastNoiseLite.new()
 	noise.seed = 31
 	noise.frequency = 0.006
 	noise.fractal_octaves = 3
-	for i in 260:
+	for i in 100:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(HILL_R0 - 20.0, HILL_R0 + 170.0)
 		var p := Vector2(centre.x + cos(a) * r, centre.z + sin(a) * r)
-		var kind := 1 if rng.randf() < 0.45 else 0
-		var size := rng.randf_range(1.2, 2.0)
-		per[kind].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size),
-			Vector3(p.x, _hill_height(p, noise) - 0.3, p.y)))
-	for k in 3:
-		parent.add_child(_mm(meshes[k], per[k], ["Broadleaf", "Pines", "Bushes"][k], _foliage_mat))
+		var kind := 3 if rng.randf() < 0.7 else 0
+		var size := rng.randf_range(1.3, 2.1)
+		var at := Vector3(p.x, _hill_height(p, noise) - 0.3, p.y)
+		kits[_sector_of(at)].add_baked(meshes[kind], Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), at))
 
 
 ## Tyre stacks in front of the barrier on the outside of the corners.
-func _build_tyres(parent: Node3D) -> void:
+func _build_tyres(cells: Dictionary) -> void:
 	var kit := KartMeshKit.new()
-	var tyre := KartMeshKit.cylinder(0.42, 0.42, 0.3, 10)
+	var tyre := KartMeshKit.cylinder(0.42, 0.42, 0.3, 6)
 	for k in 3:
-		kit.add(tyre, KartMeshKit.xf(Vector3(0, 0.15 + k * 0.3, 0)), Color(0.13, 0.13, 0.14, 0.0) if k != 1 else Color(1, 1, 1, 0.0))
+		kit.add(tyre, KartMeshKit.xf(Vector3(0, 0.15 + k * 0.3, 0)), Color(0.15, 0.15, 0.16, 0.0) if k != 1 else Color(1, 1, 1, 0.0))
 	var mesh := kit.commit()
-	var xfs := []
-	var custom := []
 	var tints := [Color(0.95, 0.2, 0.16), Color(0.98, 0.98, 0.98), Color(0.2, 0.55, 1.0), Color(1.0, 0.8, 0.15)]
 	var s := 0.0
 	var n := 0
@@ -417,20 +488,17 @@ func _build_tyres(parent: Node3D) -> void:
 		if absf(k) > 0.011:
 			var side := -signf(k)  # the outside of the corner
 			var edge := track.half_width(s) + track.verge - 0.5
-			var yaw := track.yaw_at(s)
-			for j in 2:
-				var p := track.position_at(s + j * 0.9, side * edge)
-				xfs.append(Transform3D(Basis(Vector3.UP, yaw), p))
-				custom.append(tints[n % tints.size()])
+			var p := track.position_at(s, side * edge)
+			var tint: Color = tints[n % tints.size()]
+			_cell(cells, p).add_baked(mesh, Transform3D(Basis(Vector3.UP, track.yaw_at(s)), p), Color(lerpf(1.0, tint.r, 0.8), lerpf(1.0, tint.g, 0.8), lerpf(1.0, tint.b, 0.8)) if n % 2 == 0 else tint)
 			n += 1
-			s += 1.8
+			s += 1.6
 		else:
 			s += 4.0
-	parent.add_child(_mm(mesh, xfs, "TyreStacks", _tint_mat, custom))
 
 
 ## White post-and-rail fences along the meadows.
-func _build_fences(parent: Node3D) -> void:
+func _build_fences(cells: Dictionary) -> void:
 	var kit := KartMeshKit.new()
 	var white := Color(0.97, 0.96, 0.92, 0.0)
 	kit.ao_y0 = 0.0
@@ -440,38 +508,36 @@ func _build_fences(parent: Node3D) -> void:
 	for y: float in [0.45, 0.9]:
 		kit.add(KartMeshKit.box(Vector3(0.07, 0.11, 3.0)), KartMeshKit.xf(Vector3(0, y, -1.5)), white)
 	var mesh := kit.commit()
-	var xfs := []
 	for side: float in [-1.0, 1.0]:
 		var s := 0.0
 		while s < track.length:
 			var spot = _beyond(s, side, 14.0, 6.0)
-			var spot2 = _beyond(s + 3.0, side, 14.0, 6.0)
+			var spot2 = _beyond(s + 4.0, side, 14.0, 6.0)
 			if spot != null and spot2 != null:
 				var dir: Vector3 = (spot2 - spot)
 				dir.y = 0.0
-				if dir.length() > 1.5 and dir.length() < 5.0:
+				if dir.length() > 2.0 and dir.length() < 6.5:
 					var basis := Basis.looking_at(dir.normalized(), Vector3.UP).scaled(Vector3(1, 1, dir.length() / 3.0))
-					xfs.append(Transform3D(basis, spot))
-			s += 3.0
-	parent.add_child(_mm(mesh, xfs, "Fences", _scenery_mat))
+					_cell(cells, spot).add_baked(mesh, Transform3D(basis, spot))
+			s += 4.0
 
 
 ## Clumps of wildflowers on the embankments.
-func _build_flowers(parent: Node3D) -> void:
+func _build_flowers(cells: Dictionary) -> void:
 	var kit := KartMeshKit.new()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 99
 	var colors := [Color(1.0, 0.9, 0.25), Color(1, 1, 1), Color(0.95, 0.45, 0.75), Color(0.7, 0.5, 1.0), Color(1.0, 0.55, 0.2)]
-	kit.add(KartMeshKit.sphere(0.32, 6, 3, true), KartMeshKit.xf(Vector3.ZERO, Vector3.ZERO, Vector3(1.4, 0.6, 1.4)), Color(0.3, 0.55, 0.18, 0.4))
-	for i in 9:
+	kit.add(KartMeshKit.sphere(0.32, 5, 1, true), KartMeshKit.xf(Vector3.ZERO, Vector3.ZERO, Vector3(1.4, 0.6, 1.4)), Color(0.3, 0.55, 0.18, 0.4))
+	for i in 6:
 		var p := Vector3(rng.randf_range(-0.55, 0.55), rng.randf_range(0.18, 0.42), rng.randf_range(-0.55, 0.55))
 		var c: Color = colors[rng.randi() % colors.size()]
 		c.a = 1.0
-		kit.add(KartMeshKit.sphere(0.075, 5, 3), KartMeshKit.xf(p), c)
+		kit.add(KartMeshKit.sphere(0.085, 4, 1), KartMeshKit.xf(p), c)
 	var mesh := kit.commit()
-	var xfs := []
+	var placed := 0
 	var tries := 0
-	while xfs.size() < 900 and tries < 5000:
+	while placed < 360 and tries < 4000:
 		tries += 1
 		var s := rng.randf_range(0.0, track.length)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
@@ -479,8 +545,9 @@ func _build_flowers(parent: Node3D) -> void:
 		if spot == null:
 			continue
 		var sc := rng.randf_range(0.8, 1.6)
-		xfs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * sc), spot))
-	parent.add_child(_mm(mesh, xfs, "Wildflowers", _foliage_mat))
+		var p: Vector3 = spot
+		_cell(cells, p).add_baked(mesh, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * sc), p))
+		placed += 1
 
 
 ## Whether s is along the grandstand (outside the start straight).
@@ -777,12 +844,12 @@ func _build_clouds(parent: Node3D) -> void:
 	quad.size = Vector2(2.0, 1.0)
 	quad.material = mat
 	var xfs := []
-	for i in 14:
-		var a := TAU * i / 14.0 + rng.randf_range(-0.15, 0.15)
-		var r := rng.randf_range(620.0, 780.0)
-		var sc := rng.randf_range(90.0, 150.0)
+	for i in 26:
+		var a := TAU * i / 26.0 + rng.randf_range(-0.12, 0.12)
+		var r := rng.randf_range(560.0, 820.0)
+		var sc := rng.randf_range(70.0, 150.0)
 		xfs.append(Transform3D(Basis().scaled(Vector3(sc, sc * 0.55, sc)),
-			centre + Vector3(cos(a) * r, rng.randf_range(110.0, 190.0), sin(a) * r)))
+			centre + Vector3(cos(a) * r, rng.randf_range(90.0, 230.0), sin(a) * r)))
 	parent.add_child(KartMeshKit.multimesh_node(quad, xfs, "Clouds"))
 
 

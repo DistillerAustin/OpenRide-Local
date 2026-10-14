@@ -119,11 +119,11 @@ func _compose(game: Node, out: String, prefix: String) -> void:
 	game._kart_hud.visible = false
 	var track = game.track
 	var cam = game.camera
-	var eye: Vector3 = track.position_at(track.wrap(-26.5), -6.4) + Vector3.UP * 1.5
-	var at: Vector3 = track.position_at(track.wrap(-33.5), 0.2) + Vector3.UP * 0.5
+	var eye: Vector3 = track.position_at(track.wrap(-28.6), -4.6) + Vector3.UP * 1.15
+	var at: Vector3 = track.position_at(track.wrap(-34.5), 0.6) + Vector3.UP * 0.6
 	cam.held = Transform3D(Basis.looking_at(at - eye, Vector3.UP), eye)
 	cam.hold = true
-	cam.fov = 44.0
+	cam.fov = 40.0
 	await create_timer(0.4).timeout
 	_save("%s/%s_c_desktop.png" % [out, prefix])
 	cam.hold = false
@@ -194,8 +194,9 @@ func _save(path: String) -> void:
 	if img.get_width() < 1920:
 		img.resize(1920, 1080, Image.INTERPOLATE_LANCZOS)
 	img.save_png(path)
-	print("CAPTURE %s fps=%d draw_calls=%d" % [path, Engine.get_frames_per_second(),
-		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+	print("CAPTURE %s fps=%d draw_calls=%d primitives=%d" % [path, Engine.get_frames_per_second(),
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])
 
 
 func _key(keycode: Key, pressed: bool) -> void:

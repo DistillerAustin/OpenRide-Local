@@ -43,7 +43,10 @@ var _lean := 0.0
 var _time := 0.0
 var _phase := 0.0
 var _mat: ShaderMaterial
+var _shown_glow := 0.0
 
+## The inverted-hull outlines (a dev switch: KartRace's tuning file, [render] outlines).
+static var outlines := true
 static var _shadow_material: StandardMaterial3D
 static var _wheel_mesh: ArrayMesh
 static var _materials := {}
@@ -91,7 +94,7 @@ func setup(racer_info: Dictionary) -> void:
 	_shadow = MeshInstance3D.new()
 	_shadow.name = "shadow"
 	var quad := PlaneMesh.new()
-	quad.size = Vector2(2.1, 3.3)
+	quad.size = Vector2(2.2, 4.4)
 	_shadow.mesh = quad
 	_shadow.material_override = _blob()
 	_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -130,12 +133,15 @@ func sync(k: KartState, dt: float) -> void:
 	_driver.rotation = Vector3(-0.05 + sin(_time * 3.1 + _phase) * 0.02, -_lean * 0.25, -_lean * DRIVER_LEAN)
 	_wheel_turn = fmod(_wheel_turn + k.speed / WHEEL_RADIUS * dt, TAU)
 	_pose_wheels(k.steer)
-	# The shadow: on the road, pushed away from the sun.
+	# The long low-sun shadow: on the road, stretched away from the sun (its texture is darkest
+	# at the kart's end), widest across the kart.
 	var away := Vector3(-KartLook.SUN_DIR.x, 0.0, -KartLook.SUN_DIR.z).normalized()
-	var local_away := (transform.basis.inverse() * away)
-	local_away.y = 0.0
-	_shadow.transform = Transform3D(Basis(Vector3.UP, slide), local_away * 0.55 + Vector3.UP * (0.035 - k.hop * 0.0))
-	_mat.set_shader_parameter("flash", boost_glow * 0.18)
+	var across := absf(away.dot(fwd.cross(up).normalized()))
+	var sb := Basis.looking_at(-away, up).scaled(Vector3(lerpf(1.0, 0.95, across), 1.0, lerpf(0.62, 0.85, across)))
+	_shadow.global_transform = Transform3D(sb, k.pos + away * lerpf(0.55, 0.95, across) + up * 0.035)
+	if boost_glow != _shown_glow:
+		_shown_glow = boost_glow
+		_mat.set_shader_parameter("flash", boost_glow * 0.18)
 
 
 ## One of the ANCHORS, or null.
@@ -180,24 +186,24 @@ static func body_mesh(r: Dictionary) -> ArrayMesh:
 	kit.ao_min = 0.55
 	var K := KartMeshKit
 	kit.add(K.box(Vector3(1.15, 0.1, 1.95)), K.xf(Vector3(0, 0.22, 0.05)), dark)
-	kit.add(K.capsule(0.3, 2.0, 14, 3), K.xf(Vector3(0, 0.42, 0.0), Vector3(90, 0, 0), Vector3(1.45, 1.0, 0.62)), paint)
-	kit.add(K.sphere(0.3, 14, 7), K.xf(Vector3(0, 0.36, -0.92), Vector3.ZERO, Vector3(1.35, 0.55, 1.7)), paint)
+	kit.add(K.capsule(0.3, 2.0, 12, 2), K.xf(Vector3(0, 0.42, 0.0), Vector3(90, 0, 0), Vector3(1.45, 1.0, 0.62)), paint)
+	kit.add(K.sphere(0.3, 12, 5), K.xf(Vector3(0, 0.36, -0.92), Vector3.ZERO, Vector3(1.35, 0.55, 1.7)), paint)
 	kit.add(K.box(Vector3(1.55, 0.07, 0.34)), K.xf(Vector3(0, 0.19, -1.14)), accent)
 	for side: float in [-1.0, 1.0]:
 		kit.add(K.box(Vector3(0.06, 0.22, 0.4)), K.xf(Vector3(side * 0.78, 0.25, -1.12)), paint)
-		kit.add(K.capsule(0.17, 1.05, 10, 2), K.xf(Vector3(side * 0.5, 0.33, 0.12), Vector3(90, 0, 0)), accent)
+		kit.add(K.capsule(0.17, 1.05, 8, 1), K.xf(Vector3(side * 0.5, 0.33, 0.12), Vector3(90, 0, 0)), accent)
 		kit.add(K.cylinder(0.075, 0.085, 0.5, 8), K.xf(Vector3(side * 0.22, 0.5, 1.06), Vector3(90, 0, 0)), chrome)
 		kit.add(K.cylinder(0.05, 0.05, 0.02, 8), K.xf(Vector3(side * 0.22, 0.5, 1.32), Vector3(90, 0, 0)), Color(0.05, 0.05, 0.05, 0.0))
 		kit.add(K.box(Vector3(0.06, 0.5, 0.1)), K.xf(Vector3(side * 0.36, 0.76, 0.98)), dark)
 		kit.add(K.box(Vector3(0.05, 0.36, 0.5)), K.xf(Vector3(side * 0.74, 1.0, 1.0)), paint)
-	kit.add(K.torus(0.25, 0.36, 14, 5), K.xf(Vector3(0, 0.58, -0.04), Vector3.ZERO, Vector3(1.15, 1.0, 1.45)), dark)
-	kit.add(K.capsule(0.2, 0.62, 10, 2), K.xf(Vector3(0, 0.72, 0.36), Vector3(-18, 0, 0), Vector3(1.2, 1.0, 0.5)), Color(0.1, 0.1, 0.12, 0.3))
-	kit.add(K.sphere(0.28, 12, 6), K.xf(Vector3(0, 0.62, 0.66), Vector3.ZERO, Vector3(1.1, 0.9, 1.25)), paint)
+	kit.add(K.torus(0.25, 0.36, 12, 4), K.xf(Vector3(0, 0.58, -0.04), Vector3.ZERO, Vector3(1.15, 1.0, 1.45)), dark)
+	kit.add(K.capsule(0.2, 0.62, 8, 1), K.xf(Vector3(0, 0.72, 0.36), Vector3(-18, 0, 0), Vector3(1.2, 1.0, 0.5)), Color(0.1, 0.1, 0.12, 0.3))
+	kit.add(K.sphere(0.28, 10, 4), K.xf(Vector3(0, 0.62, 0.66), Vector3.ZERO, Vector3(1.1, 0.9, 1.25)), paint)
 	kit.add(K.box(Vector3(0.62, 0.3, 0.42)), K.xf(Vector3(0, 0.4, 0.8)), Color(0.42, 0.42, 0.47, 0.8))
 	kit.add(K.box(Vector3(1.48, 0.08, 0.4)), K.xf(Vector3(0, 1.0, 1.0), Vector3(-8, 0, 0)), accent)
-	kit.add(K.cylinder(0.18, 0.18, 0.03, 14), K.xf(Vector3(0, 0.53, -0.95), Vector3(-75, 0, 0)), Color(0.98, 0.98, 0.98, 0.6))
+	kit.add(K.cylinder(0.18, 0.18, 0.03, 10), K.xf(Vector3(0, 0.53, -0.95), Vector3(-75, 0, 0)), Color(0.98, 0.98, 0.98, 0.6))
 	kit.add(K.cylinder(0.028, 0.028, 0.42, 6), K.xf(Vector3(0, 0.66, -0.42), Vector3(-55, 0, 0)), dark)
-	kit.add(K.torus(0.11, 0.16, 14, 5), K.xf(Vector3(0, 0.8, -0.3), Vector3(-60, 0, 0)), Color(0.16, 0.16, 0.18, 0.6))
+	kit.add(K.torus(0.11, 0.16, 10, 4), K.xf(Vector3(0, 0.8, -0.3), Vector3(-60, 0, 0)), Color(0.16, 0.16, 0.18, 0.6))
 	return kit.commit()
 
 
@@ -207,9 +213,9 @@ static func wheel_mesh() -> ArrayMesh:
 		return _wheel_mesh
 	var kit := KartMeshKit.new()
 	var K := KartMeshKit
-	kit.add(K.cylinder(WHEEL_RADIUS, WHEEL_RADIUS, 0.32, 20), K.xf(Vector3.ZERO, Vector3(0, 0, 90)), Color(0.11, 0.11, 0.12, 0.2))
-	kit.add(K.torus(WHEEL_RADIUS * 0.72, WHEEL_RADIUS * 1.02, 14, 4), K.xf(Vector3(0.155, 0, 0), Vector3(0, 0, 90), Vector3(1, 0.4, 1)), Color(0.16, 0.16, 0.17, 0.2))
-	kit.add(K.torus(WHEEL_RADIUS * 0.72, WHEEL_RADIUS * 1.02, 14, 4), K.xf(Vector3(-0.155, 0, 0), Vector3(0, 0, 90), Vector3(1, 0.4, 1)), Color(0.16, 0.16, 0.17, 0.2))
+	kit.add(K.cylinder(WHEEL_RADIUS, WHEEL_RADIUS, 0.32, 16), K.xf(Vector3.ZERO, Vector3(0, 0, 90)), Color(0.11, 0.11, 0.12, 0.2))
+	kit.add(K.torus(WHEEL_RADIUS * 0.72, WHEEL_RADIUS * 1.02, 12, 3), K.xf(Vector3(0.155, 0, 0), Vector3(0, 0, 90), Vector3(1, 0.4, 1)), Color(0.16, 0.16, 0.17, 0.2))
+	kit.add(K.torus(WHEEL_RADIUS * 0.72, WHEEL_RADIUS * 1.02, 12, 3), K.xf(Vector3(-0.155, 0, 0), Vector3(0, 0, 90), Vector3(1, 0.4, 1)), Color(0.16, 0.16, 0.17, 0.2))
 	kit.add(K.cylinder(0.15, 0.15, 0.34, 10), K.xf(Vector3.ZERO, Vector3(0, 0, 90)), Color(0.95, 0.82, 0.25, 1.0))
 	kit.add(K.box(Vector3(0.35, 0.24, 0.05)), K.xf(Vector3.ZERO), Color(0.85, 0.85, 0.9, 1.0))
 	kit.add(K.box(Vector3(0.35, 0.05, 0.24)), K.xf(Vector3.ZERO), Color(0.85, 0.85, 0.9, 1.0))
@@ -230,7 +236,7 @@ static func driver_mesh(r: Dictionary) -> ArrayMesh:
 	kit.ao_y1 = 0.5
 	kit.ao_min = 0.6
 	var suit := accent
-	kit.add(K.capsule(0.2, 0.62, 10, 3), K.xf(Vector3(0, 0.24, 0.02), Vector3(-12, 0, 0), Vector3(1.15, 1.0, 0.95)), suit)
+	kit.add(K.capsule(0.2, 0.62, 8, 2), K.xf(Vector3(0, 0.24, 0.02), Vector3(-12, 0, 0), Vector3(1.15, 1.0, 0.95)), suit)
 	kit.add(K.box(Vector3(0.06, 0.5, 0.42)), K.xf(Vector3(0, 0.26, -0.01), Vector3(-12, 0, 0)), Color(paint.r, paint.g, paint.b, 0.4))
 	for side: float in [-1.0, 1.0]:
 		var shoulder := Vector3(side * 0.21, 0.42, -0.02)
@@ -238,8 +244,8 @@ static func driver_mesh(r: Dictionary) -> ArrayMesh:
 		var mid := (shoulder + hand) * 0.5
 		var dir := (hand - shoulder).normalized()
 		var basis := Basis.looking_at(dir, Vector3.UP) * Basis(Vector3.RIGHT, PI * 0.5)
-		kit.add(K.capsule(0.07, shoulder.distance_to(hand) + 0.1, 8, 2), Transform3D(basis, mid), suit)
-		kit.add(K.sphere(0.075, 8, 4), K.xf(hand), Color(0.97, 0.97, 0.97, 0.3))
+		kit.add(K.capsule(0.07, shoulder.distance_to(hand) + 0.1, 6, 1), Transform3D(basis, mid), suit)
+		kit.add(K.sphere(0.075, 6, 3), K.xf(hand), Color(0.97, 0.97, 0.97, 0.3))
 	kit.ao_min = 1.0
 	_head(kit, r, Vector3(0, 0.8, -0.02))
 	return kit.commit()
@@ -282,45 +288,45 @@ static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3) -> void:
 			fur = Color(0.12, 0.14, 0.22, 0.3)
 		"raccoon":
 			fur = Color(0.62, 0.62, 0.66, 0.1)
-	kit.add(K.sphere(0.3, 14, 8), K.xf(h, Vector3.ZERO, head_scale), fur)
+	kit.add(K.sphere(0.3, 12, 7), K.xf(h, Vector3.ZERO, head_scale), fur)
 	var eye_y := 0.04
 	var eye_x := 0.105
 	var eye_z := -0.265
 	match species:
 		"fox":
-			kit.add(K.sphere(0.13, 10, 5), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.15, 0.75, 1.5)), muzzle)
+			kit.add(K.sphere(0.13, 7, 3), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.15, 0.75, 1.5)), muzzle)
 			for side: float in [-1.0, 1.0]:
 				kit.add(K.prism(Vector3(0.2, 0.3, 0.09)), K.xf(h + Vector3(side * 0.17, 0.36, 0.02), Vector3(0, 0, -side * 18)), fur)
 				kit.add(K.prism(Vector3(0.1, 0.13, 0.1)), K.xf(h + Vector3(side * 0.205, 0.46, 0.02), Vector3(0, 0, -side * 18)), black)
-				kit.add(K.sphere(0.09, 8, 4), K.xf(h + Vector3(side * 0.13, -0.08, -0.2), Vector3.ZERO, Vector3(1, 0.8, 0.8)), white)
+				kit.add(K.sphere(0.09, 7, 3), K.xf(h + Vector3(side * 0.13, -0.08, -0.2), Vector3.ZERO, Vector3(1, 0.8, 0.8)), white)
 		"panda":
-			kit.add(K.sphere(0.12, 10, 5), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.8, 1.0)), muzzle)
+			kit.add(K.sphere(0.12, 7, 3), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.8, 1.0)), muzzle)
 			for side: float in [-1.0, 1.0]:
-				kit.add(K.sphere(0.09, 8, 4), K.xf(h + Vector3(side * 0.2, 0.25, 0.03)), black)
-				kit.add(K.sphere(0.075, 8, 4), K.xf(h + Vector3(side * 0.11, 0.03, -0.235), Vector3(0, 0, side * 25), Vector3(1.0, 1.35, 0.6)), black)
+				kit.add(K.sphere(0.09, 7, 3), K.xf(h + Vector3(side * 0.2, 0.25, 0.03)), black)
+				kit.add(K.sphere(0.075, 7, 3), K.xf(h + Vector3(side * 0.11, 0.03, -0.235), Vector3(0, 0, side * 25), Vector3(1.0, 1.35, 0.6)), black)
 		"frog":
 			eye_y = 0.21
 			eye_z = -0.17
 			eye_x = 0.14
 			for side: float in [-1.0, 1.0]:
-				kit.add(K.sphere(0.11, 10, 5), K.xf(h + Vector3(side * 0.14, 0.17, -0.1)), fur)
-				kit.add(K.sphere(0.085, 10, 5), K.xf(h + Vector3(side * 0.14, 0.2, -0.14)), white)
+				kit.add(K.sphere(0.11, 7, 3), K.xf(h + Vector3(side * 0.14, 0.17, -0.1)), fur)
+				kit.add(K.sphere(0.085, 7, 3), K.xf(h + Vector3(side * 0.14, 0.2, -0.14)), white)
 			kit.add(K.torus(0.16, 0.19, 12, 4), K.xf(h + Vector3(0, -0.07, -0.19), Vector3(90, 0, 0), Vector3(1.3, 1.0, 0.35)), Color(0.85, 0.3, 0.35, 0.0))
 		"rabbit":
-			kit.add(K.sphere(0.12, 10, 5), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.8, 1.0)), muzzle)
+			kit.add(K.sphere(0.12, 7, 3), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.8, 1.0)), muzzle)
 			nose = pink
 			for side: float in [-1.0, 1.0]:
 				kit.add(K.capsule(0.07, 0.52, 8, 2), K.xf(h + Vector3(side * 0.1, 0.5, 0.04), Vector3(-6, 0, -side * 10)), fur)
 				kit.add(K.capsule(0.04, 0.4, 6, 2), K.xf(h + Vector3(side * 0.1, 0.5, -0.02), Vector3(-6, 0, -side * 10)), pink)
 		"bear":
-			kit.add(K.sphere(0.13, 10, 5), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.85, 1.0)), muzzle)
+			kit.add(K.sphere(0.13, 7, 3), K.xf(h + Vector3(0, -0.08, -0.24), Vector3.ZERO, Vector3(1.2, 0.85, 1.0)), muzzle)
 			for side: float in [-1.0, 1.0]:
-				kit.add(K.sphere(0.095, 8, 4), K.xf(h + Vector3(side * 0.21, 0.25, 0.03)), fur)
-				kit.add(K.sphere(0.055, 8, 4), K.xf(h + Vector3(side * 0.21, 0.25, -0.03)), muzzle)
+				kit.add(K.sphere(0.095, 7, 3), K.xf(h + Vector3(side * 0.21, 0.25, 0.03)), fur)
+				kit.add(K.sphere(0.055, 7, 3), K.xf(h + Vector3(side * 0.21, 0.25, -0.03)), muzzle)
 		"otter":
-			kit.add(K.sphere(0.17, 10, 5), K.xf(h + Vector3(0, -0.07, -0.2), Vector3.ZERO, Vector3(1.35, 0.85, 1.0)), muzzle)
+			kit.add(K.sphere(0.17, 7, 3), K.xf(h + Vector3(0, -0.07, -0.2), Vector3.ZERO, Vector3(1.35, 0.85, 1.0)), muzzle)
 			for side: float in [-1.0, 1.0]:
-				kit.add(K.sphere(0.06, 8, 4), K.xf(h + Vector3(side * 0.24, 0.12, 0.02)), fur)
+				kit.add(K.sphere(0.06, 7, 3), K.xf(h + Vector3(side * 0.24, 0.12, 0.02)), fur)
 				for w in 2:
 					kit.add(K.box(Vector3(0.16, 0.012, 0.012)), K.xf(h + Vector3(side * 0.2, -0.07 - w * 0.03, -0.3), Vector3(0, 0, side * (8 - w * 16))), Color(0.3, 0.2, 0.15, 0.0))
 		"penguin":
@@ -328,31 +334,31 @@ static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3) -> void:
 			kit.add(K.cylinder(0.0, 0.07, 0.17, 8), K.xf(h + Vector3(0, -0.05, -0.33), Vector3(-90, 0, 0), Vector3(1.4, 1.0, 0.8)), Color(1.0, 0.6, 0.12, 0.5))
 			nose = Color(0, 0, 0, -1)
 		"raccoon":
-			kit.add(K.sphere(0.12, 10, 5), K.xf(h + Vector3(0, -0.09, -0.24), Vector3.ZERO, Vector3(1.15, 0.75, 1.3)), white)
-			kit.add(K.sphere(0.12, 10, 5), K.xf(h + Vector3(0, 0.04, -0.2), Vector3.ZERO, Vector3(2.2, 0.62, 0.9)), Color(0.12, 0.11, 0.13, 0.1))
+			kit.add(K.sphere(0.12, 7, 3), K.xf(h + Vector3(0, -0.09, -0.24), Vector3.ZERO, Vector3(1.15, 0.75, 1.3)), white)
+			kit.add(K.sphere(0.12, 7, 3), K.xf(h + Vector3(0, 0.04, -0.2), Vector3.ZERO, Vector3(2.2, 0.62, 0.9)), Color(0.12, 0.11, 0.13, 0.1))
 			for side: float in [-1.0, 1.0]:
 				kit.add(K.prism(Vector3(0.2, 0.26, 0.09)), K.xf(h + Vector3(side * 0.18, 0.34, 0.03), Vector3(0, 0, -side * 20)), fur)
 				kit.add(K.prism(Vector3(0.1, 0.14, 0.1)), K.xf(h + Vector3(side * 0.18, 0.31, 0.0), Vector3(0, 0, -side * 20)), Color(0.15, 0.14, 0.16, 0.0))
 	if nose.a >= 0.0:
 		var nz := -0.37 if species in ["fox"] else -0.335
-		kit.add(K.sphere(0.045, 8, 4), K.xf(h + Vector3(0, -0.04, nz), Vector3.ZERO, Vector3(1.3, 0.9, 1.0)), Color(nose.r, nose.g, nose.b, 1.0))
+		kit.add(K.sphere(0.045, 6, 3), K.xf(h + Vector3(0, -0.04, nz), Vector3.ZERO, Vector3(1.3, 0.9, 1.0)), Color(nose.r, nose.g, nose.b, 1.0))
 	for side: float in [-1.0, 1.0]:
-		kit.add(K.sphere(0.048, 8, 4), K.xf(h + Vector3(side * eye_x, eye_y, eye_z), Vector3.ZERO, Vector3(0.9, 1.15, 0.7)), Color(0.05, 0.04, 0.08, 1.0))
-		kit.add(K.sphere(0.016, 6, 3), K.xf(h + Vector3(side * eye_x + 0.014, eye_y + 0.022, eye_z - 0.035)), Color(1, 1, 1, 1.0))
+		kit.add(K.sphere(0.048, 6, 3), K.xf(h + Vector3(side * eye_x, eye_y, eye_z), Vector3.ZERO, Vector3(0.9, 1.15, 0.7)), Color(0.05, 0.04, 0.08, 1.0))
+		kit.add(K.sphere(0.016, 4, 2), K.xf(h + Vector3(side * eye_x + 0.014, eye_y + 0.022, eye_z - 0.035)), Color(1, 1, 1, 1.0))
 		if species != "frog":
-			kit.add(K.sphere(0.045, 8, 4), K.xf(h + Vector3(side * 0.17, -0.06, -0.22), Vector3.ZERO, Vector3(1.0, 0.6, 0.5)), Color(1.0, 0.55, 0.6, 0.0))
+			kit.add(K.sphere(0.045, 6, 3), K.xf(h + Vector3(side * 0.17, -0.06, -0.22), Vector3.ZERO, Vector3(1.0, 0.6, 0.5)), Color(1.0, 0.55, 0.6, 0.0))
 	# The open-face helmet in the kart's colour, with a white stripe.
-	kit.add(K.sphere(0.335, 14, 6, true), K.xf(h + Vector3(0, 0.02, 0.05), Vector3(38, 0, 0), Vector3(1.04, 1.0, 1.06)), paint)
-	kit.add(K.sphere(0.34, 14, 6, true), K.xf(h + Vector3(0, 0.02, 0.05), Vector3(38, 0, 0), Vector3(0.22, 1.02, 1.08)), Color(0.98, 0.98, 0.98, 1.0))
+	kit.add(K.sphere(0.335, 12, 4, true), K.xf(h + Vector3(0, 0.02, 0.05), Vector3(38, 0, 0), Vector3(1.04, 1.0, 1.06)), paint)
+	kit.add(K.sphere(0.34, 12, 4, true), K.xf(h + Vector3(0, 0.02, 0.05), Vector3(38, 0, 0), Vector3(0.22, 1.02, 1.08)), Color(0.98, 0.98, 0.98, 1.0))
 
 
 static func _material_for(key: String) -> ShaderMaterial:
 	if not _materials.has(key):
-		_materials[key] = KartLook.kart_material(true)
+		_materials[key] = KartLook.kart_material(key != "wheels" and outlines)
 	# One material per racer (its boost flash); the wheels share one.
 	if key == "wheels":
 		return _materials[key]
-	var mat: ShaderMaterial = KartLook.kart_material(true)
+	var mat: ShaderMaterial = KartLook.kart_material(outlines)
 	return mat
 
 
@@ -360,17 +366,18 @@ static func _material_for(key: String) -> ShaderMaterial:
 static func _blob() -> StandardMaterial3D:
 	if _shadow_material:
 		return _shadow_material
-	var grad := Gradient.new()
-	grad.set_color(0, Color(0.08, 0.05, 0.12, 0.62))
-	grad.set_color(1, Color(0.08, 0.05, 0.12, 0.0))
-	grad.add_point(0.45, Color(0.08, 0.05, 0.12, 0.42))
-	var tex := GradientTexture2D.new()
-	tex.gradient = grad
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	tex.width = 64
-	tex.height = 64
+	# An egg: dense at the kart's end (v = 0.3), thinning out along the shadow's length.
+	var img := Image.create(64, 64, true, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var u := (x + 0.5) / 64.0 * 2.0 - 1.0
+			var v := (y + 0.5) / 64.0
+			var w := lerpf(0.55, 1.0, smoothstep(0.0, 0.35, v)) * lerpf(1.0, 0.75, smoothstep(0.5, 1.0, v))
+			var edge := clampf(1.0 - pow(absf(u) / w, 2.0) - pow((v - 0.45) / 0.55, 2.0), 0.0, 1.0)
+			var a := smoothstep(0.0, 0.55, edge) * lerpf(0.66, 0.3, smoothstep(0.3, 1.0, v))
+			img.set_pixel(x, y, Color(0.08, 0.05, 0.14, a))
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

@@ -53,7 +53,7 @@ func _init() -> void:
 	_title.add_theme_constant_override("outline_size", 30)
 	KartTheme.gradient(_title, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
 	_root.add_child(_title)
-	_subtitle = KartTheme.label("", 40, KartTheme.CHIP)
+	_subtitle = KartTheme.label("", 32, KartTheme.CHIP)
 	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_subtitle.size = Vector2(1400, 60)
 	_subtitle.position = Vector2((HudTheme.W - 1400) * 0.5, 300)

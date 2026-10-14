@@ -36,5 +36,5 @@ void fragment() {
 	vec3 col = shirt * t.r + skin * t.g + mix(shirt, skin, 0.5) * t.b;
 	col *= 0.75 + 0.3 * (1.0 - UV.y);
 	vec3 lit = col * (sky_color * 0.55 + sun_color * 0.7);
-	ALBEDO = haze(lit, length(VERTEX));
+	ALBEDO = grade(haze(lit, length(VERTEX)), SCREEN_UV);
 }

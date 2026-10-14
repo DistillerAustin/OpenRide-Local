@@ -30,7 +30,8 @@ enum Flow { IDLE, COUNTDOWN, RACING, RESULTS, PODIUM, DONE }
 const RENDER_SCALE := 0.62
 const MSAA := Viewport.MSAA_DISABLED  ## 2x halved the frame rate on the tablet (Dodge Ball)
 ## Developer aid, off in every build: set true to read `user://kart_tuning.cfg` ([render]
-## scale, msaa; [world] road, walls, ground, scenery) and log the frame cost every 5 s.
+## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx) and log the frame
+## cost every 5 s.
 const DEV_TUNING := false
 const TUNING_PATH := "user://kart_tuning.cfg"
 const PERF_LOG_SEC := 5.0
@@ -80,7 +81,6 @@ var _status: KartStatus
 var _board: KartRaceBoard
 var _kart_hud: KartHud
 var _fx: KartFx
-var _grade: ShaderMaterial
 var _hud_lineup := ""
 var _lights := -1
 var _acc := 0.0
@@ -183,11 +183,9 @@ func _ready() -> void:
 	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# The one full-screen pass: grade, vignette and speed lines in the upscaling blit.
-	_grade = ShaderMaterial.new()
-	_grade.shader = load("res://games/kart_race/ui/shaders/grade.gdshader")
-	_grade.set_shader_parameter("noise_tex", KartLook.noise())
-	shown.material = _grade
+	# No full-screen pass: the colour grade is folded into every world shader, and speed lines
+	# are drawn as thin polygons by KartHud (a graded upscaling blit cost about 5 fps).
+	KartView.outlines = not _tuned or bool(_tuning.get_value("render", "outlines", true))
 	add_child(shown)
 	if _tuned:
 		print("OPENRIDE_GAMES kart_race render scale=%.2f size=%s msaa=%d" % [scale, _view.size, _view.msaa_3d])
@@ -252,6 +250,8 @@ func _build_world() -> void:
 		for key in _tuning.get_section_keys("world"):
 			world.tuning[key] = bool(_tuning.get_value("world", key))
 	_view.add_child(world)
+	if _tuned and bool(_tuning.get_value("render", "glow", false)):
+		world.set_glow(true)
 
 
 ## Handling agent: the chase camera (Chase / Close option).
@@ -298,6 +298,8 @@ func _build_hud() -> void:
 	hud.set_skin(_hud_skin())
 	_kart_hud = KartHud.new()
 	add_child(_kart_hud)
+	if _tuned:
+		_kart_hud.visible = bool(_tuning.get_value("world", "hud", true))
 	_kart_hud.item_pressed.connect(_on_item_pressed)
 	_board = KartRaceBoard.new()
 	_board.portrait_maker = _kart_hud.portrait_rect
@@ -337,6 +339,9 @@ func _build_fx() -> void:
 	_fx.name = "Fx"
 	_fx.camera = camera
 	world.add_child(_fx)
+	if _tuned and not bool(_tuning.get_value("world", "fx", true)):
+		_fx.visible = false
+		_fx.demo_drifts = false
 	race_began.connect(func(_r: KartRaceLogic): _fx.begin(views))
 
 
@@ -557,9 +562,9 @@ func _sync_views(delta: float) -> void:
 		camera.follow(k, delta)
 	if _fx:
 		_fx.step(race, delta)
-	if _grade:
+	if _kart_hud:
 		var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
-		_grade.set_shader_parameter("speed_lines", maxf(lines, k.boost_time))
+		_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))
 
 
 func _update_hud(delta: float) -> void:

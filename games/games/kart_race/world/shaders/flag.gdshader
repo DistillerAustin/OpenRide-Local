@@ -28,5 +28,5 @@ void vertex() {
 
 void fragment() {
 	vec3 col = COLOR.rgb * v_tint * v_shade;
-	ALBEDO = haze(col * (sky_color * 0.5 + sun_color * 0.75), length(VERTEX));
+	ALBEDO = grade(haze(col * (sky_color * 0.5 + sun_color * 0.75), length(VERTEX)), SCREEN_UV);
 }

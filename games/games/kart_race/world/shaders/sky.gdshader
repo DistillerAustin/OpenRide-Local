@@ -1,5 +1,6 @@
-// Late-afternoon sky (#43): a deep blue zenith over a warm peach horizon, a low sun with a soft
-// halo, and soft cumulus from the noise texture. No TIME, so its radiance is built once.
+// Late-afternoon sky (#43): a deep blue zenith over a warm peach horizon and a low sun with a
+// soft halo. The background runs this per pixel every frame, so it stays texture-free (the
+// clouds are cards, KartWorld._build_clouds): cheap on the tablet's fill-rate-bound GPU.
 shader_type sky;
 
 uniform vec3 top_color : source_color = vec3(0.24, 0.45, 0.85);
@@ -28,7 +29,7 @@ void sky() {
 	col = mix(col, horizon_color * 1.05, pow(s, 3.0) * smoothstep(0.5, 0.0, h) * 0.6);
 	col += sun_color * pow(s, 24.0) * 0.55 + sun_color * pow(s, 6.0) * 0.18;
 	col = mix(col, vec3(1.0, 0.98, 0.9), smoothstep(0.9985, 0.9993, s));
-	if (h > 0.0 && clouds > 0.0) {
+	if (h > 0.0 && clouds > 1.0) {
 		vec2 uv = dir.xz / (h + 0.12) * 1.1;
 		float n = vnoise(uv * 1.4) * 0.55 + vnoise(uv * 3.3 + 9.0) * 0.3 + vnoise(uv * 8.0) * 0.15;
 		float c = smoothstep(0.52, 0.72, n) * smoothstep(0.0, 0.12, h) * smoothstep(0.75, 0.3, h) * clouds;
@@ -38,5 +39,9 @@ void sky() {
 		col = mix(col, cc, c);
 	}
 	col = mix(col, ground_color, smoothstep(0.0, -0.06, h));
-	COLOR = col;
+	// The world's colour grade (light.gdshaderinc), minus the vignette.
+	float l = dot(col, vec3(0.299, 0.587, 0.114));
+	col = mix(vec3(l), col, 1.12);
+	col = (col - 0.5) * 1.06 + 0.5;
+	COLOR = col * vec3(1.04, 1.0, 0.95) + vec3(0.02, 0.0, 0.05) * (1.0 - col);
 }

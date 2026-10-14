@@ -50,6 +50,21 @@ func add(mesh: Mesh, xf: Transform3D, color: Color) -> void:
 	_empty = false
 
 
+## Appends a vertex-coloured mesh built by a kit (its colours times `tint`), transformed by `xf`.
+## Used to bake many instances into one static mesh per sector of the world.
+func add_baked(mesh: ArrayMesh, xf: Transform3D, tint := Color.WHITE) -> void:
+	var arrays := mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var b := xf.basis
+	for i in verts.size():
+		_st.set_color(colors[i] * tint)
+		_st.set_normal((b * normals[i]).normalized())
+		_st.add_vertex(xf * verts[i])
+	_empty = false
+
+
 ## A quad a-b-c-d (clockwise seen from the front) with a flat normal.
 func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color) -> void:
 	var n := (c - a).cross(b - a).normalized()
@@ -70,7 +85,7 @@ func commit() -> ArrayMesh:
 
 # --- Primitive shortcuts (low segment counts: the tablet) ---
 
-static func sphere(radius: float, segments := 12, rings := 6, hemisphere := false) -> SphereMesh:
+static func sphere(radius: float, segments := 10, rings := 5, hemisphere := false) -> SphereMesh:
 	var m := SphereMesh.new()
 	m.radius = radius
 	m.height = radius * (1.0 if hemisphere else 2.0)
@@ -96,7 +111,7 @@ static func cylinder(top: float, bottom: float, height: float, segments := 10) -
 	return m
 
 
-static func capsule(radius: float, height: float, segments := 12, rings := 3) -> CapsuleMesh:
+static func capsule(radius: float, height: float, segments := 10, rings := 2) -> CapsuleMesh:
 	var m := CapsuleMesh.new()
 	m.radius = radius
 	m.height = maxf(height, radius * 2.0)

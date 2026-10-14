@@ -25,6 +25,12 @@ const MAP_RECT := Rect2(40, 818, 330, 222)
 
 ## racer id -> its portrait (a rendered head), also used by the boards.
 var portraits := {}
+## 0-1: radial speed lines at the screen's edges (thin polygons, so only their pixels cost).
+var speed_lines := 0.0:
+	set(v):
+		speed_lines = v
+		if _lines:
+			_lines.visible = v > 0.01
 var lineup: Array = []
 
 var _root: Control
@@ -57,6 +63,8 @@ var _banner: Label
 var _tweens := {}
 var _shown_clock := ""
 var _portrait_shader: Shader
+var _lines: Control
+var _line_rng := RandomNumberGenerator.new()
 
 
 func _init() -> void:
@@ -72,6 +80,12 @@ func _init() -> void:
 	_gameplay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_gameplay)
 	_portrait_shader = load(KartTheme.SHADERS + "portrait.gdshader")
+	_lines = Control.new()
+	_lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lines.size = _root.size
+	_lines.visible = false
+	_lines.draw.connect(_draw_lines)
+	_root.add_child(_lines)
 	_build_clock()
 	_build_badge()
 	_build_item()
@@ -130,10 +144,28 @@ func update(race: KartRaceLogic, drift_charge: float, drift_tier: int) -> void:
 		var kk: KartState = race.karts[i]
 		_dots[i] = _map_xf * Vector2(kk.pos.x, kk.pos.z)
 	_map_dots.queue_redraw()
+	if _lines.visible:
+		_lines.queue_redraw()
 	if absf(drift_charge - _drift) > 0.01 or drift_tier != _drift_tier:
 		_drift = drift_charge
 		_drift_tier = drift_tier
 		_item_icon.queue_redraw()
+
+
+## Thin tapered streaks from the screen's edges toward the centre, re-scattered every frame.
+func _draw_lines() -> void:
+	var c := _root.size * 0.5
+	var n := int(10 + 18 * speed_lines)
+	for i in n:
+		var a := _line_rng.randf() * TAU
+		var dir := Vector2(cos(a), sin(a) * 0.62)
+		var r0 := _line_rng.randf_range(0.62, 0.8)
+		var r1 := r0 + _line_rng.randf_range(0.2, 0.5)
+		var p0 := c + dir * c.x * r0
+		var p1 := c + dir * c.x * r1
+		var side := Vector2(-dir.y, dir.x) * _line_rng.randf_range(1.5, 4.0)
+		var col := Color(1.0, 0.98, 0.92, 0.35 * speed_lines)
+		_lines.draw_colored_polygon(PackedVector2Array([p0, p1 + side, p1 - side]), col)
 
 
 func set_gameplay_visible(on: bool, animate := true) -> void:

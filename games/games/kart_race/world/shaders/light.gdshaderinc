@@ -25,3 +25,24 @@ vec3 hemi(vec3 n) {
 vec3 haze(vec3 col, float dist) {
 	return mix(col, haze_color, min(1.0 - exp(-haze_density * dist), haze_max));
 }
+
+// The colour grade, folded into every material (a separate full-screen pass at the tablet's
+// 1080p cost about 5 fps): warm gain, lifted violet shadows, a little more saturation and
+// contrast, and a soft vignette from the screen position.
+const float GRADE_SAT = 1.12;
+const float GRADE_CONTRAST = 1.06;
+const vec3 GRADE_GAIN = vec3(1.04, 1.0, 0.95);
+const vec3 GRADE_LIFT = vec3(0.02, 0.0, 0.05);
+const float GRADE_VIGNETTE = 0.38;
+
+vec3 grade(vec3 c, vec2 suv) {
+	float l = dot(c, vec3(0.299, 0.587, 0.114));
+	c = mix(vec3(l), c, GRADE_SAT);
+	c = (c - 0.5) * GRADE_CONTRAST + 0.5;
+	c = c * GRADE_GAIN + GRADE_LIFT * (1.0 - c);
+	vec2 p = suv * 2.0 - 1.0;
+	p.x *= 1.35;
+	float v = smoothstep(0.7, 1.75, length(p));
+	c *= 1.0 - v * GRADE_VIGNETTE;
+	return mix(c, c * vec3(0.92, 0.85, 1.05), v * 0.5);
+}

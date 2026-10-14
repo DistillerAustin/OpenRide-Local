@@ -15,7 +15,7 @@ const DRIFT_EVERY := 5.5  ## seconds between the rider's scripted drifts
 const DRIFT_SEC := 1.9
 const BOOST_SEC := 0.9
 const TIER_SEC := [0.0, 0.55, 1.15]
-const TIER_COLORS := [Color(1.0, 0.85, 0.3), Color(1.0, 0.5, 0.15), Color(0.75, 0.45, 1.0)]
+const TIER_COLORS := [Color(1.0, 0.85, 0.3), Color(1.0, 0.5, 0.15), Color(0.9, 0.55, 1.0)]
 
 var views: Array = []
 var camera: KartChaseCamera

@@ -17,8 +17,9 @@ varying vec3 v_tint;
 void vertex() {
 	vec3 wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	if (sway > 0.0) {
-		vec3 origin = MODEL_MATRIX[3].xyz;
-		float ph = dot(origin, vec3(0.071, 0.0, 0.053));
+		// Phase from the vertex's world position: baked sectors share one origin.
+		vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		float ph = dot(wp, vec3(0.071, 0.0, 0.053));
 		float w = COLOR.a * COLOR.a;
 		VERTEX.x += sin(TIME * sway_speed + ph) * sway * w;
 		VERTEX.z += sin(TIME * sway_speed * 0.77 + ph * 1.7) * sway * w * 0.6;
@@ -29,5 +30,5 @@ void vertex() {
 }
 
 void fragment() {
-	ALBEDO = haze(COLOR.rgb * v_tint * v_light, length(VERTEX));
+	ALBEDO = grade(haze(COLOR.rgb * v_tint * v_light, length(VERTEX)), SCREEN_UV);
 }
