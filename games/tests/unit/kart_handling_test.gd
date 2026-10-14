@@ -206,6 +206,19 @@ func test_spark_tiers_arrive_at_0_9_2_0_and_3_4_s() -> void:
 	assert_bool((r[2] as KartState).knob_boosting).is_false()
 
 
+func test_snaking_on_a_straight_charges_slowly() -> void:
+	var physics := KartPhysics.new()
+	physics.assist = 0.0
+	var log := _events(physics)
+	var setup := _cruising(physics, 380.0)
+	var track: KartTrackModel = setup[0]
+	var k: KartState = setup[1]
+	_run(physics, k, _in(150.0, 0.8), track, 1.2)
+	assert_int(k.drift_dir).is_equal(1)
+	assert_array(log.tier).is_empty()
+	assert_float(k.drift_charge).is_less(0.35)
+
+
 func test_the_knob_charges_1_6_times_faster() -> void:
 	# Resistance at or over drift_resistance.
 	var physics := KartPhysics.new()

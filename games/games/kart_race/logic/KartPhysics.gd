@@ -19,7 +19,8 @@ extends RefCounted
 ## - **Drift** (`_update_drift`): a hard lean (|lean| >= DRIFT_LEAN) held for DRIFT_HOLD at 40% of
 ##   `top_speed` hops the kart into a slide. Leaning further in tightens the arc, easing toward
 ##   the centre widens it (the assist bends the arc toward the road's). The charge earns spark
-##   tiers at TIER_SEC (× KNOB_RATE while the resistance knob is up), and easing below
+##   tiers at TIER_SEC in a corner (× KNOB_RATE while the resistance knob is up; a quarter of the
+##   rate on a straight, so snaking doesn't pay), and easing below
 ##   RELEASE_LEAN for RELEASE_HOLD releases a mini-turbo (TURBO_SEC by tier). Timers use the raw
 ##   lean, so tracker jitter (a sign flip resets the hold) and a lean easing to 0 after face loss
 ##   (`KartInput.tracking` false) never start one.
@@ -105,11 +106,15 @@ const TIER_SEC := [0.9, 2.0, 3.4]  ## charge for spark tiers 1-3
 const TURBO_SEC := [0.5, 0.9, 1.4]  ## the mini-turbo by tier
 const TURBO_PUSH := [2.5, 3.5, 5.0]
 const KNOB_RATE := 1.6  ## charge rate with the knob up
+## The charge runs at full rate where the road curves toward the drift at least this much (1/m),
+## and at STRAIGHT_CHARGE on a straight or against the bend (snaking for boosts doesn't pay).
+const DRIFT_CHARGE_K := 0.008
+const STRAIGHT_CHARGE := 0.25
 const KNOB_RISE := 5.0  ## a resistance rise since the drift began that counts as the knob
 const HOP_SEC := 0.28  ## the hop at the drift's start
 const HOP_HEIGHT := 0.32
-const SLIDE_WIDE := 0.3  ## the body's slide angle (radians) at the widest arc ...
-const SLIDE_TIGHT := 0.62  ## ... and the tightest
+const SLIDE_WIDE := 0.38  ## the body's slide angle (radians) at the widest arc ...
+const SLIDE_TIGHT := 0.72  ## ... and the tightest
 const SLIDE_RATE := 9.0  ## 1/s, toward the slide angle
 ## Bots: a corner at least this tight (1/m) over the next stretch is worth a drift.
 const DRIFT_WORTH_K := 1.0 / 70.0
@@ -477,7 +482,10 @@ func _update_drift(k: KartState, inp: KartInput, track: KartTrackModel, dt: floa
 		# The knob: resistance up at the drift's level, or risen since it began.
 		k.knob_boosting = inp.resistance >= drift_resistance or inp.resistance - k.drift_res0 >= KNOB_RISE - 0.0001
 		if k.surface != KartTrackModel.Surface.OFFROAD:
-			k.drift_charge += dt * (KNOB_RATE if k.knob_boosting else 1.0)
+			# Full rate in a corner the drift turns into; slow on straights, so snaking for
+			# mini-turbos doesn't pay.
+			var corner := clampf(track.curvature(k.s) * -k.drift_dir / DRIFT_CHARGE_K, STRAIGHT_CHARGE, 1.0)
+			k.drift_charge += dt * corner * (KNOB_RATE if k.knob_boosting else 1.0)
 		while k.drift_tier < TIER_SEC.size() and k.drift_charge >= float(TIER_SEC[k.drift_tier]) - 0.0001:
 			k.drift_tier += 1
 			if events:
