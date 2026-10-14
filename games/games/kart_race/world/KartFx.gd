@@ -133,6 +133,10 @@ func _kart(i: int, k: KartState, v: KartView, race: KartRaceLogic, dt: float, ra
 				var outer := "wheel_rr" if _drift_dir[i] > 0.0 else "wheel_rl"
 				var inner := "wheel_rl" if _drift_dir[i] > 0.0 else "wheel_rr"
 				var rate := 50.0 + 30.0 * tier
+				# A flickering glow at both rear wheels in the tier's colour.
+				for a in [outer, inner]:
+					var w := v.anchor(a).global_position - Vector3.UP * 0.18
+					_spark(w, Vector3.ZERO, 0.05, Vector2(0.75 + 0.25 * _rng.randf(), 0.6), Color(c.r, c.g, c.b, 0.9))
 				for a in [outer, inner]:
 					if _rng.randf() < dt * rate:
 						var p := v.anchor(a).global_position - Vector3.UP * 0.22
