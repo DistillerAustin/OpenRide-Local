@@ -5,7 +5,7 @@ extends RefCounted
 ## eight well-spaced hues, so the HUD's racer list and the minimap read at a glance.
 ##
 ## Fields: id, name, species, color (the kart and helmet), accent (trim, wing, stripes), suit
-## (the racing suit), eyes (iris colour), weight (0.85 light .. 1.15 heavy: kart-kart contacts),
+## (the racing suit), eyes (iris colour), helmet (optional: a contrast to the fur), weight (0.85 light .. 1.15 heavy: kart-kart contacts),
 ## kart ("light" | "medium" | "heavy"), number, horn ({hz, ratio, beeps, wave}: see
 ## horn_preset), tagline (one line for menus and boards).
 

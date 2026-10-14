@@ -208,6 +208,9 @@ const ANCHORS := ["exhaust_l","exhaust_r","wheel_fl","wheel_fr","wheel_rl","whee
 func setup(racer: Dictionary) -> void                # a KartRoster entry
 func sync(k: KartState, dt: float) -> void
 func anchor(name: String) -> Node3D
+# Phase 2 (racers) additions: var slide, boost_glow (fx), look_target: Vector3 + look_weight 0-1
+# (a glance), func bone_pose(bone) -> Transform3D, static model_mesh(racer), head_mesh(racer).
+# Models: racers/KartModels (one mesh a kart, rigged in the vertex shader), KartPortraits.
 
 class_name KartBotDriver extends RefCounted
 func _init(profile: Dictionary, ftp_w: float, rng_seed: int) -> void   # {power_pct, line_offset, drift_skill, item_skill, aggression}
@@ -225,6 +228,8 @@ const RACERS := [{id, name, species, color, accent, weight}, ...]   # eight, kar
 static func ids() -> Array; static func names() -> Array
 static func racer(racer_id: String) -> Dictionary
 static func lineup(rider_racer_id: String, count := 8) -> Array      # the rider's pick first
+# Phase 2 additions: entries also carry suit, eyes, helmet?, kart ("light"|"medium"|"heavy"),
+# number, horn, tagline; static option_labels(), kart_class(r), horn_preset(id) -> SfxPreset.
 
 class_name KartWorld extends Node3D
 var tuning := {}                                     # dev switches: road, walls, ground, scenery

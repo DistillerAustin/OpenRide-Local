@@ -123,7 +123,8 @@ func info() -> GameInfo:
 		"hard": [120, 240, 380],
 	}
 	i.options = [
-		{"key": "driver", "label": "Driver", "choices": KartRoster.ids(), "labels": KartRoster.names(),
+		# Racers agent: "Juniper the fox".
+		{"key": "driver", "label": "Driver", "choices": KartRoster.ids(), "labels": KartRoster.option_labels(),
 			"default": "fox"},
 		{"key": "assist", "label": "Steering assist", "choices": ["off", "low", "high"],
 			"labels": ["Off", "Low", "High"], "default": "high"},
