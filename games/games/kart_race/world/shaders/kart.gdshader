@@ -10,6 +10,7 @@ shader_type spatial;
 render_mode unshaded, fog_disabled, cull_back;
 
 #include "res://games/kart_race/world/shaders/light.gdshaderinc"
+#include "res://games/kart_race/world/shaders/rig.gdshaderinc"
 
 uniform vec3 rim_color : source_color = vec3(1.0, 0.9, 0.72);
 uniform vec3 rim_cool : source_color = vec3(0.62, 0.74, 1.0);
@@ -22,6 +23,7 @@ varying vec3 v_wp;
 varying float v_glow;
 
 void vertex() {
+	rig(VERTEX, NORMAL, UV2);
 	v_wn = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	v_wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_glow = UV.y;

@@ -5,6 +5,8 @@
 shader_type spatial;
 render_mode unshaded, fog_disabled, cull_front;
 
+#include "res://games/kart_race/world/shaders/rig.gdshaderinc"
+
 uniform vec3 color : source_color = vec3(0.12, 0.07, 0.16);
 uniform float width = 0.02;
 uniform float tint = 0.35;  // how much of the surface's colour the line takes
@@ -12,6 +14,7 @@ uniform float tint = 0.35;  // how much of the surface's colour the line takes
 varying vec3 v_col;
 
 void vertex() {
+	rig(VERTEX, NORMAL, UV2);
 	float dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	VERTEX += NORMAL * width * UV.x * clamp(dist * 0.08, 0.7, 2.5);
 	v_col = COLOR.rgb;

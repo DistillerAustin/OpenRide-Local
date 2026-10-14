@@ -15,8 +15,9 @@ var ao_y0 := 0.0
 var ao_y1 := 1.0
 var ao_min := 1.0
 
-## Rigid skinning (the karts' rig): when `skinned`, every vertex of the next `add` calls goes to
-## bone `bone` with full weight, and `commit` indexes the mesh. Set it before the first add.
+## Rigid rigging (the karts' rig): when `skinned`, every vertex of the next `add` calls carries
+## bone `bone` in UV2.x (the kart shaders move it by that bone's matrix), and `commit` indexes
+## the mesh. Set it before the first add.
 var skinned := false
 var bone := 0
 ## Per-vertex flags for the kart shader, in UV (when `flags`; set it before the first add):
@@ -74,8 +75,7 @@ func _vertex_extras() -> void:
 	if flags:
 		_st.set_uv(Vector2(outline, glow))
 	if skinned:
-		_st.set_bones(PackedInt32Array([bone, 0, 0, 0]))
-		_st.set_weights(PackedFloat32Array([1.0, 0.0, 0.0, 0.0]))
+		_st.set_uv2(Vector2(bone, 0.0))
 
 
 ## Appends a vertex-coloured mesh built by a kit (its colours times `tint`), transformed by `xf`.

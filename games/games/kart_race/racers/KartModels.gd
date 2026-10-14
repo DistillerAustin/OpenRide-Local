@@ -2,8 +2,9 @@ class_name KartModels
 extends RefCounted
 ## The racers' models (#43): a toy kart in one of three designs (light, medium, heavy) and its
 ## animal driver, built in code from smooth shapes (KartMeshKit: superellipsoids, lathes and
-## tubes with analytic normals) into ONE rigidly skinned mesh per kart. KartView poses its bones,
-## so a kart and driver is one draw plus its outline pass.
+## tubes with analytic normals) into ONE mesh per kart, each vertex tagged with its bone (UV2.x).
+## KartView poses the bones and the kart shaders move the vertices, so a kart and driver is one
+## draw plus its outline pass.
 ##
 ## Everything faces -Z (the kart's forward), y up, the ground at y = 0. Vertex colours carry
 ## the paint and painted AO; COLOR.a is the gloss mask, UV.x the outline width and UV.y the
@@ -81,31 +82,7 @@ static func bone_points(r: Dictionary) -> Array:
 	return pts
 
 
-## The skeleton for a racer (bone names, parents and rests as KartView poses them).
-static func skeleton(r: Dictionary) -> Skeleton3D:
-	var sk := Skeleton3D.new()
-	sk.name = "Rig"
-	var pts := bone_points(r)
-	for i in BONES.size():
-		sk.add_bone(BONES[i])
-		var parent: int = PARENTS[i]
-		sk.set_bone_parent(i, parent)
-		var local: Vector3 = pts[i] - (pts[parent] if parent >= 0 else Vector3.ZERO)
-		sk.set_bone_rest(i, Transform3D(Basis.IDENTITY, local))
-	sk.reset_bone_poses()
-	return sk
-
-
-## The bind poses for the skinned mesh: each bone's rest, inverted, in kart space.
-static func skin(r: Dictionary) -> Skin:
-	var s := Skin.new()
-	var pts := bone_points(r)
-	for i in BONES.size():
-		s.add_bind(i, Transform3D(Basis.IDENTITY, -(pts[i] as Vector3)))
-	return s
-
-
-## The whole kart with its driver: one skinned mesh.
+## The whole kart with its driver: one rigged mesh.
 static func model(r: Dictionary) -> ArrayMesh:
 	var kit := KartMeshKit.new()
 	kit.skinned = true
