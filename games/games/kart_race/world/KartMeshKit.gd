@@ -15,6 +15,19 @@ var ao_y0 := 0.0
 var ao_y1 := 1.0
 var ao_min := 1.0
 
+## Rigid skinning (the karts' rig): when `skinned`, every vertex of the next `add` calls goes to
+## bone `bone` with full weight, and `commit` indexes the mesh. Set it before the first add.
+var skinned := false
+var bone := 0
+## Per-vertex flags for the kart shader, in UV (when `flags`; set it before the first add):
+## x = the outline's width scale (0 = none), y = self-lit share (eye glints, lamps).
+var flags := false
+var outline := 1.0
+var glow := 0.0
+## An optional painter for the next `add` calls: func(local_pos, local_normal, color) -> Color,
+## in the added shape's own space (stripes, masks, bellies).
+var paint := Callable()
+
 var _st := SurfaceTool.new()
 var _empty := true
 
@@ -24,30 +37,45 @@ func _init() -> void:
 
 
 ## Appends `mesh` (a PrimitiveMesh or any one-surface ArrayMesh), transformed by `xf`, in `color`
-## (alpha = the shader mask).
+## (alpha = the shader mask). A mesh with vertex colours (lathe, tube) is tinted by `color`.
 func add(mesh: Mesh, xf: Transform3D, color: Color) -> void:
 	var arrays: Array = mesh.get_mesh_arrays() if mesh is PrimitiveMesh else mesh.surface_get_arrays(0)
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
 	var nb := xf.basis.inverse().transposed()
 	var count := indices.size() if not indices.is_empty() else verts.size()
+	var painted := paint.is_valid()
 	# PrimitiveMesh winding is clockwise front faces; keep it (Godot's convention).
 	for i in count:
 		var vi := indices[i] if not indices.is_empty() else i
 		var p := xf * verts[vi]
 		var n := (nb * normals[vi]).normalized() if normals.size() > vi else Vector3.UP
 		var c := color
+		if colors.size() > vi:
+			c = color * colors[vi]
+		if painted:
+			c = paint.call(verts[vi], normals[vi] if normals.size() > vi else Vector3.UP, c)
 		if ao_min < 1.0:
 			var k := clampf((p.y - ao_y0) / maxf(ao_y1 - ao_y0, 0.001), 0.0, 1.0)
 			var f := lerpf(ao_min, 1.0, k * k * (3.0 - 2.0 * k))
 			# Faces pointing down get a little darker still.
 			f *= lerpf(0.82, 1.0, clampf(n.y + 1.0, 0.0, 1.0))
-			c = Color(color.r * f, color.g * f, color.b * f, color.a)
+			c = Color(c.r * f, c.g * f, c.b * f, c.a)
 		_st.set_color(c)
 		_st.set_normal(n)
+		_vertex_extras()
 		_st.add_vertex(p)
 	_empty = false
+
+
+func _vertex_extras() -> void:
+	if flags:
+		_st.set_uv(Vector2(outline, glow))
+	if skinned:
+		_st.set_bones(PackedInt32Array([bone, 0, 0, 0]))
+		_st.set_weights(PackedFloat32Array([1.0, 0.0, 0.0, 0.0]))
 
 
 ## Appends a vertex-coloured mesh built by a kit (its colours times `tint`), transformed by `xf`.
@@ -61,6 +89,7 @@ func add_baked(mesh: ArrayMesh, xf: Transform3D, tint := Color.WHITE) -> void:
 	for i in verts.size():
 		_st.set_color(colors[i] * tint)
 		_st.set_normal((b * normals[i]).normalized())
+		_vertex_extras()
 		_st.add_vertex(xf * verts[i])
 	_empty = false
 
@@ -71,6 +100,7 @@ func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color) -> void:
 	for p in [a, b, c, a, c, d]:
 		_st.set_color(color)
 		_st.set_normal(n)
+		_vertex_extras()
 		_st.add_vertex(p)
 	_empty = false
 
@@ -80,6 +110,8 @@ func is_empty() -> bool:
 
 
 func commit() -> ArrayMesh:
+	if skinned:
+		_st.index()
 	return _st.commit()
 
 
@@ -133,6 +165,171 @@ static func prism(size: Vector3) -> PrismMesh:
 	var m := PrismMesh.new()
 	m.size = size
 	return m
+
+
+# --- Smooth shapes (the racers): analytic normals, so a low count still shades round ---
+
+## A superellipsoid with `radii`: e1 shapes it top to bottom, e2 around (1, 1 = an ellipsoid;
+## 0.3 = a pillowy rounded box). `v_max` < PI cuts it open below (a helmet shell). Indexed.
+static func blob(radii: Vector3, e1 := 1.0, e2 := 1.0, segments := 12, rings := 8, v_max := PI) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	for r in rings + 1:
+		var v := v_max * r / rings
+		var sv := sin(v)
+		var cv := cos(v)
+		for s in segments + 1:
+			var u := TAU * s / segments
+			var cu := cos(u)
+			var su := sin(u)
+			verts.append(Vector3(radii.x * _spow(sv, e1) * _spow(cu, e2), radii.y * _spow(cv, e1),
+				radii.z * _spow(sv, e1) * _spow(su, e2)))
+			var n := Vector3(_spow(sv, 2.0 - e1) * _spow(cu, 2.0 - e2) / radii.x, _spow(cv, 2.0 - e1) / radii.y,
+				_spow(sv, 2.0 - e1) * _spow(su, 2.0 - e2) / radii.z)
+			normals.append(n.normalized() if n.length_squared() > 1e-12 else Vector3(0, signf(cv), 0))
+	return _grid_mesh(verts, normals, PackedColorArray(), rings, segments)
+
+
+## `profile` (x = radius, y = height, bottom to top) revolved around Y. A repeated point makes a
+## crease. `colors`, one per profile point, paint bands (ear tips, tyre walls, iris rings).
+static func lathe(profile: PackedVector2Array, segments := 12, colors := PackedColorArray()) -> ArrayMesh:
+	var n2 := PackedVector2Array()
+	var count := profile.size()
+	for i in count:
+		# Average the two neighbouring segments' normals; a zero-length one (a crease) is skipped.
+		var acc := Vector2.ZERO
+		if i > 0 and not profile[i].is_equal_approx(profile[i - 1]):
+			acc += _perp(profile[i] - profile[i - 1])
+		if i < count - 1 and not profile[i].is_equal_approx(profile[i + 1]):
+			acc += _perp(profile[i + 1] - profile[i])
+		n2.append(acc.normalized() if acc.length_squared() > 1e-12 else Vector2(0, 1))
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var cols := PackedColorArray()
+	for r in count:
+		for s in segments + 1:
+			var u := TAU * s / segments
+			var dir := Vector3(cos(u), 0.0, sin(u))
+			verts.append(dir * profile[r].x + Vector3.UP * profile[r].y)
+			normals.append((dir * n2[r].x + Vector3.UP * n2[r].y).normalized())
+			if not colors.is_empty():
+				cols.append(colors[mini(r, colors.size() - 1)])
+	return _grid_mesh(verts, normals, cols, count - 1, segments)
+
+
+## A round tube through `points`, `radii` per point (or one), rounded ends; `colors` per point.
+static func tube(points: PackedVector3Array, radii: PackedFloat32Array, segments := 6, colors := PackedColorArray()) -> ArrayMesh:
+	var count := points.size()
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var cols := PackedColorArray()
+	var t0 := (points[1] - points[0]).normalized()
+	var side := t0.cross(Vector3.UP if absf(t0.y) < 0.9 else Vector3.RIGHT).normalized()
+	# Rings: an end cap point, the points, an end cap point (rounded ends).
+	var rings := count + 2
+	for r in rings:
+		var i := clampi(r - 1, 0, count - 1)
+		var t := (points[mini(i + 1, count - 1)] - points[maxi(i - 1, 0)]).normalized()
+		side = (side - t * side.dot(t)).normalized()  # parallel transport
+		var up := t.cross(side)
+		var rad: float = radii[mini(i, radii.size() - 1)]
+		var centre := points[i]
+		var shrink := 1.0
+		var push := Vector3.ZERO
+		if r == 0:
+			shrink = 0.0
+			push = -t * rad * 0.7
+		elif r == rings - 1:
+			shrink = 0.0
+			push = t * rad * 0.7
+		for s in segments + 1:
+			var a := TAU * s / segments
+			var d := side * cos(a) + up * sin(a)
+			verts.append(centre + push + d * rad * shrink)
+			var nrm := d
+			if r == 0:
+				nrm = -t
+			elif r == rings - 1:
+				nrm = t
+			normals.append(nrm)
+			if not colors.is_empty():
+				cols.append(colors[clampi(i, 0, colors.size() - 1)])
+	return _grid_mesh(verts, normals, cols, rings - 1, segments)
+
+
+## A transform onto an ellipsoid's surface (centre at the origin, `radii`), at the front (-Z)
+## point with these x, y: local +Y along the outward normal, +Z up the surface, +X right. Lathes
+## and domes placed with it stand out of the surface. `sink` pushes it in along the normal.
+static func on_surface(radii: Vector3, x: float, y: float, sink := 0.0, back := false) -> Transform3D:
+	var q := 1.0 - pow(x / radii.x, 2.0) - pow(y / radii.y, 2.0)
+	var z := radii.z * sqrt(maxf(q, 0.0)) * (1.0 if back else -1.0)
+	var p := Vector3(x, y, z)
+	var n := Vector3(x / (radii.x * radii.x), y / (radii.y * radii.y), z / (radii.z * radii.z)).normalized()
+	var up := (Vector3.UP - n * n.dot(Vector3.UP))
+	up = up.normalized() if up.length_squared() > 1e-6 else Vector3.BACK
+	var right := n.cross(up).normalized()
+	return Transform3D(Basis(right, n, up), p - n * sink)
+
+
+## The transform that takes a Y-axis shape of unit length centred at the origin onto a-b.
+static func between(a: Vector3, b: Vector3, thickness := Vector3.ONE) -> Transform3D:
+	var y := b - a
+	var len := y.length()
+	y /= len
+	var x := y.cross(Vector3.BACK if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	return Transform3D(Basis(x * thickness.x, y * len * thickness.y, z * thickness.z), (a + b) * 0.5)
+
+
+static func tri_count(mesh: Mesh) -> int:
+	var n := 0
+	for s in mesh.get_surface_count():
+		var a := mesh.surface_get_arrays(s)
+		n += (a[Mesh.ARRAY_INDEX].size() if a[Mesh.ARRAY_INDEX] != null else a[Mesh.ARRAY_VERTEX].size()) / 3
+	return n
+
+
+static func _spow(x: float, e: float) -> float:
+	return signf(x) * pow(absf(x), e)
+
+
+static func _perp(t: Vector2) -> Vector2:
+	return Vector2(t.y, -t.x).normalized()
+
+
+## A (rows + 1) x (cols + 1) vertex grid into an indexed mesh; degenerate triangles (poles) are
+## dropped, and each triangle is wound to face along its normals (Godot's front faces).
+static func _grid_mesh(verts: PackedVector3Array, normals: PackedVector3Array, cols: PackedColorArray, rows: int, columns: int) -> ArrayMesh:
+	var idx := PackedInt32Array()
+	var w := columns + 1
+	for r in rows:
+		for s in columns:
+			var a := r * w + s
+			var b := a + 1
+			var c := a + w
+			var d := c + 1
+			_tri(idx, verts, normals, a, b, c)
+			_tri(idx, verts, normals, b, d, c)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	if not cols.is_empty():
+		arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _tri(idx: PackedInt32Array, v: PackedVector3Array, n: PackedVector3Array, a: int, b: int, c: int) -> void:
+	var cr := (v[b] - v[a]).cross(v[c] - v[a])
+	if cr.length_squared() < 1e-14:
+		return
+	if cr.dot(n[a] + n[b] + n[c]) > 0.0:
+		idx.append_array([a, c, b])
+	else:
+		idx.append_array([a, b, c])
 
 
 ## Transform helper: translate, then rotate (degrees, YXZ), then scale.
