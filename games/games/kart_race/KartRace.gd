@@ -40,6 +40,9 @@ const MAX_TICKS := 8  ## per frame, so a stall never snowballs
 const RIDER := KartRaceLogic.RIDER
 const RACERS := 8
 const COUNTDOWN_SEC := 3.0
+## Before each countdown the camera flies over the grid under the title card (the race logic's
+## countdown runs FLYOVER_SEC + COUNTDOWN_SEC; the numbers show for the last three).
+const FLYOVER_SEC := 3.5
 const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
 const GO_SEC := 0.8
@@ -75,6 +78,11 @@ var test_input: KartInput = null
 var _view: SubViewport
 var _status: KartStatus
 var _board: KartRaceBoard
+var _kart_hud: KartHud
+var _fx: KartFx
+var _grade: ShaderMaterial
+var _hud_lineup := ""
+var _lights := -1
 var _acc := 0.0
 var _flow_left := 0.0
 var _est_lap := 60.0
@@ -175,6 +183,11 @@ func _ready() -> void:
 	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The one full-screen pass: grade, vignette and speed lines in the upscaling blit.
+	_grade = ShaderMaterial.new()
+	_grade.shader = load("res://games/kart_race/ui/shaders/grade.gdshader")
+	_grade.set_shader_parameter("noise_tex", KartLook.noise())
+	shown.material = _grade
 	add_child(shown)
 	if _tuned:
 		print("OPENRIDE_GAMES kart_race render scale=%.2f size=%s msaa=%d" % [scale, _view.size, _view.msaa_3d])
@@ -278,12 +291,38 @@ func _build_items() -> void:
 	pass
 
 
-## Presentation agent: the HUD widget and the boards.
+## Presentation agent: the HUD widget, the game HUD, the framework HUD's skin and the boards.
 func _build_hud() -> void:
 	_status = KartStatus.new()
 	hud.add_widget(_status)
+	hud.set_skin(_hud_skin())
+	_kart_hud = KartHud.new()
+	add_child(_kart_hud)
+	_kart_hud.item_pressed.connect(_on_item_pressed)
 	_board = KartRaceBoard.new()
+	_board.portrait_maker = _kart_hud.portrait_rect
 	add_child(_board)
+	race_began.connect(func(_r: KartRaceLogic):
+		var key := ",".join(lineup.map(func(r): return str(r.id)))
+		if key != _hud_lineup:
+			_hud_lineup = key
+			_kart_hud.setup(lineup, track)
+		_kart_hud.set_gameplay_visible(false, false)
+		_lights = -1)
+
+
+## The framework HUD's panels in Kart Race's look (Hud.set_skin: fonts, panels, buttons only).
+static func _hud_skin() -> Dictionary:
+	var panel := KartTheme.badge(KartTheme.PANEL, 0.0, 22, KartTheme.PANEL_EDGE)
+	panel.content_margin_left = 28
+	panel.content_margin_right = 28
+	panel.content_margin_top = 14
+	panel.content_margin_bottom = 16
+	var button := KartTheme.badge(Color(0.36, 0.22, 0.86, 0.95), 0.0, 22, Color(0.75, 0.66, 1.0))
+	var pressed := KartTheme.badge(Color(0.5, 0.36, 1.0, 1.0), 0.0, 22, Color(0.9, 0.85, 1.0))
+	var end := KartTheme.badge(Color(0.75, 0.16, 0.32, 0.95), 0.0, 22, Color(1.0, 0.6, 0.7))
+	return {"font": KartTheme.display(true), "outline_color": KartTheme.OUTLINE, "outline_size": 8,
+		"panel": panel, "button": button, "button_pressed": pressed, "end_button": end}
 
 
 ## Presentation agent: music and effects.
@@ -294,7 +333,11 @@ func _build_audio() -> void:
 
 ## Presentation agent: sparks, flames, dust, speed lines.
 func _build_fx() -> void:
-	pass
+	_fx = KartFx.new()
+	_fx.name = "Fx"
+	_fx.camera = camera
+	world.add_child(_fx)
+	race_began.connect(func(_r: KartRaceLogic): _fx.begin(views))
 
 
 # --- The Grand Prix ---
@@ -329,19 +372,23 @@ func _begin_race() -> void:
 
 
 func _start_countdown() -> void:
-	race.start_countdown(COUNTDOWN_SEC)
+	race.start_countdown(COUNTDOWN_SEC + FLYOVER_SEC)
 	flow = Flow.COUNTDOWN
 	_countdown_shown = -1
+	var total := gp.races_run() + 1
+	var chip := "Grand Prix · %s" % ("Final race" if bool(current.get("is_final", false)) else "Race %d" % total)
+	if _kart_hud:
+		_kart_hud.show_title(chip, track.def.title + (" (reversed)" if track.reversed else ""), FLYOVER_SEC - 0.6)
 
 
 func _on_race_started() -> void:
 	flow = Flow.RACING
-	_show_message("GO!", GO_SEC)
+	_kart_hud.go()
 
 
 func _on_final_lap(kart_id: int) -> void:
 	if kart_id == RIDER and race.laps > 1:
-		_show_message("Final lap!", 1.6)
+		_kart_hud.banner("FINAL LAP!", 1.6)
 
 
 func _on_race_finished(order: Array) -> void:
@@ -353,9 +400,16 @@ func _on_race_finished(order: Array) -> void:
 	var rows := []
 	for i in order.size():
 		var id: int = order[i]
-		rows.append({"name": _racer_name(id), "detail": "+%d" % KartGrandPrix.POINTS[i] if i < KartGrandPrix.POINTS.size() else ""})
-	var title := "Race %d results" % (int(current.index) + 1)
-	_board.show_board(title, rows)
+		var k: KartState = race.karts[id]
+		rows.append({"name": _racer_name(id), "detail": "+%d" % KartGrandPrix.POINTS[i] if i < KartGrandPrix.POINTS.size() else "",
+			"racer_id": str(lineup[id].id), "you": id == RIDER,
+			"time": KartTheme.race_time(k.finish_time) if i == 0 else "+%.3f" % maxf(0.0, k.finish_time - race.karts[order[0]].finish_time)})
+	var place := order.find(RIDER) + 1
+	var title := "Victory!" if place == 1 else ("On the podium!" if place <= 3 else "Nice drive!")
+	var subtitle := "Grand Prix · Race %d · %s" % [gp.races_run(), track.def.title]
+	_board.show_board(title, rows, subtitle, RESULTS_SEC, "Final standings" if bool(current.get("is_final", false)) else "Next race")
+	_kart_hud.set_gameplay_visible(false)
+	_status.visible = false
 
 
 ## The board's time is up: the next race, the podium, or the end.
@@ -365,8 +419,11 @@ func _after_board() -> void:
 		_flow_left = PODIUM_SEC
 		var rows := []
 		for row in gp.standings():
-			rows.append({"name": _racer_name(row.kart_id), "detail": "%d pts" % row.points})
-		_board.show_board("Grand Prix standings", rows)
+			rows.append({"name": _racer_name(row.kart_id), "detail": "%d pts" % row.points,
+				"racer_id": str(lineup[row.kart_id].id), "you": row.kart_id == RIDER,
+				"time": "%d win%s" % [row.wins, "" if row.wins == 1 else "s"]})
+		var champ := gp.champion() == RIDER
+		_board.show_board("Champion!" if champ else "Grand Prix standings", rows, "Final standings", PODIUM_SEC, "Ride summary")
 		return
 	if flow == Flow.PODIUM:
 		_finish_gp()
@@ -374,6 +431,7 @@ func _after_board() -> void:
 			return
 	# Another race (also when a timed slot refused to end early).
 	_board.hide_board()
+	_status.visible = true
 	_begin_race()
 	_start_countdown()
 
@@ -490,23 +548,52 @@ func _read_rider() -> KartInput:
 func _sync_views(delta: float) -> void:
 	for i in views.size():
 		views[i].sync(race.karts[i], delta)
-	camera.follow(race.karts[RIDER], delta)
+	var k: KartState = race.karts[RIDER]
+	if flow == Flow.IDLE:
+		camera.flyover(k, 0.0, track)
+	elif flow == Flow.COUNTDOWN and race.countdown > COUNTDOWN_SEC:
+		camera.flyover(k, 1.0 - (race.countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)
+	else:
+		camera.follow(k, delta)
+	if _fx:
+		_fx.step(race, delta)
+	if _grade:
+		var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
+		_grade.set_shader_parameter("speed_lines", maxf(lines, k.boost_time))
 
 
 func _update_hud(delta: float) -> void:
 	var k: KartState = race.karts[RIDER]
 	var race_text := "Final race" if bool(current.get("is_final", false)) else "Race %d" % (int(current.get("index", 0)) + 1)
 	_status.set_state(k.place, race.karts.size(), k.lap, race.laps, race_text)
+	_kart_hud.update(race, _fx.drift_charge if _fx else 0.0, _fx.drift_tier if _fx else 0)
+	var lights := 0
 	if flow == Flow.COUNTDOWN:
+		if race.countdown <= COUNTDOWN_SEC:
+			lights = clampi(5 - ceili(race.countdown / (COUNTDOWN_SEC / 5.0)) + 1, 1, 5)
 		var n := ceili(race.countdown)
-		if n != _countdown_shown and n > 0:
+		if n != _countdown_shown and n > 0 and n <= int(COUNTDOWN_SEC):
 			_countdown_shown = n
-			hud.show_message(str(n))
-			_message_left = 0.0
-	elif _message_left > 0.0:
+			_kart_hud.countdown(n)
+			if n == int(COUNTDOWN_SEC):
+				_kart_hud.set_gameplay_visible(true)
+	elif flow == Flow.RACING and race.time < 2.0:
+		lights = 6
+	if lights != _lights:
+		_lights = lights
+		world.set_start_lights(lights)
+	if _message_left > 0.0:
 		_message_left -= delta
 		if _message_left <= 0.0:
 			hud.hide_message()
+
+
+## The item slot was tapped: use the item (the race-systems agent's KartItemLogic reads the
+## edge). For the hero slice it also fires the boost's look.
+func _on_item_pressed() -> void:
+	_item_edge = true
+	if _fx and flow == Flow.RACING:
+		_fx.boost(RIDER, 1.2)
 
 
 func _show_message(text: String, seconds: float) -> void:

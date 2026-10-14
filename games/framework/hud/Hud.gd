@@ -52,6 +52,8 @@ var circuit_strip: CircuitStrip
 var _widgets: HBoxContainer
 var _message: Label
 var _score_text := ""
+## What `set_skin` overrode, to put back: [Control, kind, name, had_override, old value].
+var _skin_saved: Array = []
 
 
 func _init() -> void:
@@ -153,6 +155,85 @@ func clear_widgets() -> void:
 		child.queue_free()
 	metrics.clear_bands()
 	hide_message()
+	clear_skin()
+
+
+## Opt-in restyling of the persistent panels for a game with its own look (Kart Race). Every key
+## is optional: `font` (Font) for every label and button, `outline_color` (Color) and
+## `outline_size` (int) for the labels, `panel` (StyleBox) for the ride and clock panels,
+## `button` (StyleBox, with `button_pressed`) for Pause, End and Recalibrate, `end_button` for End.
+## Layout, sizes, colours that carry meaning (the rpm band, the effort glow) and every number
+## stay the framework's. Games that never call it look exactly as before; `clear_skin` (and
+## `clear_widgets`, when a game leaves) puts everything back.
+func set_skin(skin: Dictionary) -> void:
+	clear_skin()
+	var labels: Array[Node] = []
+	for root in [ride_panel, clock_panel]:
+		labels.append_array(root.find_children("*", "Label", true, false))
+	for node in labels:
+		var l := node as Label
+		if skin.has("font"):
+			_skin_set(l, "font", "font", skin.font)
+		if skin.has("outline_color"):
+			_skin_set(l, "color", "font_outline_color", skin.outline_color)
+		if skin.has("outline_size"):
+			_skin_set(l, "constant", "outline_size", maxi(int(skin.outline_size), l.get_theme_font_size("font_size") / 10))
+	if skin.has("panel"):
+		for panel in [ride_panel, clock_panel]:
+			_skin_set(panel, "stylebox", "panel", skin.panel)
+	for b: Button in [pause_button, end_button, recalibrate_button]:
+		if skin.has("font"):
+			_skin_set(b, "font", "font", skin.font)
+		var style: StyleBox = skin.get("end_button") if b == end_button and skin.has("end_button") else skin.get("button")
+		if style:
+			for state in ["normal", "hover", "disabled"]:
+				_skin_set(b, "stylebox", state, style)
+			_skin_set(b, "stylebox", "pressed", skin.get("button_pressed", style))
+
+
+func clear_skin() -> void:
+	for i in range(_skin_saved.size() - 1, -1, -1):
+		var entry: Array = _skin_saved[i]
+		var c: Control = entry[0]
+		if not is_instance_valid(c):
+			continue
+		var kind: String = entry[1]
+		var key: StringName = entry[2]
+		var had: bool = entry[3]
+		match kind:
+			"font":
+				c.remove_theme_font_override(key)
+				if had:
+					c.add_theme_font_override(key, entry[4])
+			"color":
+				c.remove_theme_color_override(key)
+				if had:
+					c.add_theme_color_override(key, entry[4])
+			"constant":
+				c.remove_theme_constant_override(key)
+				if had:
+					c.add_theme_constant_override(key, entry[4])
+			"stylebox":
+				c.remove_theme_stylebox_override(key)
+				if had:
+					c.add_theme_stylebox_override(key, entry[4])
+	_skin_saved.clear()
+
+
+func _skin_set(c: Control, kind: String, key: StringName, value: Variant) -> void:
+	match kind:
+		"font":
+			_skin_saved.append([c, kind, key, c.has_theme_font_override(key), c.get_theme_font(key) if c.has_theme_font_override(key) else null])
+			c.add_theme_font_override(key, value)
+		"color":
+			_skin_saved.append([c, kind, key, c.has_theme_color_override(key), c.get_theme_color(key)])
+			c.add_theme_color_override(key, value)
+		"constant":
+			_skin_saved.append([c, kind, key, c.has_theme_constant_override(key), c.get_theme_constant(key)])
+			c.add_theme_constant_override(key, value)
+		"stylebox":
+			_skin_saved.append([c, kind, key, c.has_theme_stylebox_override(key), c.get_theme_stylebox(key) if c.has_theme_stylebox_override(key) else null])
+			c.add_theme_stylebox_override(key, value)
 
 
 ## A short centred message over the middle of the screen ("Game over! Next run in 5").

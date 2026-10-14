@@ -7,6 +7,11 @@ extends SceneTree
 ## --nohud hides the HUD, --intro also saves the intro card.
 ## With --play=SECONDS it instead races that long (for Movie Maker: add
 ## --write-movie FILE.avi --fixed-fps 30 to record the game's own mix without playing a sound).
+## With --compose it saves the hero slice's four compositions as PREFIX_a..d_desktop.png
+## (--prefix=godot): (a) the start grid under the title card, (b) the chase camera mid-corner
+## with the full HUD during a drift, (c) a beauty close-up of karts on the grid, HUD hidden, and
+## (d) the results board (a one-lap race, sped up). Shots are scaled to 1920x1080 when the
+## window is smaller than the canvas.
 
 var _session: Node
 var _director: Node  # untyped: a -s script compiles before the autoloads exist
@@ -22,6 +27,8 @@ func _run() -> void:
 	var hud := true
 	var play_sec := 0.0
 	var intro := false
+	var compose := false
+	var prefix := "godot"
 	var directions := ["forward", "reversed"]
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
@@ -34,6 +41,10 @@ func _run() -> void:
 			directions = arg.get_slice("=", 1).split(",")
 		elif arg.begins_with("--play="):
 			play_sec = float(arg.get_slice("=", 1))
+		elif arg == "--compose":
+			compose = true
+		elif arg.begins_with("--prefix="):
+			prefix = arg.get_slice("=", 1)
 	DirAccess.make_dir_recursive_absolute(out)
 	_session = root.get_node("Session")
 	_director = _session.director
@@ -57,6 +68,10 @@ func _run() -> void:
 		return
 	var game: Node = _director.game
 	_director.hud.visible = hud
+	if compose:
+		await _compose(game, out, prefix)
+		quit()
+		return
 	# Pedal up to ~100 rpm.
 	_key(KEY_EQUAL, true)
 	await create_timer(0.5).timeout
@@ -91,6 +106,69 @@ func _run() -> void:
 	quit()
 
 
+func _compose(game: Node, out: String, prefix: String) -> void:
+	_key(KEY_EQUAL, true)
+	await create_timer(0.5).timeout
+	_key(KEY_EQUAL, false)
+	game.race.laps = 1  # (d) comes after one lap
+	# (a) The fly-over's opening, title card up.
+	_director.hud.visible = false
+	await create_timer(0.75).timeout
+	_save("%s/%s_a_desktop.png" % [out, prefix])
+	# (c) Beauty close-up on the grid: a held camera low beside the last three karts.
+	game._kart_hud.visible = false
+	var track = game.track
+	var cam = game.camera
+	var eye: Vector3 = track.position_at(track.wrap(-26.5), -6.4) + Vector3.UP * 1.5
+	var at: Vector3 = track.position_at(track.wrap(-33.5), 0.2) + Vector3.UP * 0.5
+	cam.held = Transform3D(Basis.looking_at(at - eye, Vector3.UP), eye)
+	cam.hold = true
+	cam.fov = 44.0
+	await create_timer(0.4).timeout
+	_save("%s/%s_c_desktop.png" % [out, prefix])
+	cam.hold = false
+	game._kart_hud.visible = true
+	_director.hud.visible = true
+	# (b) Racing: into a corner, drifting, full HUD.
+	var fx = game._fx
+	var shot := false
+	var limit: float = game.sim_time + 60.0
+	while game.sim_time < limit:
+		await process_frame
+		_steer(game)
+		var k = game.race.karts[0]
+		var curv: float = absf(game.race.track.curvature(k.s))
+		if game.race.time > 9.0 and curv > 0.008 and fx._drift_t[0] < 0.0:
+			fx._drift_next[0] = 0.0
+		if game.race.time > 9.0 and curv > 0.006 and fx._drift_t[0] > 0.95 and _clear_view(game):
+			_save("%s/%s_b_desktop.png" % [out, prefix])
+			shot = true
+			break
+	if not shot:
+		_save("%s/%s_b_desktop.png" % [out, prefix])
+	# (d) Race to the line quickly, then the board.
+	Engine.time_scale = 4.0
+	while game.flow != game.Flow.RESULTS and not game.has_ended():
+		await process_frame
+		_steer(game)
+	Engine.time_scale = 1.0
+	await create_timer(1.6).timeout
+	_save("%s/%s_d_desktop.png" % [out, prefix])
+
+
+## No other kart between the chase camera and the rider's kart.
+func _clear_view(game: Node) -> bool:
+	var k = game.race.karts[0]
+	var cam_pos: Vector3 = game.camera.global_position
+	for i in range(1, game.race.karts.size()):
+		var o: Vector3 = game.race.karts[i].pos
+		var seg: Vector3 = k.pos - cam_pos
+		var t: float = clampf((o - cam_pos).dot(seg) / seg.length_squared(), 0.0, 1.0)
+		if (cam_pos + seg * t).distance_to(o) < 2.2 and t > 0.05 and t < 0.98:
+			return false
+	return true
+
+
 ## Arrow keys toward the racing line, using the track model.
 func _steer(game: Node) -> void:
 	var race = game.race
@@ -113,6 +191,8 @@ func _steer(game: Node) -> void:
 
 func _save(path: String) -> void:
 	var img := root.get_viewport().get_texture().get_image()
+	if img.get_width() < 1920:
+		img.resize(1920, 1080, Image.INTERPOLATE_LANCZOS)
 	img.save_png(path)
 	print("CAPTURE %s fps=%d draw_calls=%d" % [path, Engine.get_frames_per_second(),
 		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])

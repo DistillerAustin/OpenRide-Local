@@ -47,3 +47,8 @@ default font and the repo's own `noir` music style.
 Cadence Karaoke (#42) adds no recorded or imported asset: it is drawn in code, uses Godot's
 default font and the repo's own `bright` music style.
 
+| `games/kart_race/world/shaders/*.gdshader`, `*.gdshaderinc` (road, ground, sky, scenery, kart toon, outline, crowd, flags, lamps) and `games/kart_race/ui/shaders/*.gdshader` (grade, text gradient, portrait, sunburst) | Written for this repo (#43) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| Every mesh and texture in `KartMeshKit.gd`, `KartWorld.gd`, `KartView.gd`, `KartFx.gd`, `KartHud.gd` and `KartRaceBoard.gd` (karts, the eight animal drivers, trees, grandstand, crowd sprite, start gate, flags, fences, windmill, hills, clouds, portraits, the item icon, confetti; built from primitive shapes and generated images in code) | Written for this repo (#43) | The OpenRide Authors | Apache-2.0, the repo's licence |
+
+Kart Race (#43) adds no recorded or imported asset: everything is procedural, and its display
+face is the engine's built-in default font made heavy and slanted with a `FontVariation`.

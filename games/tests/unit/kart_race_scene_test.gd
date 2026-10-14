@@ -65,12 +65,12 @@ func test_the_rider_drives_forward_and_stays_on_the_road() -> void:
 	var race: KartRaceLogic = game.get("race")
 	var k: KartState = race.karts[0]
 	var start := race.progress(0)
-	for i in 600:
+	# The fly-over and the three-second countdown, then seven seconds of racing.
+	for i in 600 + roundi(preload("res://games/kart_race/KartRace.gd").FLYOVER_SEC * 60.0):
 		game._on_frame(DT)
 		assert_float(absf(k.d)).override_failure_message("off the road at %.0f m: d %.2f" % [k.s, k.d]) \
 			.is_less(race.track.half_width(k.s) + KartTrackModel.KERB_WIDTH)
 	assert_int(race.phase).is_equal(KartRaceLogic.Phase.RACING)
-	# Three seconds of countdown, then seven of racing.
 	assert_float(race.progress(0) - start).is_greater(60.0)
 	assert_float(k.speed).is_greater(10.0)
 	# The bots race too.
