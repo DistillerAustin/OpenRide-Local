@@ -51,6 +51,8 @@ var _bank := PackedFloat32Array()
 var _curv := PackedFloat32Array()
 var _grade := PackedFloat32Array()
 var _line := PackedFloat32Array()
+var _at := 0  ## scratch: the row `_locate` found
+var _frac := 0.0  ## scratch: the fraction to the next row
 
 
 func _init(track_def: KartTrackDef, is_reversed := false) -> void:
@@ -81,9 +83,9 @@ func sample(s: float) -> KartTrackPoint:
 
 ## The road surface's point at (s, d).
 func position_at(s: float, d: float) -> Vector3:
-	var u := _lookup(s)
-	var i: int = u[0]
-	var f: float = u[1]
+	_locate(s)
+	var i := _at
+	var f := _frac
 	var j := (i + 1) % _n
 	var c := _pos[i].lerp(_pos[j], f)
 	var t := _tan[i].lerp(_tan[j], f).normalized()
@@ -115,9 +117,9 @@ func project(pos: Vector3, hint_s := -1.0) -> KartTrackPoint:
 	# Newton's method on the foot of the perpendicular: (pos - c(s)) · t(s) = 0.
 	var s := best * _ds
 	for _iteration in 6:
-		var u := _lookup(s)
-		var i: int = u[0]
-		var f: float = u[1]
+		_locate(s)
+		var i := _at
+		var f := _frac
 		var j := (i + 1) % _n
 		var c := _pos[i].lerp(_pos[j], f)
 		var t := _tan[i].lerp(_tan[j], f).normalized()
@@ -130,9 +132,9 @@ func project(pos: Vector3, hint_s := -1.0) -> KartTrackPoint:
 		s = _wrap(s + clampf(step, -3.0 * _ds, 3.0 * _ds))
 		if absf(step) < 0.0005:
 			break
-	var u := _lookup(s)
-	var i0: int = u[0]
-	var f0: float = u[1]
+	_locate(s)
+	var i0 := _at
+	var f0 := _frac
 	var j0 := (i0 + 1) % _n
 	var centre := _pos[i0].lerp(_pos[j0], f0)
 	var tan0 := _tan[i0].lerp(_tan[j0], f0).normalized()
@@ -178,9 +180,8 @@ func racing_line(s: float) -> float:
 
 ## The driving direction at s as a yaw (Node3D.rotation.y: 0 faces -Z, + turns left).
 func yaw_at(s: float) -> float:
-	var u := _lookup(s)
-	var i: int = u[0]
-	var t := _tan[i].lerp(_tan[(i + 1) % _n], u[1])
+	_locate(s)
+	var t := _tan[_at].lerp(_tan[(_at + 1) % _n], _frac)
 	return atan2(-t.x, -t.z)
 
 
@@ -357,23 +358,23 @@ func _build_zones() -> void:
 
 # --- Table lookups ---
 
-## [index, fraction] of s in the table.
-func _lookup(s: float) -> Array:
+## Locates s in the table: sets _at (the row) and _frac (0..1 to the next row). Scratch fields
+## rather than a returned pair, so queries in the fixed step allocate nothing.
+func _locate(s: float) -> void:
 	var u := _wrap(s) / _ds
-	var i := mini(floori(u), _n - 1)
-	return [i, u - i]
+	_at = mini(floori(u), _n - 1)
+	_frac = u - _at
 
 
 func _lerp_table(table: PackedFloat32Array, s: float) -> float:
-	var u := _lookup(s)
-	var i: int = u[0]
-	return lerpf(table[i], table[(i + 1) % _n], u[1])
+	_locate(s)
+	return lerpf(table[_at], table[(_at + 1) % _n], _frac)
 
 
 func _point(s: float, d: float) -> KartTrackPoint:
-	var u := _lookup(s)
-	var i: int = u[0]
-	var f: float = u[1]
+	_locate(s)
+	var i := _at
+	var f := _frac
 	var j := (i + 1) % _n
 	var p := KartTrackPoint.new()
 	p.s = s

@@ -80,6 +80,7 @@ var _flow_left := 0.0
 var _est_lap := 60.0
 var _built_track := ""
 var _rider_input := KartInput.new()
+var _input_list := []  ## reused every tick
 var _item_key := false
 var _item_edge := false
 var _countdown_shown := -1
@@ -465,7 +466,7 @@ func _tick(dt: float) -> void:
 
 
 func _inputs(dt: float) -> Array:
-	var inputs := []
+	var inputs := _input_list
 	inputs.resize(race.karts.size())
 	inputs[RIDER] = _read_rider()
 	for id in range(1, race.karts.size()):
