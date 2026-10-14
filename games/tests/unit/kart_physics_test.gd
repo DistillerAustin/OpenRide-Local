@@ -130,6 +130,7 @@ func test_a_light_lean_moves_the_kart_across_and_holds_the_line_when_released() 
 func test_off_road_caps_the_speed() -> void:
 	var track := KartTrackModel.new(Fixtures.oval(600.0))
 	var physics := KartPhysics.new()
+	physics.assist = 0.0  # the assist's edge guard would steer the off-road kart back on
 	var on_road := _kart(track, track.length - 250.0)
 	var off_road := _kart(track, track.length - 250.0, track.half_width(0.0) + 2.0)
 	for i in roundi(15.0 / DT):

@@ -9,3 +9,6 @@ var lean := 0.0  ## -1 left .. +1 right
 var resistance := 0.0  ## 0-100
 var standing := false
 var use_item := false  ## an edge: true for the one tick the item is used
+## False while the head tracker has lost the face (tracker_state 4): the lean is easing to 0 and
+## isn't the rider's. No drift starts, and the steering assist holds the road at full strength.
+var tracking := true

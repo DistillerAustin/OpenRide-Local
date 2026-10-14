@@ -30,6 +30,22 @@ var finish_time := 0.0  ## race seconds at the finish (projected for karts place
 var place := 0  ## 1-based race position
 var draft := 0.0  ## 0..1 this tick
 
+# Handling (Phase 2, KartPhysics). The views may read these; only the physics writes them.
+var slide := 0.0  ## the drift's visual body yaw, radians, + = nose left (a right drift slides nose right: < 0)
+var lean_smooth := 0.0  ## the lean after the steering response lag
+var drift_time := 0.0  ## seconds into the current drift (the hop is its start)
+var boost_kind := ""  ## the latest boost's kind ("drift"|"pad"|"item"|"start"), for the views
+var boost_tier := 0  ## the latest drift boost's tier (0 for other kinds)
+var climbing := false  ## on a climb zone this tick
+var standing_bonus := false  ## standing on a climb: the drag cut applies
+var on_pad := false  ## on a boost pad this tick (a pad fires once per visit)
+var rocket_hold := 0.0  ## seconds of cadence >= ROCKET_CADENCE in the countdown's "2" window
+var drift_hold := 0.0  ## seconds the lean has been held hard toward drift_hold_dir
+var drift_hold_dir := 0
+var drift_release := 0.0  ## seconds the lean has been eased off during a drift
+var drift_res0 := 0.0  ## the resistance when the drift began (the knob's rise)
+var drift_cool := 0.0  ## seconds before another drift may start
+
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0.0, -cos(heading))

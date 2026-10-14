@@ -16,8 +16,20 @@ extends RefCounted
 ## - **Surfaces**: kerbs are as fast as the road; off-road caps the speed at 55% (a boost halves
 ##   the penalty) and adds rolling drag; the wall bounces the kart back in and costs speed.
 ##
-## Drift, mini-turbo, the knob, boost pads, rocket starts, drafting and climbs (standing) are
-## Phase 2 (DESIGN.md "Handling"): their KartState fields exist, `_update_drift` is the hook.
+## - **Drift** (`_update_drift`): a hard lean (|lean| >= DRIFT_LEAN) held for DRIFT_HOLD at 40% of
+##   `top_speed` hops the kart into a slide. Leaning further in tightens the arc, easing toward
+##   the centre widens it (the assist bends the arc toward the road's). The charge earns spark
+##   tiers at TIER_SEC (× KNOB_RATE while the resistance knob is up), and easing below
+##   RELEASE_LEAN for RELEASE_HOLD releases a mini-turbo (TURBO_SEC by tier). Timers use the raw
+##   lean, so tracker jitter (a sign flip resets the hold) and a lean easing to 0 after face loss
+##   (`KartInput.tracking` false) never start one.
+## - **Boosts** (mini-turbo, pad, rocket start, the turbo item through `apply_boost`) multiply the
+##   target speed, push at once, accelerate hard and don't bleed speed until they run out.
+## - **Pads** and **climbs** come from the track's zones; standing on a climb cuts the drag 20%.
+## - **The rocket start** (`countdown_step`, `launch`): cadence >= 70 for ROCKET_HOLD in the
+##   countdown's "2" window.
+## - **Drafting** (`update_drafts`, once a tick for the whole field) cuts CdA by 30% within
+##   1.5-8 m behind another kart and under 1.6 m off its line.
 ## Logic only: no nodes. Deterministic: the same inputs give the same states.
 
 const SPEED_SCALE := 2.4
@@ -53,6 +65,61 @@ const SPIN_SEC := 1.0
 const SPIN_SPEED := 0.4  ## a spin-out cuts the speed to this share
 const KART_RADIUS := 0.95  ## for kart-kart contacts
 
+## Boosts accelerate this hard toward their target, and bleed at most this much above it.
+const BOOST_ACCEL := 24.0
+const BOOST_HOLD_DECEL := 1.0
+const PAD_SEC := 1.0
+const PAD_PUSH := 4.0
+const PAD_GRACE := 0.6  ## metres beyond a pad's half-width that still count (the kart's half-width)
+const STAND_DRAG_CUT := 0.2  ## standing on a climb
+
+# The rocket start: cadence at least ROCKET_CADENCE for ROCKET_HOLD while "2" shows.
+const ROCKET_CADENCE := 70.0
+const ROCKET_WINDOW := Vector2(1.0, 2.0)  ## countdown seconds left: (after, up to and including]
+const ROCKET_HOLD := 0.3
+const ROCKET_SEC := 1.3
+const ROCKET_PUSH := 6.0
+const ROCKET_BIKE_SPEED := 4.5  ## the bike's speed at a rocket launch (m/s)
+
+# Drafting.
+const DRAFT_MIN := 1.5
+const DRAFT_MAX := 8.0
+const DRAFT_FADE := 6.0  ## full strength up to here, fading to 0 at DRAFT_MAX
+const DRAFT_LATERAL := 1.6
+
+# The drift.
+const DRIFT_LEAN := 0.65  ## |lean| to start one ...
+const DRIFT_HOLD := 0.12  ## ... held this long (seconds) ...
+const DRIFT_MIN_SHARE := 0.4  ## ... at this share of top_speed
+const DRIFT_END_SHARE := 0.3  ## the drift ends (releasing its boost) below this share
+const RELEASE_LEAN := 0.3  ## the lean toward the drift below which it releases ...
+const RELEASE_HOLD := 0.15  ## ... after this long
+const DRIFT_COOLDOWN := 0.2  ## before another drift may start
+const DRIFT_WIDE_LEAN := 0.35  ## the in-lean that drifts widest (between it and RELEASE_LEAN: widest)
+const DRIFT_K_WIDE := 1.0 / 60.0  ## the drift arc's curvature (1/m) at its widest ...
+const DRIFT_K_TIGHT := 1.0 / 13.0  ## ... and tightest
+const DRIFT_ASSIST := 0.85  ## the share of the road's curvature the assist bends the arc toward
+const DRIFT_MAX_YAW := 2.3  ## rad/s
+const DRIFT_SPEED := 0.97  ## the target speed share while drifting
+const TIER_SEC := [0.9, 2.0, 3.4]  ## charge for spark tiers 1-3
+const TURBO_SEC := [0.5, 0.9, 1.4]  ## the mini-turbo by tier
+const TURBO_PUSH := [2.5, 3.5, 5.0]
+const KNOB_RATE := 1.6  ## charge rate with the knob up
+const KNOB_RISE := 5.0  ## a resistance rise since the drift began that counts as the knob
+const HOP_SEC := 0.28  ## the hop at the drift's start
+const HOP_HEIGHT := 0.32
+const SLIDE_WIDE := 0.3  ## the body's slide angle (radians) at the widest arc ...
+const SLIDE_TIGHT := 0.62  ## ... and the tightest
+const SLIDE_RATE := 9.0  ## 1/s, toward the slide angle
+## Bots: a corner at least this tight (1/m) over the next stretch is worth a drift.
+const DRIFT_WORTH_K := 1.0 / 70.0
+
+# Kart-kart contacts.
+const CONTACT_BOUNCE := 0.3  ## restitution along the contact normal
+const CONTACT_TURN := 0.6  ## the share of the velocity's new direction the heading takes
+const CONTACT_MAX_TURN := 0.15  ## radians per contact
+const CONTACT_BUMP_SPEED := 15.0  ## m/s of closing speed for a full-strength bump
+
 # Steering.
 const DEAD_ZONE := 0.06
 const STEER_CURVE := 1.4  ## lean past the dead zone, to this power
@@ -62,6 +129,14 @@ const MIN_TURN_RADIUS := 9.0  ## so slow karts can't spin on the spot
 const ALIGN_GAIN := 2.0
 ## Below this speed the assist's pull fades out (no turning on the spot).
 const ALIGN_FULL_SPEED := 5.0
+## The lean's response lag, 1/s: a little weight, and tracker jitter is filtered.
+const STEER_RESPONSE := 12.0
+## The assist's edge guard: from EDGE_MARGIN inside the road's edge, over EDGE_BAND metres, it
+## turns the kart back parallel and EDGE_ANGLE inward (EDGE_GAIN, 1/s).
+const EDGE_MARGIN := 1.0
+const EDGE_BAND := 1.5
+const EDGE_ANGLE := 0.12
+const EDGE_GAIN := 3.5
 
 # Walls.
 const WALL_SPEED_LOSS := 0.6  ## × the sine of the impact angle
@@ -70,8 +145,11 @@ const WALL_BUMP_SPEED := 15.0  ## m/s across the wall for a full-strength bump
 
 ## 0 off, 0.5 low, 1 high: the share of the assist (curvature feed-forward and alignment).
 var assist := 1.0
-## Drift charges faster while resistance is at least this (Phase 2).
+## Drift charges faster while resistance is at least this.
 var drift_resistance := 40.0
+## The kart speed (m/s) the drift thresholds are shares of: about a kart's cruise at the rider's
+## race power (KartRace sets it from the FTP; 20 is 150 W on the flat).
+var top_speed := 20.0
 ## When set (KartRaceLogic does), the physics emits wall bumps (and, in Phase 2, drift and boost
 ## events) into it.
 var events: KartRaceEvents = null
@@ -132,11 +210,31 @@ func lean_for_yaw_rate(k: KartState, track: KartTrackModel, yaw_rate: float) -> 
 ## The assist's share of the yaw rate (rad/s, + = left): the road's curvature and a pull back
 ## parallel to it.
 func assist_yaw_rate(k: KartState, track: KartTrackModel) -> float:
-	if assist <= 0.0:
+	return _assist_yaw(k, track, assist)
+
+
+## The assist at strength `a`: the road's curvature, the pull parallel and the edge guard.
+func _assist_yaw(k: KartState, track: KartTrackModel, a: float) -> float:
+	if a <= 0.0:
 		return 0.0
 	var psi := angle_difference(track.yaw_at(k.s), k.heading)
 	var pull := ALIGN_GAIN * minf(1.0, k.speed / ALIGN_FULL_SPEED)
-	return assist * (track.curvature(k.s) * k.speed - pull * psi)
+	return a * (track.curvature(k.s) * k.speed - pull * psi + _edge_guard(k, track, psi))
+
+
+## Near the edge: turn back parallel to the road and a little inward (rad/s, + = left).
+func _edge_guard(k: KartState, track: KartTrackModel, psi: float) -> float:
+	var over := absf(k.d) - (track.half_width(k.s) - EDGE_MARGIN)
+	if over <= 0.0:
+		return 0.0
+	var band := minf(2.0, over / EDGE_BAND)
+	var want := signf(k.d) * EDGE_ANGLE * minf(1.0, band)
+	return EDGE_GAIN * band * (want - psi) * minf(1.0, k.speed / ALIGN_FULL_SPEED)
+
+
+## The assist's strength this tick: the rider's, or full while the tracker has lost the face.
+func _assist_now(inp: KartInput) -> float:
+	return assist if inp.tracking else maxf(assist, 1.0)
 
 
 func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> void:
@@ -144,32 +242,47 @@ func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> voi
 	k.spin_time = maxf(0.0, k.spin_time - dt)
 	k.boost_time = maxf(0.0, k.boost_time - dt)
 	k.shield_time = maxf(0.0, k.shield_time - dt)
+	k.drift_cool = maxf(0.0, k.drift_cool - dt)
 	var offroad := k.surface == KartTrackModel.Surface.OFFROAD
+	_zones(k, inp, track)
 
-	# The virtual bike: pedal force against rolling, climbing and air.
+	# The virtual bike: pedal force against rolling, climbing and air (standing cuts it on climbs).
 	var grade := track.grade(k.s) * GRADE_EFFECT
 	var resist := bike_resistance(k.v_bike, grade, k.draft, OFFROAD_CRR if offroad else 1.0)
+	if k.standing_bonus:
+		resist *= 1.0 - STAND_DRAG_CUT
 	var brake := COAST_BRAKE_N * clampf(1.0 - inp.power_w / COAST_BRAKE_FADE_W, 0.0, 1.0)
 	var force := inp.power_w / maxf(k.v_bike, MIN_FORCE_SPEED) - resist - brake
 	k.v_bike = maxf(0.0, k.v_bike + force / INERTIA_KG * dt)
 
-	# The kart's speed eases toward the bike's, scaled by surface and boost.
+	# The kart's speed eases toward the bike's, scaled by surface, boost and drift.
+	var boosting := k.boost_time > 0.0
 	var target := k.v_bike * SPEED_SCALE
 	if offroad:
-		target *= OFFROAD_CAP if k.boost_time <= 0.0 else 1.0 - (1.0 - OFFROAD_CAP) * 0.5
-	if k.boost_time > 0.0:
+		target *= OFFROAD_CAP if not boosting else 1.0 - (1.0 - OFFROAD_CAP) * 0.5
+	if boosting:
 		target *= BOOST_MULT
+	if k.drift_dir != 0:
+		target *= DRIFT_SPEED
 	if spinning:
 		target = minf(target, k.speed)
-	k.speed = move_toward(k.speed, target, (KART_ACCEL if target > k.speed else KART_DECEL) * dt)
+	var rate := KART_ACCEL if target > k.speed else KART_DECEL
+	if boosting:
+		rate = BOOST_ACCEL if target > k.speed else BOOST_HOLD_DECEL
+	k.speed = move_toward(k.speed, target, rate * dt)
 
-	# Steering: lean plus the assist; none while spinning out.
+	# Steering: the lean (after its response lag) plus the assist, or the drift; none while
+	# spinning out.
+	k.lean_smooth = lerpf(k.lean_smooth, inp.lean, 1.0 - exp(-STEER_RESPONSE * dt))
 	var yaw_rate := 0.0
-	if not spinning:
-		yaw_rate = -shape_lean(inp.lean) * max_yaw_rate(k.speed) + assist_yaw_rate(k, track)
+	if spinning:
+		k.drift_hold = 0.0
+	else:
+		yaw_rate = -shape_lean(k.lean_smooth) * max_yaw_rate(k.speed) + _assist_yaw(k, track, _assist_now(inp))
 		yaw_rate += _update_drift(k, inp, track, dt)
 	k.steer = clampf(-yaw_rate / STEER_RATE, -1.0, 1.0)
 	k.heading = wrapf(k.heading + yaw_rate * dt, -PI, PI)
+	_pose_drift(k, dt)
 
 	# Move, then find where on the track that is.
 	var p := track.project(k.pos + k.forward() * k.speed * dt, k.s)
@@ -183,10 +296,32 @@ func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> voi
 	k.normal = p.normal
 
 
-## Starts (or extends) a boost: BOOST_MULT on the target speed for `seconds`, and a push.
-func apply_boost(k: KartState, seconds: float) -> void:
+## The countdown (inputs don't move the karts yet): counts the rocket start's cadence while "2"
+## shows. `countdown` is the seconds left before this tick.
+func countdown_step(k: KartState, inp: KartInput, countdown: float, dt: float) -> void:
+	if countdown > ROCKET_WINDOW.x and countdown <= ROCKET_WINDOW.y and inp.cadence >= ROCKET_CADENCE:
+		k.rocket_hold += dt
+
+
+## GO: a kart that earned the rocket start launches with a boost.
+func launch(k: KartState) -> void:
+	if k.rocket_hold >= ROCKET_HOLD - 0.0001:
+		k.v_bike = maxf(k.v_bike, ROCKET_BIKE_SPEED)
+		k.speed = maxf(k.speed, k.v_bike * SPEED_SCALE * 0.5)
+		apply_boost(k, ROCKET_SEC, ROCKET_PUSH, "start")
+		k.boost_tier = 1
+		if events:
+			events.boost_started.emit(k.id, "start", 1)
+	k.rocket_hold = 0.0
+
+
+## Starts (or extends) a boost: BOOST_MULT on the target speed for `seconds`, and a push. It
+## emits nothing: the caller emits `boost_started` with its kind (the turbo item: the items).
+func apply_boost(k: KartState, seconds: float, push := BOOST_PUSH, kind := "item") -> void:
 	k.boost_time = maxf(k.boost_time, seconds)
-	k.speed += BOOST_PUSH
+	k.speed += push
+	k.boost_kind = kind
+	k.boost_tier = 0
 
 
 ## Spins the kart out (SPIN_SEC without control, the speed cut to SPIN_SPEED). A shield absorbs
@@ -195,13 +330,17 @@ func apply_spinout(k: KartState) -> bool:
 	if k.shield_time > 0.0:
 		k.shield_time = 0.0
 		return false
+	_end_drift(k, false)
+	k.boost_time = 0.0
 	k.spin_time = SPIN_SEC
 	k.speed *= SPIN_SPEED
 	return true
 
 
 ## Pushes overlapping karts apart (circles of KART_RADIUS, in the horizontal plane), the lighter
-## one further. Returns [[a_id, b_id, strength 0..1], ...] for the pairs that touched.
+## one further, and trades their velocities along the contact (a rear-ender slows the chaser and
+## shoves the leader; a side swipe nudges both headings apart). Returns [[a_id, b_id, strength
+## 0..1], ...] for the pairs that touched.
 static func resolve_contacts(karts: Array) -> Array:
 	var hits := []
 	var reach := 2.0 * KART_RADIUS
@@ -221,15 +360,210 @@ static func resolve_contacts(karts: Array) -> Array:
 			var total := a.weight + b.weight
 			a.pos -= n * overlap * (b.weight / total)
 			b.pos += n * overlap * (a.weight / total)
-			hits.append([a.id, b.id, clampf(overlap / reach, 0.0, 1.0)])
+			var closing := _trade(a, b, n)
+			hits.append([a.id, b.id, clampf(maxf(overlap / reach, closing / CONTACT_BUMP_SPEED), 0.0, 1.0)])
 	return hits
 
 
-## Phase 2 (handling): drift entry, charge, tiers, release into a mini-turbo, the knob. Returns
-## the drift's extra yaw rate (rad/s, + = left). Emit drift_started / drift_tier / boost_started
-## through `events`.
-func _update_drift(_k: KartState, _inp: KartInput, _track: KartTrackModel, _dt: float) -> float:
-	return 0.0
+## A contact's impulse along n (a → b): returns the closing speed it removed (m/s, >= 0).
+static func _trade(a: KartState, b: KartState, n: Vector3) -> float:
+	var fa := a.forward()
+	var fb := b.forward()
+	var va := fa * a.speed
+	var vb := fb * b.speed
+	var closing := (vb - va).dot(n)
+	if closing >= 0.0:
+		return 0.0
+	var j := -(1.0 + CONTACT_BOUNCE) * closing / (1.0 / a.weight + 1.0 / b.weight)
+	va -= n * (j / a.weight)
+	vb += n * (j / b.weight)
+	for pair in [[a, va, fa], [b, vb, fb]]:
+		var k: KartState = pair[0]
+		var v: Vector3 = pair[1]
+		var f: Vector3 = pair[2]
+		k.speed = maxf(0.0, v.dot(f))
+		if v.length_squared() > 1.0:
+			var turn := angle_difference(k.heading, atan2(-v.x, -v.z)) * CONTACT_TURN
+			k.heading = wrapf(k.heading + clampf(turn, -CONTACT_MAX_TURN, CONTACT_MAX_TURN), -PI, PI)
+	return -closing
+
+
+## Every kart's draft this tick (0..1): within DRAFT_MIN..DRAFT_MAX metres behind another kart
+## going the same way, under DRAFT_LATERAL metres off its line; fading over the last stretch.
+static func update_drafts(karts: Array) -> void:
+	for a: KartState in karts:
+		var best := 0.0
+		var f := a.forward()
+		for b: KartState in karts:
+			if b == a or b.speed < 3.0:
+				continue
+			var rx := b.pos.x - a.pos.x
+			var rz := b.pos.z - a.pos.z
+			var along := rx * f.x + rz * f.z
+			if along < DRAFT_MIN or along > DRAFT_MAX:
+				continue
+			if absf(rx * -f.z + rz * f.x) >= DRAFT_LATERAL or absf(b.pos.y - a.pos.y) > 2.0:
+				continue
+			if b.forward().dot(f) < 0.7:
+				continue
+			best = maxf(best, 1.0 - smoothstep(DRAFT_FADE, DRAFT_MAX, along))
+		a.draft = best
+
+
+## Bots: the drift direction (+1 right, -1 left) a corner just ahead is worth, or 0.
+func wants_drift(k: KartState, track: KartTrackModel) -> int:
+	if k.drift_dir != 0:
+		return k.drift_dir
+	if k.speed < DRIFT_MIN_SHARE * top_speed * 1.1:
+		return 0
+	var sign := 0.0
+	for ahead in [6.0, 14.0, 22.0]:
+		var c := track.curvature(track.wrap(k.s + ahead))
+		if absf(c) < DRIFT_WORTH_K or (sign != 0.0 and signf(c) != sign):
+			return 0
+		sign = signf(c)
+	return -int(sign)
+
+
+## The drift arc's curvature (1/m, toward the drift, > 0) that `lean` gives kart k (its drift
+## direction, or the lean's when it isn't drifting), with the assist's bend toward the road.
+func drift_curvature(k: KartState, track: KartTrackModel, lean: float) -> float:
+	var dir := k.drift_dir if k.drift_dir != 0 else int(signf(lean))
+	return _drift_curv(k, track, dir, lean, assist)
+
+
+## Bots: the lean that drifts k (already drifting) on an arc of `curvature` (1/m, toward the
+## drift). Never eased far enough to release it.
+func lean_for_drift(k: KartState, track: KartTrackModel, curvature: float) -> float:
+	var dir := k.drift_dir if k.drift_dir != 0 else 1
+	var base := curvature - assist * DRIFT_ASSIST * (track.curvature(k.s) * -dir - _k_mid())
+	var t := clampf((base - DRIFT_K_WIDE) / (DRIFT_K_TIGHT - DRIFT_K_WIDE), 0.0, 1.0)
+	return dir * lerpf(DRIFT_WIDE_LEAN, 1.0, t)
+
+
+static func _k_mid() -> float:
+	return (DRIFT_K_WIDE + DRIFT_K_TIGHT) * 0.5
+
+
+func _drift_curv(k: KartState, track: KartTrackModel, dir: int, lean: float, a: float) -> float:
+	var t := clampf((lean * dir - DRIFT_WIDE_LEAN) / (1.0 - DRIFT_WIDE_LEAN), 0.0, 1.0)
+	var c := lerpf(DRIFT_K_WIDE, DRIFT_K_TIGHT, t)
+	c += a * DRIFT_ASSIST * (track.curvature(k.s) * -dir - _k_mid())
+	return clampf(c, DRIFT_K_WIDE * 0.5, DRIFT_K_TIGHT * 1.2)
+
+
+## The drift: entry, charge, tiers, release into a mini-turbo, the knob. Returns the yaw rate
+## (rad/s, + = left) to add to the lean-and-assist steering: while drifting, the difference to
+## the drift's own arc (blended in over the hop). Emits drift_started / drift_tier /
+## boost_started through `events`.
+func _update_drift(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> float:
+	if k.drift_dir == 0:
+		# Entry: a hard lean, the same way, held; any sign flip or ease restarts the clock.
+		var dir := int(signf(inp.lean))
+		if absf(inp.lean) >= DRIFT_LEAN and dir == k.drift_hold_dir:
+			k.drift_hold += dt
+		else:
+			k.drift_hold = dt if absf(inp.lean) >= DRIFT_LEAN else 0.0
+			k.drift_hold_dir = dir
+		if not inp.tracking:
+			k.drift_hold = 0.0
+		if k.drift_hold >= DRIFT_HOLD - 0.0001 and k.drift_cool <= 0.0 \
+				and k.speed >= DRIFT_MIN_SHARE * top_speed and k.surface != KartTrackModel.Surface.OFFROAD:
+			_start_drift(k, dir, inp)
+		else:
+			return 0.0
+	else:
+		k.drift_time += dt
+		# The knob: resistance up at the drift's level, or risen since it began.
+		k.knob_boosting = inp.resistance >= drift_resistance or inp.resistance - k.drift_res0 >= KNOB_RISE - 0.0001
+		if k.surface != KartTrackModel.Surface.OFFROAD:
+			k.drift_charge += dt * (KNOB_RATE if k.knob_boosting else 1.0)
+		while k.drift_tier < TIER_SEC.size() and k.drift_charge >= float(TIER_SEC[k.drift_tier]) - 0.0001:
+			k.drift_tier += 1
+			if events:
+				events.drift_tier.emit(k.id, k.drift_tier)
+		# Release: eased off toward the centre (or the other way) long enough; or too slow to slide.
+		if inp.lean * k.drift_dir < RELEASE_LEAN:
+			k.drift_release += dt
+		else:
+			k.drift_release = 0.0
+		if k.drift_release >= RELEASE_HOLD - 0.0001 or k.speed < DRIFT_END_SHARE * top_speed:
+			_end_drift(k, true)
+			return 0.0
+	# The drift's arc, blended in over the hop.
+	var a := _assist_now(inp)
+	var c := _drift_curv(k, track, k.drift_dir, k.lean_smooth, a)
+	var psi := angle_difference(track.yaw_at(k.s), k.heading)
+	var drift_yaw := clampf(-k.drift_dir * c * k.speed + a * _edge_guard(k, track, psi), -DRIFT_MAX_YAW, DRIFT_MAX_YAW)
+	var normal := -shape_lean(k.lean_smooth) * max_yaw_rate(k.speed) + _assist_yaw(k, track, a)
+	return (drift_yaw - normal) * smoothstep(0.0, HOP_SEC, k.drift_time)
+
+
+func _start_drift(k: KartState, dir: int, inp: KartInput) -> void:
+	k.drift_dir = dir
+	k.drift_time = 0.0
+	k.drift_charge = 0.0
+	k.drift_tier = 0
+	k.drift_release = 0.0
+	k.drift_res0 = inp.resistance
+	k.knob_boosting = false
+	k.drift_hold = 0.0
+	if events:
+		events.drift_started.emit(k.id, dir)
+
+
+## Ends the drift; with `boost`, a mini-turbo by its tier.
+func _end_drift(k: KartState, boost: bool) -> void:
+	if k.drift_dir == 0:
+		return
+	var tier := k.drift_tier
+	k.drift_dir = 0
+	k.drift_charge = 0.0
+	k.drift_tier = 0
+	k.drift_release = 0.0
+	k.knob_boosting = false
+	k.drift_hold = 0.0
+	k.drift_cool = DRIFT_COOLDOWN
+	if boost and tier > 0:
+		apply_boost(k, TURBO_SEC[tier - 1], TURBO_PUSH[tier - 1], "drift")
+		k.boost_tier = tier
+		if events:
+			events.boost_started.emit(k.id, "drift", tier)
+
+
+## The drift's look for the views: the hop at its start and the body's slide angle.
+func _pose_drift(k: KartState, dt: float) -> void:
+	var goal := 0.0
+	if k.drift_dir != 0:
+		k.hop = HOP_HEIGHT * sin(PI * k.drift_time / HOP_SEC) if k.drift_time < HOP_SEC else 0.0
+		var t := clampf((k.lean_smooth * k.drift_dir - DRIFT_WIDE_LEAN) / (1.0 - DRIFT_WIDE_LEAN), 0.0, 1.0)
+		goal = -k.drift_dir * lerpf(SLIDE_WIDE, SLIDE_TIGHT, t)
+	else:
+		k.hop = 0.0
+	k.slide = lerpf(k.slide, goal, 1.0 - exp(-SLIDE_RATE * dt))
+
+
+## Climb and pad zones under the kart (its s and d before this tick's move).
+func _zones(k: KartState, inp: KartInput, track: KartTrackModel) -> void:
+	var climbing := false
+	var pad := false
+	for z: Dictionary in track.zones:
+		var type: String = z.type
+		if type != "climb" and type != "boost":
+			continue
+		if not KartTrackModel.in_span(k.s, float(z.s0), float(z.s1)):
+			continue
+		if type == "climb":
+			climbing = true
+		elif absf(k.d - float(z.get("d", 0.0))) <= float(z.get("w", 99.0)) * 0.5 + PAD_GRACE:
+			pad = true
+	k.climbing = climbing
+	k.standing_bonus = climbing and inp.standing
+	if pad and not k.on_pad:
+		apply_boost(k, PAD_SEC, PAD_PUSH, "pad")
+		if events:
+			events.boost_started.emit(k.id, "pad", 0)
+	k.on_pad = pad
 
 
 ## The kart went past the barrier: put it back against it, and when it was heading into it,
