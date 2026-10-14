@@ -178,6 +178,54 @@ class SessionPlansTest {
     }
 
     @Test
+    fun `Kart Race is a timed or open Grand Prix with no circuit roles that ends on its own terms`() {
+        val kart = GameCatalog.KART_RACE
+        assertEquals("kart_race", kart.id)
+        assertEquals("Kart Race", kart.title)
+        assertEquals(setOf(JustRideSupport.MINUTES, JustRideSupport.OPEN), kart.supports)
+        assertEquals(300, kart.minSec)
+        assertEquals(3600, kart.maxSec)
+        assertTrue(kart.roles.isEmpty())
+        assertTrue(kart.usesCamera)
+        assertTrue(kart.effortInJustRide)
+        assertEquals(EndMode.GAME, kart.timedEndMode)
+        assertEquals(kart, GameCatalog.DEFAULT["kart_race"])
+        assertThrows(IllegalArgumentException::class.java) {
+            SessionPlans.justRide(kart, JustRideMode.Rounds(3), Difficulty.STANDARD, ftp200)
+        }
+        // Lengths are clamped to 5-60 minutes.
+        assertEquals(300, SessionPlans.justRide(kart, JustRideMode.Timed(2), Difficulty.STANDARD, ftp200).segments.single().durationSec)
+        val open = SessionPlans.justRide(kart, JustRideMode.Open, Difficulty.STANDARD, ftp200).segments.single()
+        assertEquals(EndMode.GAME, open.endMode)
+        assertEquals(-1, open.durationSec)
+    }
+
+    @Test
+    fun `a 20 minute Kart Race carries the bots' FTP shares and the drift knob by difficulty`() {
+        fun segment(d: Difficulty) = SessionPlans.justRide(GameCatalog.KART_RACE, JustRideMode.Timed(20), d, ftp200).segments.single()
+        fun shares(d: Difficulty) =
+            (segment(d).params["bot_pcts"] as kotlinx.serialization.json.JsonArray).map { it.jsonPrimitive.content.toDouble() }
+
+        val standard = segment(Difficulty.STANDARD)
+        assertEquals(1200, standard.durationSec)
+        assertEquals(EndMode.GAME, standard.endMode)
+        assertTrue(standard.effort)
+        assertEquals(200, standard.params.int("ftp_watts"))
+        for ((difficulty, range) in mapOf(
+            Difficulty.EASY to (0.35 to 0.60),
+            Difficulty.STANDARD to (0.45 to 0.75),
+            Difficulty.HARD to (0.55 to 0.90),
+        )) {
+            val pcts = shares(difficulty)
+            assertEquals(7, pcts.size)
+            assertEquals(range.first, pcts.first(), 0.001)
+            assertEquals(range.second, pcts.last(), 0.001)
+            pcts.zipWithNext().forEach { (a, b) -> assertTrue("$difficulty rises: $pcts", b > a) }
+        }
+        assertEquals(listOf(35, 40, 45), Difficulty.entries.map { segment(it).params.int("drift_resistance") })
+    }
+
+    @Test
     fun `effort applies to Just Rides of games that declare it`() {
         assertTrue(SessionPlans.justRide(GameCatalog.DEMO, JustRideMode.Open, Difficulty.EASY, ftp200).segments.single().effort)
         assertFalse(SessionPlans.justRide(roundsGame, JustRideMode.Rounds(3), Difficulty.EASY, ftp200).segments.single().effort)

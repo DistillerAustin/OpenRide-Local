@@ -58,7 +58,11 @@ class GamesViewModelTest {
     @Test
     fun `lists every catalog game except the demo, each with the modes it supports`() = runTest {
         val games = vm().state.first().games
-        assertEquals(listOf("dodge_ball", "tug_of_war", "safe_cracker", "cadence_karaoke"), games.map { it.id })
+        assertEquals(listOf("dodge_ball", "tug_of_war", "safe_cracker", "cadence_karaoke", "kart_race"), games.map { it.id })
+        val kart = games.first { it.id == "kart_race" }
+        assertEquals(listOf(RideKind.TIMED, RideKind.OPEN), kart.kinds)
+        assertEquals(listOf(5, 10, 15, 20, 30, 45, 60), kart.minutesOptions)
+        assertTrue(kart.usesCamera)
         val cadence = games.first { it.id == "cadence_karaoke" }
         assertEquals(listOf(RideKind.TIMED, RideKind.OPEN), cadence.kinds)  // no rounds
         val dodge = games.first { it.id == "dodge_ball" }
