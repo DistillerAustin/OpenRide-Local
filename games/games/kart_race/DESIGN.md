@@ -85,7 +85,12 @@ KartBotDriver.think() × 7 ───────────┴─► inputs[] �
 - Reversed mode drives the same loop backwards: the start line stays put, s runs the other
   way, d, curvature, grade, banking and zone `d` flip sign, and zone spans are mirrored.
 - A def's zone `s0`/`s1` are metres from `points[0]` driving forward; the model re-bases them
-  on the start line. A zone with `s1 < s0` wraps past the line.
+  on the start line. A zone with `s1 < s0` wraps past the line. A zone with `dir` ("forward" or
+  "reversed") holds in that direction only: every track has one climb per direction (a climb
+  driven backwards is a descent).
+- The three newer tracks are laid out with `KartTrackShape`, a turtle of straights and arcs
+  (exact radii), sampled every 4 m into control points. Climbs stay under about 6%: the bike
+  model stalls weak riders on steeper ones.
 
 ## Interfaces (frozen)
 
@@ -98,7 +103,7 @@ class_name KartTrackDef extends Resource
 @export var half_widths: PackedFloat32Array # per control point (interpolated), road half-width
 @export var banking: PackedFloat32Array     # per control point, radians, + = right edge higher
 @export var verge: float = 4.0              # off-road band beyond the road before the wall
-@export var zones: Array[Dictionary]        # {type: "climb"|"boost"|"items"|"start", s0, s1, d?, w?}
+@export var zones: Array[Dictionary]        # {type: "climb"|"boost"|"items"|"start", s0, s1, d?, w?, dir?}
 @export var start_s: float = 0.0
 
 class_name KartTrackPoint extends RefCounted
@@ -129,8 +134,8 @@ func wrap(s: float) -> float
 func delta(from_s: float, to_s: float) -> float    # signed shortest distance along the loop
 
 class_name KartTracks extends RefCounted           # the cup
-const CUP := ["meadow_ring"]                       # GP order; the world agent adds the other three
-const SCRIPTS := {"meadow_ring": "res://games/kart_race/tracks/meadow_ring.gd"}
+const CUP := ["meadow_ring", "canyon_dash", "harbor_lights", "frost_pass"]   # GP order
+const SCRIPTS := {"meadow_ring": "res://games/kart_race/tracks/meadow_ring.gd", ...}
 static func build(track_id: String) -> KartTrackDef   # each track script has `static func build() -> KartTrackDef`
 static func length_of(track_id: String) -> float      # cached
 static func average_length() -> float

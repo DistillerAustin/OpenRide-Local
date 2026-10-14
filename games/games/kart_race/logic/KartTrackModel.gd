@@ -342,6 +342,10 @@ func _smooth(values: PackedFloat32Array, half: int, passes: int) -> PackedFloat3
 func _build_zones() -> void:
 	zones = []
 	for z in def.zones:
+		# A zone may hold for one direction only ("dir": "forward" | "reversed"): a climb driven
+		# the other way is a descent.
+		if z.has("dir") and str(z.dir) != ("reversed" if reversed else "forward"):
+			continue
 		var copy := z.duplicate()
 		var s0 := float(z.get("s0", 0.0))
 		var s1 := float(z.get("s1", s0))
