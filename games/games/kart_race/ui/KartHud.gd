@@ -32,6 +32,9 @@ const MAP_POS := Vector2(M, H - M - KartMinimap.SIZE.y)
 const ITEM_POS := Vector2(W - M - KartItemButton.SIZE, M)
 const DRIFT_POS := Vector2(W - M - KartDriftMeter.SIZE.x, 548)
 const BADGE_RECT := Rect2(W - M - 400, 636, 400, 260)
+const PORTRAIT_PX := 160
+const ATLAS_COLS := 4
+const ATLAS_ROWS := 2
 ## Kept free at the right of the framework HUD's top bar for the item button.
 const RESERVE_RIGHT := KartItemButton.SIZE
 
@@ -79,6 +82,9 @@ var _portrait_shader: Shader
 var _overlay: Control
 var _line_rng := RandomNumberGenerator.new()
 var _time := 0.0
+var _pics: Array[WeakRef] = []  ## every portrait made, to re-dress once the atlas is baked
+var _atlas_mats: Array[ShaderMaterial] = []
+var _atlas_ids := {}
 
 
 func _init() -> void:
@@ -179,6 +185,7 @@ func update(race: KartRaceLogic, delta := 0.0, fx: KartFx = null) -> void:
 		_overlay.queue_redraw()
 	if _ring_t < 1.0:
 		_ring_t = minf(1.0, _ring_t + delta * 1.6)
+		_count_ring.visible = _ring_t < 1.0
 		_count_ring.queue_redraw()
 
 
@@ -260,6 +267,7 @@ func countdown(n: int) -> void:
 	KartTheme.gradient(_count, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
 	_pop(_count, 0.9)
 	_ring_t = 0.0
+	_count_ring.visible = true
 
 
 func go() -> void:
@@ -267,6 +275,7 @@ func go() -> void:
 	KartTheme.gradient(_count, KartTheme.GREEN_TOP, KartTheme.GREEN_BOTTOM)
 	_pop(_count, 0.9)
 	_ring_t = 0.0
+	_count_ring.visible = true
 
 
 ## A ribbon that sweeps in from the right, holds, and sweeps out left: "LAP 2/3", "FINAL LAP!".
@@ -425,6 +434,7 @@ func _build_countdown() -> void:
 	_count_ring.name = "CountRing"
 	_count_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_count_ring.size = _root.size
+	_count_ring.visible = false
 	_count_ring.draw.connect(func():
 		if _ring_t >= 1.0:
 			return
@@ -490,33 +500,50 @@ static func _ribbon(final: bool) -> StyleBoxFlat:
 
 # --- Portraits ---
 
-## A round portrait of a racer at `size` px (gold ring for the rider).
+## A round portrait of a racer at `size` px (gold ring for the rider). Once the heads are baked
+## into one atlas, every portrait shares its texture and one material (two for the rider's gold
+## ring), so a column of them draws as one batch.
 func portrait_rect(racer_id: String, size: float, you := false) -> TextureRect:
 	var pic := TextureRect.new()
 	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pic.texture = portraits.get(racer_id)
 	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	pic.stretch_mode = TextureRect.STRETCH_SCALE
 	pic.size = Vector2(size, size)
 	pic.custom_minimum_size = Vector2(size, size)
+	pic.z_index = 1  # after the labels, so the portraits batch together
+	pic.set_meta("racer_id", racer_id)
+	pic.set_meta("you", you)
+	_dress_portrait(pic)
+	_pics.append(weakref(pic))
+	return pic
+
+
+func _dress_portrait(pic: TextureRect) -> void:
+	var racer_id: String = pic.get_meta("racer_id")
+	var you: bool = pic.get_meta("you")
+	pic.texture = portraits.get(racer_id)
+	if _atlas_mats.size() == 2 and _atlas_ids.has(racer_id):
+		pic.material = _atlas_mats[1 if you else 0]
+		return
 	var mat := ShaderMaterial.new()
 	mat.shader = _portrait_shader
 	var racer := KartRoster.racer(racer_id)
 	mat.set_shader_parameter("backdrop", racer.get("color", Color(0.5, 0.4, 0.9)))
 	mat.set_shader_parameter("ring", Color(1.0, 0.82, 0.2) if you else Color(1, 1, 1))
 	pic.material = mat
-	return pic
 
 
-## Renders each racer's head once into a small SubViewport (own world, transparent).
+## Renders each racer's head once into a small SubViewport (own world, transparent), then bakes
+## them into one atlas texture and frees the viewports.
 func _make_portraits() -> void:
+	var made := []
 	for racer in lineup:
 		var id := str(racer.id)
 		if portraits.has(id):
 			continue
 		var vp := SubViewport.new()
 		vp.name = "Portrait_%s" % id
-		vp.size = Vector2i(160, 160)
+		vp.size = Vector2i(PORTRAIT_PX, PORTRAIT_PX)
 		vp.own_world_3d = true
 		vp.transparent_bg = true
 		vp.msaa_3d = Viewport.MSAA_4X
@@ -535,3 +562,51 @@ func _make_portraits() -> void:
 		vp.add_child(cam)
 		cam.current = true
 		portraits[id] = vp.get_texture()
+		made.append(vp)
+	if not made.is_empty() and DisplayServer.get_name() != "headless":
+		_bake_atlas.call_deferred(made)
+
+
+func _bake_atlas(viewports: Array) -> void:
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var ids := []
+	for r in lineup:
+		ids.append(str(r.id))
+	if ids.size() > ATLAS_COLS * ATLAS_ROWS:
+		return
+	var atlas := Image.create(ATLAS_COLS * PORTRAIT_PX, ATLAS_ROWS * PORTRAIT_PX, false, Image.FORMAT_RGBA8)
+	for i in ids.size():
+		var tex: Texture2D = portraits.get(ids[i])
+		var img := tex.get_image() if tex else null
+		if img == null or img.is_empty():
+			return  # keep the viewports' own textures
+		img.convert(Image.FORMAT_RGBA8)
+		atlas.blit_rect(img, Rect2i(0, 0, PORTRAIT_PX, PORTRAIT_PX), Vector2i((i % ATLAS_COLS) * PORTRAIT_PX, (i / ATLAS_COLS) * PORTRAIT_PX))
+	atlas.generate_mipmaps()
+	var atlas_tex := ImageTexture.create_from_image(atlas)
+	var backdrops := PackedColorArray()
+	backdrops.resize(ATLAS_COLS * ATLAS_ROWS)
+	_atlas_ids.clear()
+	for i in ids.size():
+		var at := AtlasTexture.new()
+		at.atlas = atlas_tex
+		at.region = Rect2((i % ATLAS_COLS) * PORTRAIT_PX, (i / ATLAS_COLS) * PORTRAIT_PX, PORTRAIT_PX, PORTRAIT_PX)
+		portraits[ids[i]] = at
+		_atlas_ids[ids[i]] = i
+		backdrops[i] = KartRoster.racer(ids[i]).get("color", Color(0.5, 0.4, 0.9))
+	_atlas_mats.clear()
+	for ring in [Color(1, 1, 1), Color(1.0, 0.82, 0.2)]:
+		var mat := ShaderMaterial.new()
+		mat.shader = load(KartTheme.SHADERS + "portrait_atlas.gdshader")
+		mat.set_shader_parameter("backdrops", backdrops)
+		mat.set_shader_parameter("ring", ring)
+		_atlas_mats.append(mat)
+	for ref: WeakRef in _pics:
+		var pic: TextureRect = ref.get_ref()
+		if pic:
+			_dress_portrait(pic)
+	_pics.assign(_pics.filter(func(r: WeakRef): return r.get_ref() != null))
+	for vp in viewports:
+		if is_instance_valid(vp):
+			vp.queue_free()

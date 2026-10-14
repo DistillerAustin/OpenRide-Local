@@ -16,6 +16,7 @@ var _dots := PackedVector2Array()
 var _colors := PackedColorArray()
 var _dot_layer: Control
 var _rider := 0
+var _dot_kit := KartDraw.new()  ## every dot in one draw call
 
 
 func _init() -> void:
@@ -65,42 +66,55 @@ func set_karts(karts: Array) -> void:
 
 
 func _draw() -> void:
-	var card := StyleBoxFlat.new()
-	card.bg_color = Color(0.1, 0.06, 0.24, 0.62)
-	card.set_corner_radius_all(26)
-	card.border_color = Color(0.55, 0.42, 1.0, 0.55)
-	card.set_border_width_all(3)
-	card.anti_aliasing = true
-	draw_style_box(card, Rect2(Vector2.ZERO, SIZE))
-	if _pts.size() < 3:
-		return
-	draw_polyline(_pts, Color(0.06, 0.03, 0.16, 0.9), 26.0, true)
-	draw_polyline(_pts, Color(0.95, 0.94, 1.0), 14.0, true)
-	# A dashed centre line.
-	var dash := 0
-	for i in range(0, _pts.size() - 1):
-		dash += 1
-		if dash % 3 == 0:
-			draw_line(_pts[i], _pts[i + 1], Color(0.55, 0.5, 0.75), 3.0, true)
-	# The checkered start line, across the road.
-	var a := _pts[0]
-	var dir := (_pts[1] - _pts[0]).normalized()
-	var n := dir.orthogonal()
-	for j in 4:
-		var t := -1.5 + j
-		var col := Color.WHITE if j % 2 == 0 else Color(0.08, 0.05, 0.15)
-		draw_rect(Rect2(a + n * t * 4.0 - Vector2(2.5, 2.5), Vector2(5, 5)), col)
+	# The card and the track in one triangle array (one draw call).
+	var d := _dot_kit
+	d.rect(Rect2(Vector2.ZERO, SIZE), Color(0.55, 0.42, 1.0, 0.55), 26.0)
+	d.rect(Rect2(Vector2(3, 3), SIZE - Vector2(6, 6)), Color(0.1, 0.06, 0.24, 0.7), 23.0)
+	if _pts.size() >= 3:
+		var outline := _pts.slice(0, _pts.size() - 1)
+		_band(d, outline, 13.0, Color(0.06, 0.03, 0.16, 0.95))
+		_band(d, outline, 7.0, Color(0.95, 0.94, 1.0))
+		for i in range(0, _pts.size() - 1, 3):
+			d.line(_pts[i], _pts[i + 1], 3.0, Color(0.55, 0.5, 0.75))
+		# The checkered start line, across the road.
+		var a := _pts[0]
+		var n := (_pts[1] - _pts[0]).normalized().orthogonal()
+		for j in 4:
+			var col := Color.WHITE if j % 2 == 0 else Color(0.08, 0.05, 0.15)
+			d.rect(Rect2(a + n * (-1.5 + j) * 4.0 - Vector2(2.5, 2.5), Vector2(5, 5)), col)
+	d.flush(self)
+
+
+## A closed band `half` px either side of the loop, mitred at each point, with soft edges.
+static func _band(d: KartDraw, loop: PackedVector2Array, half: float, color: Color) -> void:
+	var n := loop.size()
+	var base := d.points.size()
+	var clear := Color(color, 0.0)
+	for i in n:
+		var prev := loop[(i - 1 + n) % n]
+		var next := loop[(i + 1) % n]
+		var nrm := (next - prev).normalized().orthogonal()
+		for k in [-half - KartDraw.AA, -half, half, half + KartDraw.AA]:
+			d.points.append(loop[i] + nrm * k)
+			d.colors.append(clear if absf(k) > half else color)
+	for i in n:
+		var a := base + i * 4
+		var b := base + ((i + 1) % n) * 4
+		for j in 3:
+			d.indices.append_array([a + j, b + j, b + j + 1, a + j, b + j + 1, a + j + 1])
 
 
 func _draw_dots() -> void:
+	var d := _dot_kit
 	for i in range(_dots.size() - 1, -1, -1):
 		if i == _rider:
 			continue
-		_dot_layer.draw_circle(_dots[i], 12.0, KartTheme.OUTLINE)
-		_dot_layer.draw_circle(_dots[i], 9.0, _colors[i] if i < _colors.size() else Color.WHITE)
+		d.disc(_dots[i], 12.0, KartTheme.OUTLINE, 14)
+		d.disc(_dots[i], 9.0, _colors[i] if i < _colors.size() else Color.WHITE, 14)
 	if _rider < _dots.size():
 		var p := _dots[_rider]
-		_dot_layer.draw_circle(p, 17.0, KartTheme.OUTLINE)
-		_dot_layer.draw_circle(p, 14.0, Color(1.0, 0.82, 0.2))
-		_dot_layer.draw_circle(p, 10.0, _colors[_rider] if _rider < _colors.size() else Color.WHITE)
-		_dot_layer.draw_circle(p + Vector2(-3, -3), 3.0, Color(1, 1, 1, 0.8))
+		d.disc(p, 17.0, KartTheme.OUTLINE)
+		d.disc(p, 14.0, Color(1.0, 0.82, 0.2))
+		d.disc(p, 10.0, _colors[_rider] if _rider < _colors.size() else Color.WHITE)
+		d.disc(p + Vector2(-3, -3), 3.0, Color(1, 1, 1, 0.8), 8)
+	d.flush(_dot_layer)

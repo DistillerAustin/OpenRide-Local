@@ -12,7 +12,9 @@ const WIDTH := 330.0
 
 var rows: Array[Control] = []
 
-var _places: Array[Label] = []
+var _place_text: Array[String] = []  ## per kart id
+var _numbers: Control  ## every place number, drawn in one pass (outlines, then fills)
+var _redraw_left := 0.0
 var _target := PackedFloat32Array()
 var _shown := []
 var _tweens := {}
@@ -22,6 +24,12 @@ func _init() -> void:
 	name = "RacerList"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	size = Vector2(WIDTH, ROW_H * 8)
+	_numbers = Control.new()
+	_numbers.name = "Places"
+	_numbers.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_numbers.size = Vector2(46, ROW_H * 8)
+	_numbers.draw.connect(_draw_numbers)
+	add_child(_numbers)
 
 
 ## racers: KartRoster entries in kart id order (0 is the rider); `portrait(racer_id, size, you)`
@@ -30,7 +38,7 @@ func setup(racers: Array, portrait: Callable) -> void:
 	for r in rows:
 		r.queue_free()
 	rows.clear()
-	_places.clear()
+	_place_text.clear()
 	_shown = []
 	size = Vector2(WIDTH, ROW_H * racers.size())
 	_target.resize(racers.size())
@@ -43,11 +51,6 @@ func setup(racers: Array, portrait: Callable) -> void:
 		row.size = Vector2(WIDTH, ROW_H)
 		row.position = Vector2(0, i * ROW_H)
 		add_child(row)
-		var place := KartTheme.label(str(i + 1), 40 if you else 36, KartTheme.CHIP if you else KartTheme.INK, true)
-		place.size = Vector2(40, ROW_H)
-		place.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		place.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(place)
 		var d := RIDER_PORTRAIT if you else PORTRAIT
 		if you:
 			var chip := Panel.new()
@@ -68,8 +71,10 @@ func setup(racers: Array, portrait: Callable) -> void:
 			pic.position = Vector2(48 + (RIDER_PORTRAIT - d) * 0.5, (ROW_H - d) * 0.5)
 			row.add_child(pic)
 		rows.append(row)
-		_places.append(place)
+		_place_text.append(str(i + 1))
 		_target[i] = row.position.y
+	_numbers.move_to_front()
+	_numbers.queue_redraw()
 
 
 ## The race order (kart ids, first to last). Rows slide only when it changes.
@@ -82,7 +87,9 @@ func set_order(order: Array) -> void:
 		var id: int = order[p]
 		if id < rows.size():
 			_target[id] = p * ROW_H
-			_places[id].text = str(p + 1)
+			_place_text[id] = str(p + 1)
+	_redraw_left = 0.5
+	_numbers.queue_redraw()
 	for id in rows.size():
 		_slide(id)
 	var rider_now := order.find(KartRaceLogic.RIDER)
@@ -104,3 +111,28 @@ func _slide(id: int) -> void:
 	var tw := row.create_tween()
 	_tweens[id] = tw
 	tw.tween_property(row, "position:y", _target[id], 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+func _process(delta: float) -> void:
+	if _redraw_left > 0.0:
+		_redraw_left -= delta
+		_numbers.queue_redraw()
+
+
+func _draw_numbers() -> void:
+	var font := KartTheme.display(true)
+	for pass_i in 2:
+		for id in rows.size():
+			var you := id == KartRaceLogic.RIDER
+			var font_size := 40 if you else 36
+			var text := _place_text[id]
+			var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+			var at := Vector2(40.0 - w, rows[id].position.y + ROW_H * 0.5 + font_size * 0.36)
+			if pass_i == 0:
+				_outline_text(font, at, text, font_size)
+			else:
+				_numbers.draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, KartTheme.CHIP if you else KartTheme.INK)
+
+
+func _outline_text(font: Font, at: Vector2, text: String, font_size: int) -> void:
+	_numbers.draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 8, KartTheme.OUTLINE)

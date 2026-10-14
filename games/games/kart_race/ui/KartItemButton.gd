@@ -12,11 +12,13 @@ extends Button
 signal used
 
 const SIZE := 260.0
+const DEBOUNCE_MS := 150
 const SPIN_STEP := 0.075  ## seconds per icon at full roulette speed
 
 var item := ""
 var roulette := 0.0  ## seconds of roulette left
 
+var _last_press_ms := -100000
 var _shown_item := ""
 var _shown_icon := ""
 var _flash := 0.0
@@ -24,6 +26,8 @@ var _spin_t := 0.0
 var _spin_i := 0
 var _tween: Tween
 var _ring: Gradient
+var _ring_dim: Gradient
+var _draw_kit := KartDraw.new()
 
 
 func _init() -> void:
@@ -40,6 +44,9 @@ func _init() -> void:
 	_ring.offsets = PackedFloat32Array([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
 	_ring.colors = PackedColorArray([Color(1.0, 0.35, 0.45), Color(1.0, 0.7, 0.2), Color(0.95, 0.95, 0.3),
 		Color(0.3, 0.85, 0.55), Color(0.3, 0.6, 1.0), Color(1.0, 0.35, 0.45)])
+	_ring_dim = _ring.duplicate()
+	for i in _ring_dim.colors.size():
+		_ring_dim.set_color(i, _ring.colors[i].lerp(Color(0.4, 0.36, 0.6), 0.75))
 
 
 ## Only the disc is the button.
@@ -84,6 +91,11 @@ func _land() -> void:
 
 
 func _on_pressed() -> void:
+	# A finger arrives as a touch and as the mouse click Android emulates from it: one use.
+	var now := Time.get_ticks_msec()
+	if now - _last_press_ms < DEBOUNCE_MS:
+		return
+	_last_press_ms = now
 	used.emit()
 	_bounce(0.86, 0.3)
 
@@ -101,33 +113,32 @@ func _draw() -> void:
 	var c := size * 0.5
 	var r := SIZE * 0.5
 	var empty := _shown_icon == "" and roulette <= 0.0
-	# Soft drop shadow, the rainbow rim, then the disc.
-	draw_circle(c + Vector2(4, 9), r - 2.0, Color(0.05, 0.0, 0.15, 0.4))
-	draw_circle(c, r - 1.0, KartTheme.OUTLINE)
-	var segments := 48
-	for i in segments:
-		var a0 := TAU * i / segments - PI * 0.5
-		var a1 := TAU * (i + 1) / segments - PI * 0.5
-		var col := _ring.sample(float(i) / segments)
-		if empty:
-			col = col.lerp(Color(0.4, 0.36, 0.6), 0.75)
-		draw_arc(c, r - 12.0, a0, a1 + 0.01, 3, col, 16.0, true)
-	draw_circle(c, r - 22.0, KartTheme.OUTLINE)
-	draw_circle(c, r - 26.0, Color(0.2, 0.13, 0.5) if not empty else Color(0.15, 0.1, 0.32, 0.9))
-	draw_circle(c + Vector2(0, -12), r - 44.0, Color(0.28, 0.2, 0.66) if not empty else Color(0.18, 0.12, 0.38))
-	# Gloss across the top of the disc.
-	draw_arc(c, r - 40.0, PI * 1.12, PI * 1.6, 18, Color(1, 1, 1, 0.16), 14.0, true)
+	# Everything but the text is one triangle array (KartDraw): a drop shadow, the rainbow rim,
+	# the disc, its gloss, the flash and the icon.
+	var d := _draw_kit
+	d.disc(c + Vector2(4, 9), r - 2.0, Color(0.05, 0.0, 0.15, 0.4))
+	d.disc(c, r - 1.0, KartTheme.OUTLINE)
+	d.ring(c, r - 20.0, r - 4.0, Color.WHITE, Color(-1, 0, 0), -PI * 0.5, PI * 1.5, 72, _ring if not empty else _ring_dim)
+	d.disc(c, r - 22.0, KartTheme.OUTLINE)
+	d.disc(c, r - 26.0, Color(0.2, 0.13, 0.5) if not empty else Color(0.15, 0.1, 0.32, 0.9))
+	d.disc(c + Vector2(0, -12), r - 44.0, Color(0.28, 0.2, 0.66) if not empty else Color(0.18, 0.12, 0.38))
+	d.ring(c, r - 47.0, r - 33.0, Color(1, 1, 1, 0.16), Color(-1, 0, 0), PI * 1.12, PI * 1.6)
 	if _flash > 0.0:
-		draw_circle(c, (r - 26.0) * (1.0 + 0.1 * (1.0 - _flash)), Color(1.0, 0.95, 0.7, 0.45 * _flash))
+		d.disc(c, (r - 26.0) * (1.0 + 0.1 * (1.0 - _flash)), Color(1.0, 0.95, 0.7, 0.45 * _flash))
+	var known := true
+	if not empty:
+		known = KartItemIcons.draw(d, _shown_icon, c + Vector2(0, -8), r * 0.5)
+	var chip := Rect2(c + Vector2(-58, r - 62), Vector2(116, 52))
+	if not empty and roulette <= 0.0:
+		d.rect(chip.grow(5), KartTheme.OUTLINE, 31.0)
+		d.rect(chip, KartTheme.CHIP, 26.0)
+	d.flush(self)
 	if empty:
 		_label("ITEM", c + Vector2(0, 14), 40, Color(1, 1, 1, 0.35))
 		return
-	KartItemIcons.draw(self, _shown_icon, c + Vector2(0, -8), r * 0.5)
+	if not known:
+		_label("?", c + Vector2(0, 22), 90, Color.WHITE)
 	if roulette <= 0.0:
-		# The "TAP" chip on the bottom of the rim.
-		var chip := Rect2(c + Vector2(-58, r - 62), Vector2(116, 52))
-		KartItemIcons.round_rect(self, chip.grow(5), 31.0, KartTheme.OUTLINE)
-		KartItemIcons.round_rect(self, chip, 26.0, KartTheme.CHIP)
 		_label("TAP", chip.get_center() + Vector2(0, 15), 40, KartTheme.OUTLINE, false)
 
 

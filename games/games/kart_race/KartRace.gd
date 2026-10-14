@@ -57,8 +57,6 @@ const BOT_PCTS := {
 }
 const BOT_LINES := [-1.5, 1.5, -0.5, 0.5, -2.0, 2.0, 0.0]
 const ASSIST := {"off": 0.0, "low": 0.5, "high": 1.0}
-const MUSIC_STYLE := {"name": "racer", "stem_gates": {"harmony": 0.4, "lead": 0.75}}
-const MUSIC_BPM := 90.0
 
 var race: KartRaceLogic
 var gp: KartGrandPrix
@@ -81,6 +79,7 @@ var _status: KartStatus
 var _board: KartRaceBoard
 var _kart_hud: KartHud
 var _fx: KartFx
+var _audio: KartAudio
 var _hud_lineup := ""
 var _lights := -1
 var _acc := 0.0
@@ -318,10 +317,17 @@ func _build_hud() -> void:
 				_kart_hud.banner("LAP %d/%d" % [lap + 1, r.laps], 1.1)))
 
 
-## Presentation agent: music and effects.
+## Presentation agent: music and effects (KartAudio: the kart_circuit style with stems and a
+## final-lap variation, engine and tyre loops, every effect through AudioDirector).
 func _build_audio() -> void:
-	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM, int(segment.get("seed", 0)))
-	AudioDirector.set_intensity(0.5)
+	if _audio:
+		_audio.queue_free()
+	_audio = KartAudio.new()
+	_audio.game = self
+	_audio.music_seed = int(segment.get("seed", 0))
+	add_child(_audio)
+	_audio.start_music()
+	race_began.connect(func(r: KartRaceLogic): _audio.listen(r))
 
 
 ## Presentation agent: sparks, flames, dust, speed lines.
@@ -565,6 +571,8 @@ func _sync_views(delta: float) -> void:
 		camera.follow(k, delta)
 	if _fx:
 		_fx.step(race, delta)
+	if _audio:  # presentation
+		_audio.step(race, Flow.keys()[flow], delta)
 	if _kart_hud:  # presentation: speed lines and draft streaks
 		var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
 		_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))

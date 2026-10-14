@@ -6,72 +6,33 @@ extends Control
 ##   [ 82 RPM ] [ 202 WATTS ] [ 38% RESIST ] [ ×1.6 EFFORT ]
 ##
 ## It reads the same sources as the framework panel (InputBus, Effort). The effort tile glows
-## warmer as the multiplier climbs and hides in segments without effort scoring. Tiles are
-## free-standing (no container) and labels change only with their values, so a new number never
-## re-lays out the HUD.
+## warmer as the multiplier climbs and hides in segments without effort scoring.
+##
+## The whole strip is drawn by this one control (tiles in one KartDraw triangle array, then every
+## text's outline, then every fill), so it costs a handful of draw calls instead of a pair per
+## label, and it redraws only when a shown value changes.
 
 const TILE := Vector2(164, 112)
 const GAP := 12.0
 const VALUE_SIZE := 64
 const CAPTION_SIZE := 34
 const CAPTIONS := ["RPM", "WATTS", "RESIST", "EFFORT"]
+const RADIUS := 18.0
 
-var values: Array[Label] = []
-var captions: Array[Label] = []
-var tiles: Array[Panel] = []
-
-var _shown := ["", "", "", ""]
-var _effort_on := true
-var _effort_style: StyleBoxFlat
-var _shown_glow := -1.0
+## The texts shown, per tile (for tests).
+var shown := ["--", "--", "--", "--"]
 ## Tests set these instead of reading InputBus and Effort.
 var source := {}
+
+var _effort_on := true
+var _glow := 0.0
+var _d := KartDraw.new()
 
 
 func _init() -> void:
 	name = "RideStrip"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	size = Vector2(TILE.x * 4 + GAP * 3, TILE.y)
-	for i in 4:
-		var tile := Panel.new()
-		tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tile.size = TILE
-		tile.position = Vector2(i * (TILE.x + GAP), 0)
-		var style := _style(i == 3)
-		if i == 3:
-			_effort_style = style
-		tile.add_theme_stylebox_override("panel", style)
-		add_child(tile)
-		var value := KartTheme.label("--", VALUE_SIZE, KartTheme.INK, true)
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		value.size = Vector2(TILE.x, 70)
-		value.position = Vector2(0, 2)
-		value.add_theme_constant_override("outline_size", 12)
-		tile.add_child(value)
-		var caption := KartTheme.label(CAPTIONS[i], CAPTION_SIZE, Color(0.78, 0.8, 1.0) if i < 3 else Color(1, 0.95, 0.85), true)
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.size = Vector2(TILE.x, 40)
-		caption.position = Vector2(0, 66)
-		caption.add_theme_constant_override("outline_size", 0)
-		caption.add_theme_constant_override("shadow_offset_y", 0)
-		tile.add_child(caption)
-		values.append(value)
-		captions.append(caption)
-		tiles.append(tile)
-
-
-func _style(effort: bool) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(1.0, 0.5, 0.2, 0.95) if effort else KartTheme.NIGHT
-	s.set_corner_radius_all(18)
-	s.border_color = Color(1.0, 0.8, 0.5) if effort else KartTheme.TILE_EDGE
-	s.set_border_width_all(3)
-	s.border_width_bottom = 7
-	s.shadow_color = Color(0.05, 0.0, 0.15, 0.4)
-	s.shadow_size = 6
-	s.shadow_offset = Vector2(3, 5)
-	s.anti_aliasing = true
-	return s
 
 
 func _process(_delta: float) -> void:
@@ -86,30 +47,71 @@ func _process(_delta: float) -> void:
 
 
 func refresh(cadence: float, power: float, resistance: float, effort_on: bool, multiplier: float) -> void:
-	_put(0, str(roundi(cadence)))
-	_put(1, str(roundi(power)))
-	_put(2, "%d%%" % roundi(resistance))
-	if effort_on != _effort_on:
-		_effort_on = effort_on
-		tiles[3].visible = effort_on
-		# Three tiles stay centred where four were.
-		var n := 4 if effort_on else 3
-		var x0 := (size.x - (n * TILE.x + (n - 1) * GAP)) * 0.5
-		for i in 3:
-			tiles[i].position.x = x0 + i * (TILE.x + GAP)
+	var changed := effort_on != _effort_on
+	_effort_on = effort_on
+	changed = _put(0, str(roundi(cadence))) or changed
+	changed = _put(1, str(roundi(power))) or changed
+	changed = _put(2, "%d%%" % roundi(resistance)) or changed
 	if effort_on:
 		var m := snappedf(multiplier, 0.1)
-		_put(3, "×%.1f" % m)
+		changed = _put(3, "×%.1f" % m) or changed
 		var glow := clampf((m - 1.0) / 0.5, 0.0, 1.0)
-		if absf(glow - _shown_glow) > 0.01:
-			_shown_glow = glow
-			_effort_style.bg_color = Color(0.95, 0.42, 0.2, 0.95).lerp(Color(1.0, 0.62, 0.12, 1.0), glow)
-			_effort_style.border_color = Color(1.0, 0.8, 0.5).lerp(Color(1.0, 0.97, 0.7), glow)
-			_effort_style.shadow_color = Color(0.05, 0.0, 0.15, 0.4).lerp(Color(1.0, 0.6, 0.1, 0.55), glow)
-			_effort_style.shadow_size = int(lerpf(6.0, 16.0, glow))
+		if absf(glow - _glow) > 0.01:
+			_glow = glow
+			changed = true
+	if changed:
+		queue_redraw()
 
 
-func _put(i: int, text: String) -> void:
-	if _shown[i] != text:
-		_shown[i] = text
-		values[i].text = text
+## The tiles' rects, left to right (three, centred, without effort scoring).
+func tile_rects() -> Array[Rect2]:
+	var n := 4 if _effort_on else 3
+	var x0 := (size.x - (n * TILE.x + (n - 1) * GAP)) * 0.5
+	var out: Array[Rect2] = []
+	for i in n:
+		out.append(Rect2(Vector2(x0 + i * (TILE.x + GAP), 0), TILE))
+	return out
+
+
+func _put(i: int, text: String) -> bool:
+	if shown[i] == text:
+		return false
+	shown[i] = text
+	return true
+
+
+func _draw() -> void:
+	var rects := tile_rects()
+	for i in rects.size():
+		var r := rects[i]
+		var effort := i == 3
+		var fill := Color(0.12, 0.08, 0.28, 0.95)
+		var edge := KartTheme.TILE_EDGE
+		if effort:
+			fill = Color(0.95, 0.42, 0.2, 0.95).lerp(Color(1.0, 0.62, 0.12, 1.0), _glow)
+			edge = Color(1.0, 0.8, 0.5).lerp(Color(1.0, 0.97, 0.7), _glow)
+			if _glow > 0.0:
+				_d.rect(r.grow(4.0 + 8.0 * _glow), Color(1.0, 0.6, 0.1, 0.3 * _glow), RADIUS + 10.0)
+		_d.rect(Rect2(r.position + Vector2(3, 5), r.size), Color(0.05, 0.0, 0.15, 0.4), RADIUS)
+		_d.rect(r, edge, RADIUS)
+		_d.rect(r.grow_individual(-3, -3, -3, -7), fill, RADIUS - 3.0)
+	_d.flush(self)
+	var font := KartTheme.display(true)
+	# Outlines first, then fills: two passes instead of two draws per text.
+	for pass_i in 2:
+		for i in rects.size():
+			var r := rects[i]
+			_text(font, shown[i], VALUE_SIZE, Vector2(r.get_center().x, r.position.y + 64), KartTheme.INK, 12, pass_i == 0)
+			var cap := Color(0.78, 0.8, 1.0) if i < 3 else Color(1, 0.95, 0.85)
+			if pass_i == 1:
+				_text(font, CAPTIONS[i], CAPTION_SIZE, Vector2(r.get_center().x, r.position.y + 100), cap, 0, false)
+
+
+func _text(font: Font, text: String, font_size: int, base_centre: Vector2, color: Color, outline: int, outline_pass: bool) -> void:
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var at := base_centre - Vector2(w * 0.5, 0)
+	if outline_pass:
+		if outline > 0:
+			draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, outline, KartTheme.OUTLINE)
+	else:
+		draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)

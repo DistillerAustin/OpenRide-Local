@@ -24,6 +24,7 @@ var _knob := false
 var _active := false
 var _flash := 0.0
 var _level := 0.0  ## 0 dim .. 1 bright, eased
+var _d := KartDraw.new()  ## the shapes, in one draw call
 
 
 func _init() -> void:
@@ -71,8 +72,8 @@ func _draw() -> void:
 	draw_string(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, Color(1, 1, 1, alpha))
 	# The bar's slanted shell.
 	var shell := _slant(BAR.grow(6))
-	draw_colored_polygon(shell, Color(KartTheme.OUTLINE, 0.9 * alpha))
-	draw_colored_polygon(_slant(BAR), Color(0.16, 0.1, 0.34, 0.85 * alpha))
+	_d.convex_aa(shell, Color(KartTheme.OUTLINE, 0.9 * alpha))
+	_d.convex_aa(_slant(BAR), Color(0.16, 0.1, 0.34, 0.85 * alpha))
 	var full: float = tiers[2]
 	var x0 := BAR.position.x
 	var prev := 0.0
@@ -82,18 +83,19 @@ func _draw() -> void:
 		var b := x0 + BAR.size.x * t / full
 		var col: Color = KartTheme.TIER_COLORS[i]
 		# The unfilled part of each segment shows its colour faintly.
-		draw_colored_polygon(_slant(Rect2(a + 2, BAR.position.y + 4, b - a - 4, BAR.size.y - 8)), Color(col, 0.22 * alpha))
+		_d.convex_aa(_slant(Rect2(a + 2, BAR.position.y + 4, b - a - 4, BAR.size.y - 8)), Color(col, 0.22 * alpha))
 		var fill_to := clampf(x0 + BAR.size.x * _charge / full, a, b)
 		if fill_to > a + 2:
 			var bright := col.lightened(0.35 * _flash) if _tier == i + 1 else col
-			draw_colored_polygon(_slant(Rect2(a + 2, BAR.position.y + 4, fill_to - a - 4 + (2.0 if fill_to >= b else 0.0), BAR.size.y - 8)), bright)
-			draw_line(Vector2(a + 6 + SKEW * 0.5, BAR.position.y + 10), Vector2(fill_to - 4 + SKEW * 0.5, BAR.position.y + 10), Color(1, 1, 1, 0.45), 4.0, true)
+			_d.convex_aa(_slant(Rect2(a + 2, BAR.position.y + 4, fill_to - a - 4 + (2.0 if fill_to >= b else 0.0), BAR.size.y - 8)), bright)
+			_d.line(Vector2(a + 6 + SKEW * 0.5, BAR.position.y + 10), Vector2(fill_to - 4 + SKEW * 0.5, BAR.position.y + 10), 4.0, Color(1, 1, 1, 0.45))
 		if i < 2:
-			draw_line(Vector2(b + SKEW * 0.5, BAR.position.y + 2), Vector2(b - SKEW * 0.5, BAR.end.y - 2), Color(KartTheme.OUTLINE, alpha), 4.0, true)
+			_d.line(Vector2(b + SKEW * 0.5, BAR.position.y + 2), Vector2(b - SKEW * 0.5, BAR.end.y - 2), 4.0, Color(KartTheme.OUTLINE, alpha))
 		prev = t
 	if _flash > 0.0 and _tier > 0:
-		draw_colored_polygon(_slant(BAR.grow(10 * _flash)), Color(KartTheme.TIER_COLORS[_tier - 1], 0.35 * _flash))
+		_d.convex_aa(_slant(BAR.grow(10 * _flash)), Color(KartTheme.TIER_COLORS[_tier - 1], 0.35 * _flash))
 	_draw_knob(alpha)
+	_d.flush(self)
 
 
 ## The knob glyph: a resistance dial with a pointer and grip ticks; gold and glowing when lit.
@@ -101,16 +103,16 @@ func _draw_knob(alpha: float) -> void:
 	var lit := _knob and _active
 	var c := KNOB_C
 	if lit:
-		draw_circle(c, 33.0, Color(1.0, 0.75, 0.2, 0.35))
-	draw_circle(c, 27.0, Color(KartTheme.OUTLINE, alpha))
+		_d.disc(c, 33.0, Color(1.0, 0.75, 0.2, 0.35))
+	_d.disc(c, 27.0, Color(KartTheme.OUTLINE, alpha))
 	var face := Color(1.0, 0.8, 0.2) if lit else Color(0.42, 0.38, 0.6, alpha)
-	draw_circle(c, 22.0, face)
+	_d.disc(c, 22.0, face)
 	for i in 8:
 		var a := TAU * i / 8.0
-		draw_line(c + Vector2(cos(a), sin(a)) * 14.0, c + Vector2(cos(a), sin(a)) * 20.0, Color(KartTheme.OUTLINE, 0.6 * alpha), 3.0, true)
+		_d.line(c + Vector2(cos(a), sin(a)) * 14.0, c + Vector2(cos(a), sin(a)) * 20.0, 3.0, Color(KartTheme.OUTLINE, 0.6 * alpha))
 	var pointer := -PI * 0.25 if lit else -PI * 0.75
-	draw_line(c, c + Vector2(cos(pointer), sin(pointer)) * 15.0, Color(KartTheme.OUTLINE, alpha), 5.0, true)
-	draw_circle(c, 5.0, Color(KartTheme.OUTLINE, alpha))
+	_d.line(c, c + Vector2(cos(pointer), sin(pointer)) * 15.0, 5.0, Color(KartTheme.OUTLINE, alpha))
+	_d.disc(c, 5.0, Color(KartTheme.OUTLINE, alpha))
 
 
 func _slant(r: Rect2) -> PackedVector2Array:
