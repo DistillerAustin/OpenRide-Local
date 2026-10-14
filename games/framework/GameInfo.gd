@@ -24,6 +24,10 @@ var roles: Array[String] = []
 var tracker_mode := "off"
 ## Whether the effort multiplier applies in a Just Ride (it always does in work segments).
 var effort_in_just_ride := false
+## `end_mode` of a timed ("minutes") Just Ride: "timer" (Kotlin ends it at its length) unless the
+## game ends on its own terms, like a race finishing on a lap line ("game"; Kotlin still
+## hard-stops at 1.5 × the length). Kotlin's `GameDeclaration.timedEndMode` must match.
+var timed_end_mode := "timer"
 ## Score → stars, per difficulty: {"easy": [one, two, three], "standard": […], "hard": […]}.
 ## Each list holds the minimum score for 1, 2 and 3 stars.
 var star_thresholds := {}
@@ -63,6 +67,8 @@ func validate() -> PackedStringArray:
 			problems.append("unknown role '%s'" % role)
 	if tracker_mode not in TRACKER_MODES:
 		problems.append("unknown tracker_mode '%s'" % tracker_mode)
+	if timed_end_mode not in ["timer", "game"]:
+		problems.append("unknown timed_end_mode '%s'" % timed_end_mode)
 	var tables := {"star_thresholds": star_thresholds}
 	for v in variant_star_thresholds:
 		tables["variant_star_thresholds.%s" % v] = variant_star_thresholds[v]

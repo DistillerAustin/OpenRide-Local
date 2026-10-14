@@ -233,7 +233,7 @@ func _start_segment(index: int) -> void:
 		"game_id": planned.game_id,
 		"duration_sec": planned.duration_sec,
 		"intro_sec": INTRO_SEC,
-		"end_mode": "game" if planned.duration_sec < 0 else "timer",
+		"end_mode": "game" if planned.duration_sec < 0 else _timed_end_mode(planned.game_id),
 		"role": planned.role,
 		"difficulty": _plan.difficulty,
 		"effort": planned.role == "work" or (planned.role == "free" and _effort_in_just_ride(planned.game_id)),
@@ -278,6 +278,15 @@ func _finish() -> void:
 		"totals": {"score": score, "stars": stars, "segments": _results.size(), "elapsed_sec": int(_elapsed)},
 		"bests": {},
 	}))
+
+
+## As SessionPlans.kt: a timed Just Ride uses the game's own end mode (Kart Race ends on a lap
+## line); circuit slots always end on the timer.
+func _timed_end_mode(game_id: String) -> String:
+	if str(_plan.get("kind", "")) != "just_ride":
+		return "timer"
+	var info := GameRegistry.info(game_id)
+	return info.timed_end_mode if info else "timer"
 
 
 func _effort_in_just_ride(game_id: String) -> bool:

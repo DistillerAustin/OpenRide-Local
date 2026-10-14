@@ -384,6 +384,7 @@ game is also playable on the desktop: run its scene with F6, or play the project
 | `roles` | Circuit roles it can fill: `warmup`, `work`, `recovery`, `cooldown` |
 | `tracker_mode` | `off`, `lean_x`, `lean_2d` or `lean_stand`. `Session` sets it for the segment. |
 | `effort_in_just_ride` | Whether the effort multiplier applies in a Just Ride |
+| `timed_end_mode` | `end_mode` of a timed (`minutes`) Just Ride: `timer` (the default), or `game` for a game that ends on its own terms, like Kart Race on a lap line. Kotlin's `GameDeclaration.timedEndMode` must match; the desktop's local session uses it too. |
 | `star_thresholds` | `{easy: [1★, 2★, 3★], standard: […], hard: […]}`: the minimum score for each star |
 | `stars_per_minute` | When true, the thresholds are points per minute of gameplay, so one set fits a 90 s slot and a 30-minute ride |
 | `variant_star_thresholds` | Star thresholds for the game's variants, by variant (e.g. `{"catch": {…}}`); others use `star_thresholds` |
