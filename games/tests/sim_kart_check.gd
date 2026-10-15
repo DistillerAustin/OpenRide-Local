@@ -9,6 +9,7 @@ extends SceneTree
 const SPEED := 4.0
 const DURATION := 300
 const TIMEOUT_SEC := 240.0  ## real seconds
+const PREVIEW_SEC := 0.5  ## the keys steer on the kart's position this far ahead
 
 var _failures: Array[String] = []
 var _session: Node
@@ -69,11 +70,16 @@ func _run() -> void:
 		max_off = maxf(max_off, absf(k.d) - race.track.half_width(k.s))
 		if k.surface == 3:
 			wall_frames += 1
+		# Steer on where the kart will be in half a second (its heading against the road's,
+		# + = pointing left, so d falls), not where it is: a key held until the kart reaches the
+		# line holds a full lean, which starts a tight drift and swings the nose past the line.
 		var aim: float = race.track.racing_line(k.s + 12.0) * 0.6
+		var psi: float = angle_difference(race.track.yaw_at(k.s), k.heading)
+		var d_ahead: float = k.d - k.speed * sin(psi) * PREVIEW_SEC
 		var want := KEY_NONE
-		if aim - k.d > 0.7:
+		if aim - d_ahead > 0.7:
 			want = KEY_RIGHT
-		elif aim - k.d < -0.7:
+		elif aim - d_ahead < -0.7:
 			want = KEY_LEFT
 		if want != held:
 			if held != KEY_NONE:
