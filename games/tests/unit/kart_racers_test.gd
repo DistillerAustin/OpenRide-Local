@@ -102,6 +102,21 @@ func test_the_body_and_driver_lean_into_a_turn() -> void:
 	assert_float(driver_up.x).is_greater(body_up.x)
 
 
+func test_the_body_takes_the_physics_drift_slide() -> void:
+	var v := _view(KartRoster.racer("bear"))
+	var k := _state(15.0)
+	k.drift_dir = 1
+	k.slide = -0.5  # a right drift: nose right
+	v.sync(k, DT)
+	assert_float(v.slide).is_equal(-0.5)
+	var nose := v.bone_pose("body").basis * Vector3.FORWARD
+	assert_float(nose.x).is_greater(0.3)  # turned right
+	k.drift_dir = 0
+	k.slide = 0.0
+	v.sync(k, DT)
+	assert_float(v.slide).is_equal(0.0)
+
+
 func test_a_podium_finisher_cheers_with_both_arms() -> void:
 	var v := _view(KartRoster.racer("rabbit"))
 	var k := _state(5.0)
@@ -197,6 +212,12 @@ func test_every_horn_renders() -> void:
 	for id in KartRoster.ids():
 		var samples := SfxSynth.render_samples(KartRoster.horn_preset(id))
 		assert_int(samples.size()).is_greater(1000)
+
+
+func test_the_kart_sounds_register_every_racers_horn() -> void:
+	KartSfx.register()
+	for id in KartRoster.ids():
+		assert_bool(SfxSynth._presets.has(KartSfx.horn(id))).override_failure_message("no horn for %s" % id).is_true()
 
 
 func test_portrait_framing_fits_the_tallest_ears() -> void:

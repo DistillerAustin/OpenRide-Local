@@ -329,6 +329,27 @@ func apply_boost(k: KartState, seconds: float, push := BOOST_PUSH, kind := "item
 	k.boost_tier = 0
 
 
+## A pull (the Draft Magnet) for one tick: the kart's speed rises toward `want_speed` at
+## `accel` (m/s², never slowing it), and it slides across toward `to_d` at `lateral` m/s,
+## staying on the road; it counts as a full draft this tick (for the views). No pull while
+## spinning out. Items call it after the race's step, once a tick.
+func apply_pull(k: KartState, track: KartTrackModel, want_speed: float, accel: float, to_d: float,
+		lateral: float, dt: float) -> void:
+	if k.spin_time > 0.0:
+		return
+	k.draft = 1.0
+	if k.speed < want_speed:
+		k.speed = minf(want_speed, k.speed + accel * dt)
+	var limit := track.half_width(k.s)
+	if absf(k.d) > limit:
+		return  # off the road: no sideways tug (the edge guard brings it back)
+	var d := clampf(move_toward(k.d, to_d, lateral * dt), -limit, limit)
+	if d != k.d:
+		var p := track.project(track.position_at(k.s, d), k.s)
+		k.pos = p.position
+		k.d = p.d
+
+
 ## Spins the kart out (SPIN_SEC without control, the speed cut to SPIN_SPEED). A shield absorbs
 ## it instead and is used up: then it returns false.
 func apply_spinout(k: KartState) -> bool:

@@ -10,8 +10,17 @@ extends RefCounted
 ## each finish the race's points × 20.
 ##
 ## Stars are per minute of play (`STAR_THRESHOLDS`, KartRace's `info()`), tuned in simulation
-## (tests/unit/kart_scoring_test.gd): a mid-pack ride at 1.0× effort earns about one star, a
-## podium ride two, and three take podiums plus effort. Provisional until the bike.
+## with the Phase 2 physics, bots and items (tests/unit/kart_scoring_test.gd; 6 seeds a point,
+## Meadow Ring, one 3-lap race plus the 14.5 s around it). Points a minute at 1.0×:
+##
+## | field    | mid-pack (4th-5th) | podium (2nd-3rd) | winning at 1.0× |
+## | easy     | 81-104, mean 92    | 108-129          | 147-226         |
+## | standard | 97-127, mean 114   | 127-162          | 146-250         |
+## | hard     | 98-127, mean 112   | 108-171          | 180-252         |
+##
+## So a mid-pack ride earns one star, a podium ride two, and three take podiums plus effort
+## (the effort multiplier is up to 1.5×): a win at 1.0× stays under the third star (unless far
+## above the field), a strong podium at full effort clears it. Provisional until the bike.
 
 signal awarded(points: float, reason: String)
 
@@ -25,9 +34,9 @@ const GHOST_MAX_POINTS := 3600
 const MINI_TURBO_GAP_SEC := 4.0
 ## Points per minute for one, two and three stars, by difficulty.
 const STAR_THRESHOLDS := {
-	"easy": [55, 120, 210],
-	"standard": [65, 140, 240],
-	"hard": [75, 160, 270],
+	"easy": [65, 115, 220],
+	"standard": [75, 135, 245],
+	"hard": [85, 140, 255],
 }
 
 var rider_id := 0

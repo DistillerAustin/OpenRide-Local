@@ -159,9 +159,8 @@ func setup(racers: Array, track: KartTrackModel) -> void:
 
 # --- Per frame ---
 
-## The race's state each frame. `fx`, when its scripted drifts are on (the slice and captures),
-## stands in for the physics' drift state.
-func update(race: KartRaceLogic, delta := 0.0, fx: KartFx = null) -> void:
+## The race's state each frame.
+func update(race: KartRaceLogic, delta := 0.0) -> void:
 	_time += delta
 	var k: KartState = race.karts[KartRaceLogic.RIDER]
 	var t := race.time if race.phase != KartRaceLogic.Phase.FINISHED else k.finish_time
@@ -177,10 +176,7 @@ func update(race: KartRaceLogic, delta := 0.0, fx: KartFx = null) -> void:
 	racer_list.set_order(race.order())
 	minimap.set_karts(race.karts)
 	item_button.set_item(k.item, k.roulette_time, delta)
-	if fx and fx.demo_drifts:
-		drift_meter.set_drift(1 if fx.drift_tier > 0 else 0, fx.drift_charge * drift_meter.tiers[2], fx.drift_tier, false, delta)
-	else:
-		drift_meter.set_drift(k.drift_dir, k.drift_charge, k.drift_tier, k.knob_boosting, delta)
+	drift_meter.set_drift(k.drift_dir, k.drift_charge, k.drift_tier, k.knob_boosting, delta)
 	if _overlay.visible:
 		_overlay.queue_redraw()
 	if _ring_t < 1.0:
@@ -533,36 +529,17 @@ func _dress_portrait(pic: TextureRect) -> void:
 	pic.material = mat
 
 
-## Renders each racer's head once into a small SubViewport (own world, transparent), then bakes
-## them into one atlas texture and frees the viewports.
+## Renders each racer's head once (KartPortraits: a small transparent SubViewport, framed from
+## the head's bounds), then bakes them into one atlas texture and frees the viewports.
 func _make_portraits() -> void:
 	var made := []
 	for racer in lineup:
 		var id := str(racer.id)
 		if portraits.has(id):
 			continue
-		var vp := SubViewport.new()
-		vp.name = "Portrait_%s" % id
-		vp.size = Vector2i(PORTRAIT_PX, PORTRAIT_PX)
-		vp.own_world_3d = true
-		vp.transparent_bg = true
-		vp.msaa_3d = Viewport.MSAA_4X
-		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-		add_child(vp)
-		var head := MeshInstance3D.new()
-		head.mesh = KartView.head_mesh(racer)
-		head.material_override = KartLook.kart_material(true)
-		head.rotation = Vector3(0.05, 0.42, 0.0)
-		vp.add_child(head)
-		var cam := Camera3D.new()
-		cam.fov = 34.0
-		var tall := 1.0 if id == "rabbit" else 0.0
-		cam.position = Vector3(0.0, 0.06 + tall * 0.12, -1.38 - tall * 0.3)
-		cam.look_at_from_position(cam.position, Vector3(0.0, 0.05 + tall * 0.14, 0.0), Vector3.UP)
-		vp.add_child(cam)
-		cam.current = true
-		portraits[id] = vp.get_texture()
-		made.append(vp)
+		var tex := KartPortraits.texture(self, racer, PORTRAIT_PX)
+		portraits[id] = tex
+		made.append(get_child(get_child_count() - 1))  # the viewport texture() just added
 	if not made.is_empty() and DisplayServer.get_name() != "headless":
 		_bake_atlas.call_deferred(made)
 

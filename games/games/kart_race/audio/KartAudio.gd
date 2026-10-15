@@ -100,7 +100,8 @@ func listen(race: KartRaceLogic) -> void:
 	e.kart_finished.connect(func(id: int, _place: int, _t: float):
 		if id == rider:
 			AudioDirector.play_sfx("kart_cheer")
-			AudioDirector.play_sfx("kart_lap", 0.0, 1.5))
+			AudioDirector.play_sfx("kart_lap", 0.0, 1.5)
+			AudioDirector.play_sfx(KartSfx.horn(race.karts[rider].racer_id), -3.0))
 	e.drift_tier.connect(func(id: int, tier: int):
 		if id == rider and tier >= 1:
 			AudioDirector.play_sfx("kart_tier%d" % clampi(tier, 1, 3)))

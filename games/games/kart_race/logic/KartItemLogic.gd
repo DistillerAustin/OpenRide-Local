@@ -5,7 +5,7 @@ extends RefCounted
 ## the rider when the Auto items option is on). One instance per race, stepped by the scene right
 ## after `KartRaceLogic.step`, with the same inputs (each `use_item` is an edge).
 ##
-## Effects on karts go only through `KartPhysics.apply_boost` / `apply_spinout`; everything that
+## Effects on karts go only through `KartPhysics.apply_boost` / `apply_spinout` / `apply_pull`; everything that
 ## happens goes out through the race's `KartRaceEvents` (item_picked, item_used, kart_hit,
 ## shield_blocked, boost_started "item"). Plain logic, no nodes: `KartItemViews` draws `pods`,
 ## `shots`, `goos` and the magnets from here.
@@ -489,20 +489,7 @@ func _pull(k: KartState, dt: float) -> void:
 	var gap := race.progress(t_id) - race.progress(id)
 	if gap < 1.5 or gap > MAGNET_RANGE:
 		return
-	k.draft = 1.0
-	var want := t.speed + MAGNET_GAIN
-	if k.speed < want:
-		k.speed = minf(want, k.speed + MAGNET_ACCEL * dt)
-	# Drawn onto the target's line (staying on the road).
-	var track := race.track
-	var limit := track.half_width(k.s)
-	var d := clampf(move_toward(k.d, t.d, MAGNET_LATERAL * dt), -limit, limit)
-	if absf(k.d) > limit:
-		d = k.d
-	if d != k.d:
-		var p := track.project(track.position_at(k.s, d), k.s)
-		k.pos = p.position
-		k.d = p.d
+	race.physics.apply_pull(k, race.track, t.speed + MAGNET_GAIN, MAGNET_ACCEL, t.d, MAGNET_LATERAL, dt)
 
 
 ## The id of the kart one place ahead of `k` (-1 for the leader).

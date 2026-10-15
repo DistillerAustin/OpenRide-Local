@@ -72,10 +72,19 @@ static func preset(sound: String) -> SfxPreset:
 	return p
 
 
-## Adds every preset to SfxSynth (rendered lazily on first play). Cheap to call again: presets
-## already there (and their cached renders) are kept.
+## Adds every preset to SfxSynth (rendered lazily on first play), and each racer's horn as
+## `horn_<racer id>` (KartRoster.horn_preset). Cheap to call again: presets already there (and
+## their cached renders) are kept.
 static func register() -> void:
 	for sound in PRESETS:
 		if SfxSynth._presets.has(sound):
 			continue
 		SfxSynth.add_preset(sound, preset(sound))
+	for id in KartRoster.ids():
+		if not SfxSynth._presets.has(horn(id)):
+			SfxSynth.add_preset(horn(id), KartRoster.horn_preset(id))
+
+
+## The SfxSynth name of a racer's horn.
+static func horn(racer_id: String) -> String:
+	return "horn_" + racer_id

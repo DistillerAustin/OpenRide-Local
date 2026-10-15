@@ -3,8 +3,8 @@ extends SceneTree
 ## window, not headless:
 ##   $GODOT_BIN --path games -s res://tests/capture_kart_hud.gd -- --out=DIR [--prefix=hud]
 ## Saves PREFIX_countdown, _race (drifting, an item held), _roulette, _lap (the lap banner),
-## _final (the final-lap banner), _results and _podium. The drift is the effects' scripted demo
-## drift and the item is set by hand, so the shots don't need the other Phase 2 areas.
+## _final (the final-lap banner), _results and _podium. The drift is a real one (the arrow key
+## held into a corner); the item is set by hand.
 
 var _session: Node
 var _director: Node  # untyped: a -s script compiles before the autoloads exist
@@ -38,7 +38,6 @@ func _run() -> void:
 		quit(1)
 		return
 	var game: Node = _director.game
-	game._fx.demo_drifts = true
 	game.race.laps = 2
 	_key(KEY_EQUAL, true)
 	await create_timer(0.5).timeout
@@ -51,19 +50,21 @@ func _run() -> void:
 	# Racing: an item held, a drift in a corner.
 	var k = game.race.karts[0]
 	k.item = "turbo"
-	var fx = game._fx
 	var shot := false
 	var limit: float = game.sim_time + 40.0
 	while game.sim_time < limit:
 		await process_frame
-		_steer(game)
 		k.item = "turbo" if k.roulette_time <= 0.0 else k.item
-		var curv: float = absf(game.race.track.curvature(k.s))
-		if game.race.time > 6.0 and curv > 0.008 and fx._drift_t[0] < 0.0:
-			fx._drift_next[0] = 0.0
-		if game.race.time > 6.0 and fx._drift_t[0] > 1.3:
+		var curv: float = game.race.track.curvature(game.race.track.wrap(k.s + 10.0))
+		if game.race.time > 6.0 and (absf(curv) > 0.012 or k.drift_dir != 0):
+			# Into the corner: hold the key (a full lean) to drift.
+			_hold(KEY_LEFT if (curv > 0.0 if k.drift_dir == 0 else k.drift_dir < 0) else KEY_RIGHT)
+		else:
+			_steer(game)
+		if k.drift_dir != 0 and k.drift_tier >= 2:
 			_save("%s/%s_race.png" % [out, prefix])
 			shot = true
+			_hold(KEY_NONE)
 			break
 	if not shot:
 		_save("%s/%s_race.png" % [out, prefix])
@@ -127,6 +128,16 @@ func _run() -> void:
 	await create_timer(2.6).timeout
 	_save("%s/%s_podium.png" % [out, prefix])
 	quit()
+
+
+## Holds one arrow key (KEY_NONE: none).
+func _hold(want: Key) -> void:
+	if want != _held:
+		if _held != KEY_NONE:
+			_key(_held, false)
+		if want != KEY_NONE:
+			_key(want, true)
+		_held = want
 
 
 ## Arrow keys toward the racing line, using the track model.

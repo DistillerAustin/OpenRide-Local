@@ -199,4 +199,6 @@ func test_a_strong_ride_beats_a_mid_pack_one_but_three_stars_take_more() -> void
 	print("strong ride: %.0f points/min, place %d" % [r[0], r[1]])
 	assert_int(int(r[1])).is_less_equal(3)
 	assert_float(float(r[0])).is_greater_equal(float(t[1]))
-	assert_float(float(r[0])).is_less(float(t[2]) * 1.15)
+	# Three stars take podiums plus effort: not at 1.0×, but at the full 1.5×.
+	assert_float(float(r[0])).is_less(float(t[2]))
+	assert_float(float(r[0]) * 1.5).is_greater_equal(float(t[2]))

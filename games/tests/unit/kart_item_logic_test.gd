@@ -207,6 +207,24 @@ func test_the_turbo_can_boosts() -> void:
 	assert_array(boosts).is_equal([[0, "item", 0]])
 
 
+func test_the_turbo_can_emits_one_boost_through_the_race_and_the_items() -> void:
+	# Stepped like the game: the race (physics) then the items, for two seconds after the tap.
+	var race := _race([Vector2(100, 0)])
+	var items := KartItemLogic.new(race, 1)
+	items.pods.clear()
+	var boosts := []
+	race.events.boost_started.connect(func(id: int, kind: String, tier: int): boosts.append([id, kind, tier]))
+	var inputs := _inputs(1)
+	inputs[0].power_w = 150.0
+	items.give(0, "turbo")
+	inputs[0].use_item = true
+	for i in roundi(2.0 / DT):
+		race.step(DT, inputs)
+		items.step(DT, inputs)
+		inputs[0].use_item = false
+	assert_array(boosts).is_equal([[0, "item", 0]])
+
+
 func test_the_shield_blocks_one_hit() -> void:
 	var race := _race([Vector2(100, 0), Vector2(60, 0)])
 	var items := KartItemLogic.new(race, 1)
@@ -358,6 +376,29 @@ func test_the_magnet_pulls_toward_the_kart_ahead_with_a_full_draft() -> void:
 	assert_float(absf(k.d - race.karts[1].d)).is_less(3.0 - 0.5)
 	_run(items, inputs, KartItemLogic.MAGNET_SEC)
 	assert_float(items.magnet_time[0]).is_equal(0.0)
+
+
+func test_the_pull_speeds_up_slides_across_and_never_leaves_the_road() -> void:
+	var race := _race([Vector2(100, 0)])
+	var k: KartState = race.karts[0]
+	var track := race.track
+	k.speed = 10.0
+	race.physics.apply_pull(k, track, 14.0, 11.0, 50.0, 2.2, 0.5)
+	assert_float(k.speed).is_equal_approx(14.0, 0.001)
+	assert_float(k.d).is_equal_approx(1.1, 0.05)
+	assert_float(k.draft).is_equal(1.0)
+	for i in 20:
+		race.physics.apply_pull(k, track, 14.0, 11.0, 50.0, 2.2, 0.5)
+	assert_float(k.d).is_less_equal(track.half_width(k.s) + 0.001)
+	# Never slows a faster kart; nothing while spinning out.
+	k.speed = 20.0
+	race.physics.apply_pull(k, track, 14.0, 11.0, 0.0, 2.2, 0.5)
+	assert_float(k.speed).is_equal(20.0)
+	k.spin_time = 0.5
+	var d := k.d
+	race.physics.apply_pull(k, track, 30.0, 11.0, 0.0, 2.2, 0.5)
+	assert_float(k.speed).is_equal(20.0)
+	assert_float(k.d).is_equal(d)
 
 
 # --- Policy (bots and Auto items) ---

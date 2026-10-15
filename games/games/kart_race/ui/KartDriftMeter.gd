@@ -12,11 +12,8 @@ const SIZE := Vector2(470, 76)
 const BAR := Rect2(118, 18, 266, 40)
 const KNOB_C := Vector2(432, 38)
 const SKEW := 14.0
-## Seconds of charge for tiers 1-3 (the spec's 0.9 / 2.0 / 3.4 s). KartPhysics' own constant
-## wins when the handling agent defines one (`DRIFT_TIERS` or `TIER_CHARGE`).
-const DEFAULT_TIERS := [0.9, 2.0, 3.4]
-
-var tiers: Array = DEFAULT_TIERS
+## Seconds of charge for tiers 1-3: the physics' own (KartPhysics.TIER_SEC).
+var tiers: Array = KartPhysics.TIER_SEC
 
 var _charge := 0.0
 var _tier := 0
@@ -31,12 +28,6 @@ func _init() -> void:
 	name = "DriftMeter"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	size = SIZE
-	var consts: Dictionary = (KartPhysics as Script).get_script_constant_map()
-	for key in ["DRIFT_TIERS", "TIER_CHARGE"]:
-		var v = consts.get(key)
-		if v is Array and v.size() == 3:
-			tiers = v
-			break
 
 
 ## From the rider's KartState each frame.

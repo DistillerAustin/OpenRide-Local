@@ -130,19 +130,21 @@ func _compose(game: Node, out: String, prefix: String) -> void:
 	game._kart_hud.visible = true
 	_director.hud.visible = true
 	# (b) Racing: into a corner, drifting, full HUD.
-	var fx = game._fx
 	var shot := false
 	var limit: float = game.sim_time + 60.0
 	while game.sim_time < limit:
 		await process_frame
-		_steer(game)
 		var k = game.race.karts[0]
-		var curv: float = absf(game.race.track.curvature(k.s))
-		if game.race.time > 9.0 and curv > 0.008 and fx._drift_t[0] < 0.0:
-			fx._drift_next[0] = 0.0
-		if game.race.time > 9.0 and curv > 0.006 and fx._drift_t[0] > 0.95 and _clear_view(game):
+		var curv: float = game.race.track.curvature(game.race.track.wrap(k.s + 10.0))
+		if game.race.time > 9.0 and (absf(curv) > 0.012 or k.drift_dir != 0):
+			# A real drift: the arrow key held into the corner (a full lean).
+			_hold(KEY_LEFT if (curv > 0.0 if k.drift_dir == 0 else k.drift_dir < 0) else KEY_RIGHT)
+		else:
+			_steer(game)
+		if k.drift_dir != 0 and k.drift_time > 0.95 and _clear_view(game):
 			_save("%s/%s_b_desktop.png" % [out, prefix])
 			shot = true
+			_hold(KEY_NONE)
 			break
 	if not shot:
 		_save("%s/%s_b_desktop.png" % [out, prefix])
@@ -167,6 +169,16 @@ func _clear_view(game: Node) -> bool:
 		if (cam_pos + seg * t).distance_to(o) < 2.2 and t > 0.05 and t < 0.98:
 			return false
 	return true
+
+
+## Holds one arrow key (KEY_NONE: none).
+func _hold(want: Key) -> void:
+	if want != _held:
+		if _held != KEY_NONE:
+			_key(_held, false)
+		if want != KEY_NONE:
+			_key(want, true)
+		_held = want
 
 
 ## Arrow keys toward the racing line, using the track model.

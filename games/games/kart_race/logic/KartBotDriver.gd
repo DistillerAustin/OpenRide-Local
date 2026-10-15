@@ -12,10 +12,16 @@ extends RefCounted
 ##   DODGE (goo or a puck in its lane ahead) → PASS (a slower kart ahead in its lane: pick a side
 ##   and hold it until clear) → CRUISE (its line; drawn to a pod row when it holds no item).
 ##   Side-by-side karts push the target lane apart in every mode.
-## - **Drift:** before a sharp corner, a bot with drift skill holds a hard lean into it (the
-##   physics' drift entry), keeps the lean past the release threshold through the corner while
-##   it stays on its line, and eases off on the exit to cash the mini-turbo. It lets go early if
-##   it drifts more than DRIFT_SLIP off its line.
+## - **Cadence:** each persona pedals at its own cadence (CADENCES), wandering a few rpm. Only
+##   some personas (`rocket`) spin up for the rocket start in the countdown; the rest are lazy
+##   off the line.
+## - **Drift** (a sub-state driven by the physics' own `KartState.drift_dir`): where
+##   `KartPhysics.wants_drift` says a corner is worth it and the bot's drift skill rolls yes, it
+##   pulses a hard lean (the physics' entry), giving up after DRIFT_ENTRY_MAX if no drift starts.
+##   While the physics drifts, `lean_for_drift` gives the lean for the arc pure pursuit wants;
+##   it releases (eases under the release lean) when the corner ends, it slips DRIFT_SLIP off its
+##   line, or the widest arc (`drift_curvature`) is still too tight. Outside a drift the lean
+##   stays under MAX_STEER_LEAN, so a drift never starts by accident.
 ## - **Items:** through `KartItemLogic.wants_use` with its item skill (and hazards and pods from
 ##   the same logic). Set `items` when the race's item logic exists.
 ##
@@ -29,7 +35,8 @@ const LOOKAHEAD_SEC := 0.6
 const LOOKAHEAD_MIN := 6.0
 const LOOKAHEAD_MAX := 18.0
 const EDGE_MARGIN := 1.2  ## the bot's line keeps this far inside the road's edge
-const CADENCE := 85.0
+const CADENCE := 85.0  ## the default cadence (rpm) for a profile without one
+const CADENCE_WANDER := 4.0  ## ± rpm, slowly
 const RESISTANCE := 30.0
 const LATERAL_RATE := 2.4  ## m/s: how fast the target lane moves
 const DODGE_RATE := 4.5
@@ -44,16 +51,18 @@ const PASS_LOOK_MIN := 8.0
 const BESIDE := 2.6  ## m along the track: karts this close are side by side
 const SIDE_GAP := 2.2  ## m across the road kept from a kart alongside
 
-## Drift: corners sharper than this (1/m) within DRIFT_LOOK are worth a drift.
-const DRIFT_CURV := 0.016
-const DRIFT_LOOK := [8.0, 34.0]  ## m ahead
-const DRIFT_ENTRY_LEAN := 0.72
-const DRIFT_ENTRY_SEC := 0.16  ## the physics wants ≥ 0.65 held for 0.12 s
+## Drift entry: a pulse of this lean (over the physics' DRIFT_LEAN), given up after
+## DRIFT_ENTRY_MAX seconds if the physics hasn't started a drift.
+const DRIFT_ENTRY_LEAN := 0.8
+const DRIFT_ENTRY_MAX := 0.35
 const DRIFT_ENTRY_PSI := 0.18  ## rad: only from a kart running roughly along the road
 const DRIFT_COOLDOWN := 1.5  ## s after a drift before the next
-const DRIFT_HOLD_LEAN := 0.34  ## stays above the 0.3 release threshold while drifting
-const DRIFT_SLIP := 1.2  ## m off its line before it lets go
-const DRIFT_MIN_SPEED := 9.0  ## m/s (the physics needs 40% of top speed)
+const DRIFT_HOLD_LEAN := 0.4  ## the least lean toward the drift while holding it (release is 0.3)
+const DRIFT_RELEASE_LEAN := 0.1  ## the lean while letting go (under the release threshold)
+const DRIFT_SLIP := 2.2  ## m inside its line before it lets go
+const DRIFT_TIGHT_OFF := 0.7  ## m inside its line while even the widest arc is too tight: cash it
+const DRIFT_EDGE := 1.3  ## m from the road's inside edge: let go
+const DRIFT_MIN_SEC := 0.6  ## hold at least this long before an early release
 const DRIFT_OUTSIDE := 1.0  ## m: the drift's line starts this far toward the outside
 
 ## Outside a drift the lean stays under the physics' drift entry (0.65), so drifts are only ever
@@ -61,18 +70,19 @@ const DRIFT_OUTSIDE := 1.0  ## m: the drift's line starts this far toward the ou
 const MAX_STEER_LEAN := 0.6
 const POD_LOOK := 40.0
 const HAZARD_LOOK_SEC := 1.4
-const ROCKET_CADENCE := 90.0
-const LAZY_CADENCE := 55.0
+const ROCKET_CADENCE := 92.0  ## over the physics' 70 rpm through the "2"
+const LAZY_SHARE := 0.6  ## a lazy starter's countdown cadence share (under 70 rpm)
 
-## Seven distinct personalities (in kart order 1..7): line offset, drift, items, aggression.
+## Seven distinct personalities (in kart order 1..7): line offset, drift, items, aggression,
+## cadence (rpm) and whether it manages the rocket start.
 const PERSONAS := [
-	{"line_offset": -1.5, "drift_skill": 0.85, "item_skill": 0.8, "aggression": 0.7},
-	{"line_offset": 1.5, "drift_skill": 0.7, "item_skill": 0.6, "aggression": 0.9},
-	{"line_offset": -0.5, "drift_skill": 0.55, "item_skill": 0.9, "aggression": 0.4},
-	{"line_offset": 0.5, "drift_skill": 0.9, "item_skill": 0.5, "aggression": 0.6},
-	{"line_offset": -2.0, "drift_skill": 0.4, "item_skill": 0.7, "aggression": 0.3},
-	{"line_offset": 2.0, "drift_skill": 0.6, "item_skill": 0.4, "aggression": 0.8},
-	{"line_offset": 0.0, "drift_skill": 0.3, "item_skill": 0.55, "aggression": 0.5},
+	{"line_offset": -1.5, "drift_skill": 0.85, "item_skill": 0.8, "aggression": 0.7, "cadence": 92.0, "rocket": true},
+	{"line_offset": 1.5, "drift_skill": 0.7, "item_skill": 0.6, "aggression": 0.9, "cadence": 96.0, "rocket": true},
+	{"line_offset": -0.5, "drift_skill": 0.55, "item_skill": 0.9, "aggression": 0.4, "cadence": 82.0, "rocket": false},
+	{"line_offset": 0.5, "drift_skill": 0.9, "item_skill": 0.5, "aggression": 0.6, "cadence": 88.0, "rocket": true},
+	{"line_offset": -2.0, "drift_skill": 0.4, "item_skill": 0.7, "aggression": 0.3, "cadence": 74.0, "rocket": false},
+	{"line_offset": 2.0, "drift_skill": 0.6, "item_skill": 0.4, "aggression": 0.8, "cadence": 90.0, "rocket": false},
+	{"line_offset": 0.0, "drift_skill": 0.3, "item_skill": 0.55, "aggression": 0.5, "cadence": 78.0, "rocket": false},
 ]
 
 var profile: Dictionary
@@ -82,6 +92,8 @@ var line_offset: float
 var drift_skill: float
 var item_skill: float
 var aggression: float
+var cadence: float  ## rpm, its own (wandering ± CADENCE_WANDER)
+var rocket: bool  ## spins up for the rocket start
 ## The race's item logic (hazards, pods, the item policy); null races without items.
 var items: KartItemLogic = null
 var mode := Mode.CRUISE
@@ -95,10 +107,11 @@ var _t := 0.0
 var _input := KartInput.new()
 var _pass_side := 0.0
 var _pass_id := -1
-var _drift_t := 0.0
+var _drift_t := 0.0  ## seconds in the current entry pulse or drift
+var _releasing := false  ## easing off to cash the mini-turbo
+var _slid := false  ## the physics started the drift this bot asked for
 var _corner_decided := false
 var _corner_drift := false
-var _rocket := false
 var _drift_cool := 0.0
 
 
@@ -114,7 +127,8 @@ func _init(bot_profile: Dictionary, rider_ftp_w: float, rng_seed: int) -> void:
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_noise.frequency = WANDER_HZ
 	_rng.seed = rng_seed
-	_rocket = _rng.randf() < 0.35 + 0.6 * drift_skill
+	cadence = float(profile.get("cadence", CADENCE))
+	rocket = bool(profile.get("rocket", false))
 
 
 ## The profile for bot number `index` (0..6, kart id − 1) at `power_pct` of the rider's FTP.
@@ -138,16 +152,17 @@ func think(k: KartState, race: KartRaceLogic, dt: float) -> KartInput:
 	_input.standing = false
 	if race.phase == KartRaceLogic.Phase.COUNTDOWN or race.phase == KartRaceLogic.Phase.GRID:
 		# Some bots nail the rocket start (cadence up through the countdown), some don't.
-		_input.cadence = ROCKET_CADENCE if _rocket else LAZY_CADENCE
+		_input.cadence = ROCKET_CADENCE if rocket else cadence * LAZY_SHARE
 		_input.lean = 0.0
 		lane = k.d
 		return _input
-	_input.cadence = CADENCE
+	_input.cadence = cadence + CADENCE_WANDER * clampf(_noise.get_noise_1d(_t + 977.0) * 1.6, -1.0, 1.0)
 	if is_nan(lane):
 		lane = k.d
 	if k.spin_time > 0.0:
 		_input.lean = 0.0
 		drifting = 0
+		_releasing = false
 		lane = k.d
 		return _input
 	if items:
@@ -166,9 +181,9 @@ func think(k: KartState, race: KartRaceLogic, dt: float) -> KartInput:
 	var to := target - k.pos
 	var alpha := angle_difference(k.heading, atan2(-to.x, -to.z))  # + = the target is to the left
 	var dist := maxf(1.0, Vector2(to.x, to.z).length())
-	var yaw_rate := 2.0 * k.speed * sin(alpha) / dist
-	var lean := clampf(race.physics.lean_for_yaw_rate(k, track, yaw_rate), -MAX_STEER_LEAN, MAX_STEER_LEAN)
-	_input.lean = _drift(k, track, lean, dt)
+	var curvature := 2.0 * sin(alpha) / dist  # the pursuit arc, 1/m, + = left
+	var lean := clampf(race.physics.lean_for_yaw_rate(k, track, k.speed * curvature), -MAX_STEER_LEAN, MAX_STEER_LEAN)
+	_input.lean = _drift(k, race.physics, track, lean, curvature, dt)
 	return _input
 
 
@@ -262,47 +277,65 @@ func _keep_apart(k: KartState, race: KartRaceLogic, want: float) -> float:
 	return want
 
 
-## The lean, with the drift on top: entry pulse, hold, release on the exit.
-func _drift(k: KartState, track: KartTrackModel, lean: float, dt: float) -> float:
-	var sharp := _corner_ahead(track, k.s)
+## The lean, with the drift on top. `lean` is the normal steering (under the drift entry),
+## `curvature` the pursuit arc (1/m, + = left). The physics' `k.drift_dir` is the truth: the bot
+## only asks for a drift with an entry pulse, then steers it with `lean_for_drift`.
+func _drift(k: KartState, physics: KartPhysics, track: KartTrackModel, lean: float, curvature: float, dt: float) -> float:
 	_drift_cool = maxf(0.0, _drift_cool - dt)
-	if drifting == 0:
-		if sharp == 0.0:
-			_corner_decided = false
-			return lean
-		if not _corner_decided:
-			_corner_decided = true
-			_corner_drift = _rng.randf() < drift_skill
-		if not _corner_drift or k.speed < DRIFT_MIN_SPEED or mode == Mode.DODGE or _drift_cool > 0.0:
-			return lean
-		# Start from the line or outside it, running along the road.
-		var side := -signf(sharp)  # the lean's direction
-		if (k.d - lane) * side > 0.3 or absf(angle_difference(track.yaw_at(k.s), k.heading)) > DRIFT_ENTRY_PSI:
-			return lean
-		# Lean +1 is right; a left-hand corner (curvature +) wants a left lean.
-		drifting = -int(signf(sharp))
-		_drift_t = 0.0
-	_drift_t += dt
-	var dir := float(drifting)
-	if _drift_t < DRIFT_ENTRY_SEC:
-		return dir * DRIFT_ENTRY_LEAN
-	var off := (k.d - lane) * dir  # + = inside the line (toward the lean)
-	var over := absf(track.curvature(k.s)) < DRIFT_CURV * 0.45 and sharp == 0.0
-	if over or off > DRIFT_SLIP or lean * dir < -0.5 or k.speed < DRIFT_MIN_SPEED * 0.8:
+	if k.drift_dir != 0:
+		if not _slid or drifting != k.drift_dir:  # the drift has just started
+			drifting = k.drift_dir
+			_drift_t = 0.0
+			_releasing = false
+			_slid = true
+		_drift_t += dt
+		var dir := float(k.drift_dir)
+		if _releasing:
+			return dir * DRIFT_RELEASE_LEAN
+		var toward := curvature * -dir  # the arc it wants, toward the drift
+		var widest := physics.drift_curvature(k, track, dir * KartPhysics.DRIFT_WIDE_LEAN)
+		var off := (k.d - lane) * dir  # + = inside its line (toward the drift)
+		var over := _bend_toward(track, k.s, -dir) < KartPhysics.DRIFT_WORTH_K * 0.5
+		var edge := track.half_width(k.s) - k.d * dir  # metres to the road's inside edge
+		if _drift_t >= DRIFT_MIN_SEC and (over or off > DRIFT_SLIP or edge < DRIFT_EDGE \
+				or (toward < widest * 0.5 and off > DRIFT_TIGHT_OFF and k.drift_tier >= 1)):
+			_release()
+			return dir * DRIFT_RELEASE_LEAN
+		return dir * maxf(DRIFT_HOLD_LEAN, physics.lean_for_drift(k, track, toward) * dir)
+	if _releasing or _slid or (drifting != 0 and _drift_t >= DRIFT_ENTRY_MAX):
+		# The drift ended (or never started): back to the line, a cooldown before the next.
+		if not _releasing:
+			_release()
+		_releasing = false
+		_slid = false
 		drifting = 0
-		_corner_decided = sharp != 0.0
-		_drift_cool = DRIFT_COOLDOWN
-		return clampf(lean, -0.25, 0.25)  # under the release threshold: the mini-turbo
-	return dir * clampf(lean * dir, DRIFT_HOLD_LEAN, 1.0)
+	if drifting != 0:
+		# The entry pulse: hold the hard lean until the physics starts the drift.
+		_drift_t += dt
+		return float(drifting) * DRIFT_ENTRY_LEAN
+	var want := physics.wants_drift(k, track)
+	if want == 0:
+		_corner_decided = false
+		return lean
+	if not _corner_decided:
+		_corner_decided = true
+		_corner_drift = _rng.randf() < drift_skill
+	if not _corner_drift or mode == Mode.DODGE or _drift_cool > 0.0:
+		return lean
+	# Start from the line or outside it, running along the road.
+	if (k.d - lane) * want > 0.3 or absf(angle_difference(track.yaw_at(k.s), k.heading)) > DRIFT_ENTRY_PSI:
+		return lean
+	drifting = want
+	_drift_t = 0.0
+	return float(drifting) * DRIFT_ENTRY_LEAN
 
 
-## The signed curvature of the sharpest corner within DRIFT_LOOK ahead, or 0 when there is none.
-func _corner_ahead(track: KartTrackModel, s: float) -> float:
-	var best := 0.0
-	var x: float = DRIFT_LOOK[0]
-	while x <= DRIFT_LOOK[1]:
-		var c := track.curvature(track.wrap(s + x))
-		if absf(c) > absf(best):
-			best = c
-		x += 6.0
-	return best if absf(best) >= DRIFT_CURV else 0.0
+func _release() -> void:
+	_releasing = true
+	_drift_cool = DRIFT_COOLDOWN
+
+
+## How much the road bends toward `turn` (+1 left, -1 right) here and just ahead (1/m, the
+## smaller of the two samples).
+func _bend_toward(track: KartTrackModel, s: float, turn: float) -> float:
+	return minf(track.curvature(s) * turn, track.curvature(track.wrap(s + 8.0)) * turn)

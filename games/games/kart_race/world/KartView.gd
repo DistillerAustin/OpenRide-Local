@@ -34,7 +34,8 @@ const SPIN_TURNS := 2.0  ## turns of the body over a spin-out
 const CHEER_RATE := 2.5  ## the celebration blends in over 0.4 s
 
 var racer := {}
-## Set by effects: an extra body yaw (a drift's slide, radians, + = nose left), and a 0-1 boost glow.
+## The drift's body yaw (radians, + = nose left), copied from KartState.slide (the physics') in
+## `sync`; and a 0-1 boost glow, set by the effects.
 var slide := 0.0
 var boost_glow := 0.0
 ## Optional, set by others (items, bots): a world point the driver glances at, weight 0-1.
@@ -165,6 +166,7 @@ func setup(racer_info: Dictionary) -> void:
 ## Places and poses the kart from its state (every frame).
 func sync(k: KartState, dt: float) -> void:
 	_time += dt
+	slide = k.slide
 	var up := k.normal if k.normal.length_squared() > 0.5 else Vector3.UP
 	var fwd := k.forward()
 	fwd = (fwd - up * fwd.dot(up)).normalized()

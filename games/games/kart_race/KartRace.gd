@@ -602,7 +602,7 @@ func _update_hud(delta: float) -> void:
 	var k: KartState = race.karts[RIDER]
 	var race_text := "Final race" if bool(current.get("is_final", false)) else "Race %d" % (int(current.get("index", 0)) + 1)
 	_status.set_state(k.place, race.karts.size(), k.lap, race.laps, race_text)
-	_kart_hud.update(race, delta, _fx)
+	_kart_hud.update(race, delta)
 	var lights := 0
 	if flow == Flow.COUNTDOWN:
 		if race.countdown <= COUNTDOWN_SEC:

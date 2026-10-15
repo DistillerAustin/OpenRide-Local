@@ -252,3 +252,65 @@ func test_a_spinning_bot_lets_go_of_the_controls() -> void:
 	var inp: KartInput = bots[0].think(race.karts[0], race, DT)
 	assert_float(inp.lean).is_equal(0.0)
 	assert_bool(inp.use_item).is_false()
+
+
+func test_every_bot_drift_is_on_purpose_and_most_pay_a_mini_turbo() -> void:
+	# A full field on Meadow Ring: the physics only ever starts a drift the bot asked for (its
+	# entry pulse), and a drift usually ends in a mini-turbo.
+	var profiles := []
+	for i in 8:
+		profiles.append(KartBotDriver.profile_for(i, 0.45 + 0.04 * i))
+	var setup := _race(profiles, Fixtures.meadow(), 2)
+	var race: KartRaceLogic = setup[0]
+	var bots: Array = setup[1]
+	var intent := []
+	intent.resize(8)
+	intent.fill(0)
+	var counts := {"drifts": 0, "accidental": 0, "turbos": 0}
+	race.events.drift_started.connect(func(id: int, dir: int):
+		counts.drifts += 1
+		if intent[id] != dir:
+			counts.accidental += 1)
+	race.events.boost_started.connect(func(_id: int, kind: String, _tier: int):
+		if kind == "drift":
+			counts.turbos += 1)
+	var inputs := []
+	inputs.resize(8)
+	var t := 0.0
+	while race.phase != KartRaceLogic.Phase.FINISHED and t < 600.0:
+		for i in 8:
+			inputs[i] = bots[i].think(race.karts[i], race, DT)
+			intent[i] = bots[i].drifting
+		race.step(DT, inputs)
+		t += DT
+	assert_int(int(counts.drifts)).is_greater(10)
+	assert_int(int(counts.accidental)).is_equal(0)
+	assert_float(float(counts.turbos)).is_greater_equal(float(counts.drifts) * 0.7)
+
+
+func test_only_some_personas_manage_the_rocket_start_and_cadences_differ() -> void:
+	var profiles := []
+	for i in 7:
+		profiles.append(KartBotDriver.profile_for(i, 0.6))
+	var setup := _race(profiles, Fixtures.meadow(), 1)
+	var race: KartRaceLogic = setup[0]
+	var bots: Array = setup[1]
+	race.start_countdown(3.0)
+	var rockets := []
+	race.events.boost_started.connect(func(id: int, kind: String, _tier: int):
+		if kind == "start":
+			rockets.append(id))
+	var inputs := []
+	inputs.resize(7)
+	for i in roundi(8.0 / DT):
+		_step(race, bots, inputs)
+	var want := []
+	var cadences := {}
+	for i in 7:
+		if bots[i].rocket:
+			want.append(i)
+		cadences[roundi(inputs[i].cadence)] = true
+		assert_float(inputs[i].cadence).is_between(65.0, 105.0)
+	assert_array(rockets).is_equal(want)
+	assert_int(want.size()).is_between(2, 4)
+	assert_int(cadences.size()).is_greater_equal(5)

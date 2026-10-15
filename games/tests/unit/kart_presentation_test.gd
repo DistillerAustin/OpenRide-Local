@@ -194,6 +194,59 @@ func test_a_touch_on_the_item_button_uses_the_item_and_elsewhere_does_not() -> v
 	assert_bool(game._read_rider().use_item).is_false()
 
 
+func test_a_tap_fires_the_item_the_roulette_landed_and_its_icon_matches() -> void:
+	# The whole path: a pod starts the roulette; a tap mid-roulette does nothing; once the item
+	# lands the button shows its icon, and a tap fires it through KartItemLogic (the Turbo Can:
+	# one boost_started).
+	var game := _game()
+	var frames := 0
+	while game.get("flow") != KartRaceScript.Flow.RACING and frames < 60 * 10:
+		game._on_frame(DT)
+		frames += 1
+	var kh: KartHud = game.get("_kart_hud")
+	kh.set_gameplay_visible(true, false)
+	var race: KartRaceLogic = game.get("race")
+	var items: KartItemLogic = game.get("items")
+	var k: KartState = race.karts[KartRaceLogic.RIDER]
+	var used := []
+	var boosts := []
+	race.events.item_used.connect(func(id: int, item: String): used.append([id, item]))
+	race.events.boost_started.connect(func(id: int, kind: String, _tier: int):
+		if id == KartRaceLogic.RIDER and kind == "item":
+			boosts.append(kind))
+	items.pods.clear()
+	items.add_pod(k.s, k.d)
+	game._on_frame(DT)
+	assert_float(k.roulette_time).is_greater(0.0)
+	items._pending[KartRaceLogic.RIDER] = "turbo"
+	await _settle()
+	var button := kh.item_button.get_global_rect()
+	_touch(button.get_center())
+	game._on_frame(DT)
+	assert_array(used).is_empty()
+	while k.roulette_time > 0.0:
+		game._on_frame(DT)
+	assert_str(k.item).is_equal("turbo")
+	assert_str(KartItemIcons.kind(k.item)).is_equal(k.item)
+	await get_tree().create_timer(float(KartItemButton.DEBOUNCE_MS) / 1000.0 + 0.05).timeout
+	_touch(button.get_center())
+	for i in 120:
+		game._on_frame(DT)
+	assert_array(used).is_equal([[KartRaceLogic.RIDER, "turbo"]])
+	assert_array(boosts).has_size(1)
+
+
+func test_the_hud_icons_cover_every_item_id() -> void:
+	for item in KartItemLogic.ITEMS:
+		assert_str(KartItemIcons.kind(item)).is_equal(item)
+	assert_array(KartItemIcons.KINDS).contains_exactly_in_any_order(KartItemLogic.ITEMS)
+
+
+func test_the_drift_meter_uses_the_physics_tiers() -> void:
+	var meter: KartDriftMeter = auto_free(KartDriftMeter.new())
+	assert_array(meter.tiers).is_equal(KartPhysics.TIER_SEC)
+
+
 # --- Flow screens ---
 
 func test_the_results_and_podium_run_without_input_and_advance_on_time() -> void:

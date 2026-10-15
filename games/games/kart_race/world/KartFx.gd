@@ -9,19 +9,14 @@ extends Node3D
 ## It only reads: each KartState (drift_dir/drift_tier for sparks, boost_time for flames,
 ## spin_time for stars, surface for dust, draft) and the race's events (`listen`): tier pings
 ## burst sparks, a drift boost's flames take its tier's colour, hits and shield blocks burst,
-## bumps throw sparks. It pokes the views' `slide` / `boost_glow` and the camera's `kick`.
-##
-## `demo_drifts` (off in the game) scripts a drift every few seconds for captures made before
-## the handling agent's drift physics lands.
+## bumps throw sparks. It pokes the views' `boost_glow` and the camera's `kick` (the views take
+## their drift slide from KartState.slide themselves).
 
 const PUFFS := 160
 const SPARKS := 140
 const STARS := 48
 const STARS_PER_KART := 5
-const DRIFT_EVERY := 5.5  ## seconds between the rider's scripted drifts (demo)
-const DRIFT_SEC := 1.9
 const BOOST_SEC := 0.9
-const TIER_SEC := [0.0, 0.55, 1.15]
 const TIER_COLORS := KartTheme.TIER_COLORS
 const FLAME := Color(1.0, 0.55, 0.15)
 const FLAME_CORE := Color(1.0, 0.9, 0.5)
@@ -31,10 +26,6 @@ const DRAFT_LATERAL := 1.6
 
 var views: Array = []
 var camera: KartChaseCamera
-## The rider's scripted drift (demo): 0-1 charge and its tier (0 = none).
-var drift_charge := 0.0
-var drift_tier := 0
-var demo_drifts := false
 
 var _puff_mm: MultiMesh
 var _spark_mm: MultiMesh
@@ -59,9 +50,6 @@ var _sc := PackedColorArray()
 var _sn := 0
 var _rng := RandomNumberGenerator.new()
 var _emit := PackedFloat32Array()  # per kart: exhaust timer
-var _drift_t := PackedFloat32Array()  # per kart: time in the scripted drift (-1 none)
-var _drift_next := PackedFloat32Array()  # per kart: seconds to the next scripted drift
-var _drift_dir := PackedFloat32Array()
 var _boost_t := PackedFloat32Array()  # per kart: flames left from `boost()`
 var _boost_color := PackedColorArray()
 var _star_t := PackedFloat32Array()  # per kart: hit stars left
@@ -89,23 +77,16 @@ func begin(kart_views: Array) -> void:
 	var n := views.size()
 	# (Packed arrays are values: resize each member itself, not copies in a list.)
 	_emit.resize(n)
-	_drift_t.resize(n)
-	_drift_next.resize(n)
-	_drift_dir.resize(n)
 	_boost_t.resize(n)
 	_star_t.resize(n)
 	_boost_color.resize(n)
 	for i in n:
 		_emit[i] = _rng.randf() * 0.1
-		_drift_t[i] = -1.0
-		_drift_next[i] = (2.5 if i == 0 else _rng.randf_range(3.0, 9.0))
 		_boost_t[i] = 0.0
 		_boost_color[i] = FLAME
 		_star_t[i] = 0.0
 	_pn = 0
 	_sn = 0
-	drift_charge = 0.0
-	drift_tier = 0
 
 
 ## Listens to a race's events (from KartRace's race_began).
@@ -210,19 +191,9 @@ func _kart(i: int, k: KartState, v: KartView, race: KartRaceLogic, dt: float, ra
 		var dusty := k.surface == KartTrackModel.Surface.OFFROAD
 		_puff(w, back * 2.0 + Vector3.UP * 1.0 + _jitter(0.8), 0.9 if dusty else 0.6, Vector2(0.3, 1.4 if dusty else 0.9),
 			Color(0.72, 0.62, 0.45, 0.55) if dusty else Color(0.8, 0.78, 0.76, 0.35))
-	# Drifting: the physics' drift, or the demo's scripted one.
-	var dir := float(k.drift_dir)
-	var tier := k.drift_tier
-	if demo_drifts:
-		var demo := _demo_drift(i, k, race, dt, racing)
-		if demo != 0.0:
-			dir = demo
-			var t := _drift_t[i]
-			tier = 3 if t >= TIER_SEC[2] else (2 if t >= TIER_SEC[1] else 1)
-	if racing and dir != 0.0:
-		_drift_sparks(v, back, dir, tier, dt)
-	var slide_goal := dir * 0.32 if dir != 0.0 else 0.0
-	v.slide = lerpf(v.slide, slide_goal, 1.0 - exp(-10.0 * dt))
+	# Drifting: the physics' drift (the view takes its slide from KartState.slide).
+	if racing and k.drift_dir != 0:
+		_drift_sparks(v, back, float(k.drift_dir), k.drift_tier, dt)
 	# Boost flames: from `boost()` (events) or any boost the physics runs.
 	if _boost_t[i] > 0.0:
 		_boost_t[i] -= dt
@@ -236,34 +207,6 @@ func _kart(i: int, k: KartState, v: KartView, race: KartRaceLogic, dt: float, ra
 	v.boost_glow = clampf(maxf(_boost_t[i] / BOOST_SEC, minf(k.boost_time, 1.0)), 0.0, 1.0)
 	if _star_t[i] > 0.0:
 		_star_t[i] -= dt
-
-
-## The scripted drift for captures: returns its direction (0 when not drifting).
-func _demo_drift(i: int, k: KartState, race: KartRaceLogic, dt: float, racing: bool) -> float:
-	if not racing or k.speed <= 9.0:
-		return 0.0
-	if _drift_t[i] < 0.0:
-		_drift_next[i] -= dt
-		if _drift_next[i] <= 0.0:
-			var curv := race.track.curvature(k.s)
-			_drift_dir[i] = signf(curv) if absf(curv) > 0.002 else (1.0 if _rng.randf() < 0.5 else -1.0)
-			_drift_t[i] = 0.0
-		if i == 0:
-			drift_charge = 0.0
-			drift_tier = 0
-		return 0.0
-	_drift_t[i] += dt
-	var t := _drift_t[i]
-	if t >= DRIFT_SEC:
-		_drift_t[i] = -1.0
-		_drift_next[i] = DRIFT_EVERY if i == 0 else _rng.randf_range(6.0, 11.0)
-		boost(i, BOOST_SEC, TIER_COLORS[2])
-		return 0.0
-	var tier := 3 if t >= TIER_SEC[2] else (2 if t >= TIER_SEC[1] else 1)
-	if i == 0:
-		drift_charge = clampf(t / DRIFT_SEC, 0.0, 1.0)
-		drift_tier = tier
-	return _drift_dir[i]
 
 
 ## A flickering glow at both rear wheels in the tier's colour, sparks spraying back, and a
