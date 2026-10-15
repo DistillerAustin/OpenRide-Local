@@ -46,6 +46,8 @@ const COUNTDOWN_SEC := 3.0
 const FLYOVER_SEC := 3.5
 const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
+## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
+const CAMERA_CLEAR := 2.8
 const GO_SEC := 0.8
 const DEFAULT_FTP := 150.0
 ## The bots' shares of the rider's FTP, weakest to strongest, by difficulty (forgiving: rider
@@ -586,6 +588,11 @@ func _sync_views(delta: float) -> void:
 		camera.flyover(k, 1.0 - (race.countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)
 	else:
 		camera.follow(k, delta)
+	# A bot right at the lens would fill the screen: hide it until it's clear (integration).
+	var eye := camera.global_position
+	for i in range(1, views.size()):
+		var v: Node3D = views[i]
+		v.visible = camera.hold or v.global_position.distance_squared_to(eye) > CAMERA_CLEAR * CAMERA_CLEAR
 	if _item_views:  # race-systems
 		_item_views.sync(delta)
 	if _fx:

@@ -236,6 +236,25 @@ func test_a_tap_fires_the_item_the_roulette_landed_and_its_icon_matches() -> voi
 	assert_array(boosts).has_size(1)
 
 
+func test_a_kart_at_the_lens_is_hidden_until_clear() -> void:
+	var game := _game()
+	var frames := 0
+	while game.get("flow") != KartRaceScript.Flow.RACING and frames < 60 * 10:
+		game._on_frame(DT)
+		frames += 1
+	var race: KartRaceLogic = game.get("race")
+	var views: Array = game.get("views")
+	var cam: KartChaseCamera = game.get("camera")
+	var bot: KartState = race.karts[1]
+	bot.pos = cam.global_position + Vector3.DOWN * 1.0
+	game._sync_views(0.0)
+	assert_bool(views[1].visible).is_false()
+	assert_bool(views[KartRaceLogic.RIDER].visible).is_true()
+	bot.pos = race.karts[KartRaceLogic.RIDER].pos + race.karts[KartRaceLogic.RIDER].forward() * 10.0
+	game._sync_views(0.0)
+	assert_bool(views[1].visible).is_true()
+
+
 func test_the_hud_icons_cover_every_item_id() -> void:
 	for item in KartItemLogic.ITEMS:
 		assert_str(KartItemIcons.kind(item)).is_equal(item)

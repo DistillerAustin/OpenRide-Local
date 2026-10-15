@@ -1,10 +1,12 @@
 # Kart Race: the module contract
 
 Kart Race (#43) is a Grand Prix of 3-lap races against seven bots. The rider pedals to drive,
-leans in front of the camera to steer, and taps to use items. This file freezes the contracts
-the Phase 1 walking skeleton set up, so the Phase 2 agents can build in parallel against
-them. **Change an interface below only with a matching change here** (and say so in your
-report). Additions are fine; renames and removals are not.
+leans in front of the camera to steer, and taps to use items. This file is the module's
+contract: the Phase 1 skeleton's interfaces plus everything the Phase 2 agents (handling,
+racers, race-systems, presentation) added, folded together in the Phase 3 integration. The
+world agent's additions (tracks, `KartWorld`, `KartLook`, the world shaders) land with its merge.
+**Change an interface below only with a matching change here** (and say so in your report).
+Additions are fine; renames and removals are not.
 
 Everything is original: the game, racers, items and tracks have our own names. Assets must be
 original, procedural, CC0 or OFL, each listed in `games/assets/SOURCES.md` in the same commit.
@@ -35,10 +37,16 @@ KartRace (Node2D, KartRace.gd: extends Game)
 ├─ View3D (SubViewport, 0.62 × 1080p, no MSAA, UPDATE_ALWAYS)
 │  └─ World (KartWorld: environment, sun, road, barriers, ground, trees)
 │     ├─ ChaseCamera (KartChaseCamera, current)
-│     └─ Kart_<racer> × 8 (KartView: Body, axles, shadow, anchors)
+│     ├─ Kart_<racer> × 8 (KartView: one skinned mesh + outline, shadow, anchors)
+│     ├─ Items (KartItemViews: pods, pucks, drones, goo, shields, magnet beams, bursts)
+│     └─ Fx (KartFx: puffs, sparks and flames, hit stars: 3 MultiMeshes)
 ├─ View3DImage (TextureRect: the viewport scaled to 1920×1080 under the HUD)
-└─ KartRaceBoard (CanvasLayer 9: results and standings, placeholder)
-(the framework's Hud, CanvasLayer 10, holds KartStatus in its top-centre slot)
+├─ KartHud (CanvasLayer 8: lap badge, clock, racer list, minimap, ride strip, item button,
+│           drift meter, place, countdown, banners, speed lines)
+├─ KartRaceBoard (CanvasLayer 9: the results board and the podium)
+└─ KartAudio (music stems, engine/screech/crowd loops, one-shots)
+(the framework's Hud, CanvasLayer 10, in Kart Race's skin: clock and score, Pause/End,
+Recalibrate; its ride panel is hidden for KartHud's ride strip)
 ```
 
 The 3D view renders into the SubViewport at `RENDER_SCALE` (Dodge Ball's pattern; never set
@@ -49,16 +57,17 @@ The 3D view renders into the SubViewport at `RENDER_SCALE` (Dodge Ball's pattern
 Logic never touches nodes; nodes only read logic and listen to `KartRaceEvents`.
 
 ```
-InputBus ──► KartRace._read_rider() ─┐
+InputBus ──► KartRace._read_rider() ─┐   (item button tap → use_item edge)
 KartBotDriver.think() × 7 ───────────┴─► inputs[] ─► KartRaceLogic.step(1/60)
-                                                         │  KartPhysics.step() per kart
-                                                         │  laps, places, finish
-                                                         ▼
+                                                         │  countdown: rocket start; GO: launch
+                                                         │  drafts, KartPhysics.step() per kart
+                                                         │  contacts, laps, places, finish
+                                                         ▼  then KartItemLogic.step (same inputs)
                                               KartState × 8  +  KartRaceEvents signals
                                                          │             │
-                     KartView.sync / KartChaseCamera.follow ◄──┘       ├─► KartScoring ─► Game.award()
-                     KartStatus.set_state (HUD) ◄─────────────────────┤
-                                                                       └─► KartRace (GP flow), HUD, audio, fx
+     KartView.sync / KartChaseCamera.follow ◄──┘       ├─► KartScoring ─► Game.award()
+     KartItemViews.sync / KartFx.step ◄────────┤       │
+     KartHud.update (HUD) ◄────────────────────┘       └─► KartRace (GP flow), HUD, audio, fx, camera
 ```
 
 - **The fixed step.** `_on_frame(delta)` adds delta to an accumulator and runs `_tick(1/60)`
@@ -71,6 +80,9 @@ KartBotDriver.think() × 7 ───────────┴─► inputs[] �
   builder; don't edit `_begin_race`.
 - `sim_time` counts simulated seconds; `test_input` (a `KartInput`) replaces the rider's input
   in tests.
+- **Per frame** (`_sync_views`): views, then the camera (or the fly-over before GO), then other
+  karts within `CAMERA_CLEAR` (2.8 m) of the lens are hidden so none fills the screen (not
+  while the camera is held), then item views, effects, audio and the HUD.
 
 ## Track space
 
@@ -138,6 +150,7 @@ static func average_length() -> float
 class_name KartInput extends RefCounted
 var power_w := 0.0; var cadence := 0.0; var lean := 0.0   # -1 left .. +1 right
 var resistance := 0.0; var standing := false; var use_item := false  # use_item is an edge
+var tracking := true      # false while the tracker has lost the face: no drift starts, full assist
 
 class_name KartState extends RefCounted
 var id: int; var racer_id: String; var weight := 1.0          # 0.85 light .. 1.15 heavy
@@ -153,14 +166,29 @@ var hop := 0.0                                                 # visual hop heig
 var item := ""; var roulette_time := 0.0
 var finished := false; var finish_time := 0.0; var place := 0
 var draft := 0.0                                               # 0..1 this tick
+# Handling (physics-written; views may read):
+var slide := 0.0          # the drift's body yaw, radians, + = nose left (a right drift: < 0)
+var lean_smooth := 0.0    # the lean after the steering response lag
+var drift_time := 0.0     # seconds into the drift (the hop is its start)
+var boost_kind := ""      # the latest boost: "drift" | "pad" | "item" | "start"
+var boost_tier := 0       # the latest drift boost's tier
+var climbing := false; var standing_bonus := false; var on_pad := false
+var rocket_hold := 0.0    # countdown seconds at cadence >= 70 in the "2" window
+var drift_hold := 0.0; var drift_hold_dir := 0; var drift_release := 0.0
+var drift_res0 := 0.0; var drift_cool := 0.0
 func forward() -> Vector3
 
 class_name KartPhysics extends RefCounted
 const SPEED_SCALE := 2.4
 const SPIN_SEC := 1.0; const KART_RADIUS := 0.95; const DEAD_ZONE := 0.06   # (and the tuning constants)
+const DRIFT_LEAN := 0.65; const DRIFT_HOLD := 0.12; const RELEASE_LEAN := 0.3; const RELEASE_HOLD := 0.15
+const DRIFT_WIDE_LEAN := 0.35; const DRIFT_WORTH_K := 1.0 / 70.0
+const TIER_SEC := [0.9, 2.0, 3.4]; const TURBO_SEC := [0.5, 0.9, 1.4]   # spark tiers, mini-turbos
+const ROCKET_CADENCE := 70.0; const ROCKET_WINDOW := Vector2(1.0, 2.0); const ROCKET_HOLD := 0.3
 var assist := 1.0        # 0 off, 0.5 low, 1 high (curvature feed-forward and alignment share)
 var drift_resistance := 40.0
-var events: KartRaceEvents = null                  # set by KartRaceLogic; emit drift/boost events here
+var top_speed := 20.0    # m/s the drift thresholds are shares of (KartRace: the rider's 0.6 FTP cruise)
+var events: KartRaceEvents = null                  # set by KartRaceLogic
 static func steady_bike_speed(power_w: float, grade: float, draft := 0.0) -> float   # m/s
 static func bike_resistance(v: float, grade: float, draft := 0.0, crr_mult := 1.0) -> float
 static func shape_lean(lean: float) -> float
@@ -169,10 +197,19 @@ static func max_yaw_rate(speed: float) -> float
 func lean_for_yaw_rate(k: KartState, track: KartTrackModel, yaw_rate: float) -> float
 func assist_yaw_rate(k: KartState, track: KartTrackModel) -> float
 func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> void
-func apply_boost(k: KartState, seconds: float) -> void
+func countdown_step(k: KartState, inp: KartInput, countdown: float, dt: float) -> void  # rocket start
+func launch(k: KartState) -> void                  # GO: emits boost_started(id, "start", 1) if earned
+func apply_boost(k: KartState, seconds: float, push := BOOST_PUSH, kind := "item") -> void  # emits nothing
 func apply_spinout(k: KartState) -> bool          # false when a shield absorbed it
+func apply_pull(k: KartState, track: KartTrackModel, want_speed: float, accel: float, to_d: float,
+		lateral: float, dt: float) -> void          # the magnet: speed up, slide across, full draft
 static func resolve_contacts(karts: Array) -> Array   # [[a_id, b_id, strength], ...]
-# Phase 2 hook: func _update_drift(k, inp, track, dt) -> float (extra yaw rate, + = left)
+static func update_drafts(karts: Array) -> void       # once a tick, before the karts step
+func wants_drift(k: KartState, track: KartTrackModel) -> int            # bots: the dir a corner is worth, or 0
+func drift_curvature(k: KartState, track: KartTrackModel, lean: float) -> float   # the arc a lean gives
+func lean_for_drift(k: KartState, track: KartTrackModel, curvature: float) -> float  # bots: hold an arc
+# _update_drift(k, inp, track, dt) -> float: the drift (extra yaw rate, + = left); emits
+# drift_started / drift_tier / boost_started("drift", tier) through `events`.
 
 class_name KartRaceEvents extends RefCounted      # see "Signal map"
 
@@ -205,19 +242,34 @@ func place_of(kart_id: int) -> int
 
 class_name KartView extends Node3D
 const ANCHORS := ["exhaust_l","exhaust_r","wheel_fl","wheel_fr","wheel_rl","wheel_rr","driver_head","item_hold","shadow"]
+var slide := 0.0                                     # copied from KartState.slide in sync
+var boost_glow := 0.0                                # 0-1, set by KartFx
+var look_target := Vector3.ZERO; var look_weight := 0.0   # a glance (items, bots), weight 0-1
 func setup(racer: Dictionary) -> void                # a KartRoster entry
-func sync(k: KartState, dt: float) -> void
+func sync(k: KartState, dt: float) -> void           # pose: spin, slide, roll, pitch, hop, cheer
 func anchor(name: String) -> Node3D
-# Phase 2 (racers) additions: var slide, boost_glow (fx), look_target: Vector3 + look_weight 0-1
-# (a glance), func bone_pose(bone) -> Transform3D, static model_mesh(racer), head_mesh(racer).
-# Models: racers/KartModels (one mesh a kart, rigged in the vertex shader), KartPortraits.
+func bone_pose(bone: String) -> Transform3D          # KartModels.BONES, for tests and effects
+static func model_mesh(racer: Dictionary) -> ArrayMesh; static func head_mesh(racer: Dictionary) -> ArrayMesh
+# Models: racers/KartModels (one mesh a kart, rigged in the vertex shader: rig.gdshaderinc).
+
+class_name KartPortraits extends RefCounted       # a racer's head rendered once (UPDATE_ONCE)
+static func texture(parent: Node, racer: Dictionary, size := 160) -> ViewportTexture
+static func framing(mesh: Mesh) -> Dictionary      # {eye, at, fov}: the face centred, ears in
 
 class_name KartBotDriver extends RefCounted
-func _init(profile: Dictionary, ftp_w: float, rng_seed: int) -> void   # {power_pct, line_offset, drift_skill, item_skill, aggression}
+const PERSONAS := [...]   # seven: {line_offset, drift_skill, item_skill, aggression, cadence, rocket}
+enum Mode { CRUISE, PASS, DODGE }
+var items: KartItemLogic = null                      # set by KartRace's _build_items per race
+var mode; var drifting: int; var lane: float         # readable state (tests, debugging)
+var cadence: float; var rocket: bool                 # its own cadence (rpm); manages the rocket start
+func _init(profile: Dictionary, ftp_w: float, rng_seed: int) -> void   # {power_pct, line_offset, drift_skill, item_skill, aggression, cadence?, rocket?}
+static func profile_for(index: int, pct: float) -> Dictionary          # PERSONAS[index] at pct of FTP
+func power_at(t: float) -> float
 func think(k: KartState, race: KartRaceLogic, dt: float) -> KartInput  # may return the same instance each call
 
 class_name KartScoring extends RefCounted
 signal awarded(points: float, reason: String)        # KartRace passes it to Game.award()
+const STAR_THRESHOLDS := {"easy": [65, 115, 220], "standard": [75, 135, 245], "hard": [85, 140, 255]}  # points/min
 var rider_id := 0
 func begin_race(race: KartRaceLogic) -> void
 func step(dt: float, power_w: float) -> void
@@ -228,17 +280,52 @@ const RACERS := [{id, name, species, color, accent, weight}, ...]   # eight, kar
 static func ids() -> Array; static func names() -> Array
 static func racer(racer_id: String) -> Dictionary
 static func lineup(rider_racer_id: String, count := 8) -> Array      # the rider's pick first
-# Phase 2 additions: entries also carry suit, eyes, helmet?, kart ("light"|"medium"|"heavy"),
-# number, horn, tagline; static option_labels(), kart_class(r), horn_preset(id) -> SfxPreset.
+# Entries also carry suit, eyes, helmet?, kart ("light"|"medium"|"heavy"), number, horn
+# ({hz, ratio, beeps, wave}), tagline.
+static func option_labels() -> Array; static func kart_class(r: Dictionary) -> String
+static func horn_preset(racer_id: String) -> SfxPreset   # KartSfx registers it as "horn_<id>"
 
 class_name KartWorld extends Node3D
 var tuning := {}                                     # dev switches: road, walls, ground, scenery
 func build(track: KartTrackModel) -> void            # (re)build for a track or direction
 
 class_name KartChaseCamera extends Camera3D
-var mode := "chase"                                  # "chase" | "close"
+var mode := "chase"                                  # "chase" | "close" (the Camera option)
+var hold := false; var held := Transform3D.IDENTITY   # pin the camera (screenshots, cut-scenes)
+var kart_id := 0
+func watch(events: KartRaceEvents, id := 0) -> void  # boosts kick, bumps and hits shake (per race)
 func snap(k: KartState) -> void
-func follow(k: KartState, dt: float) -> void
+func follow(k: KartState, dt: float) -> void         # yaw/distance/height springs, FOV with speed, drift roll
+func flyover(k: KartState, t: float, track: KartTrackModel) -> void   # t 0..1 before GO, ends on the chase spot
+func kick(amount := 1.0) -> void; func shake(amount: float) -> void; func trauma() -> float
+
+class_name KartItemLogic extends RefCounted        # one per race, stepped right after the race
+signal pod_broken(pod_index: int, kart_id: int)
+const ITEMS := ["turbo", "puck", "drone", "goo", "shield", "magnet"]   # ids (HUD icons match them)
+const NAMES := {...}; const ODDS := {...}            # display names; odds by position bucket
+var race: KartRaceLogic; var rider_id := 0; var auto_rider := false   # the Auto items option
+var pods: Array[Pod]; var shots: Array[Shot]; var goos: Array[Goo]    # inner classes, for the views
+var magnet_time: PackedFloat32Array; var magnet_target: PackedInt32Array
+func _init(race: KartRaceLogic, rng_seed := 0) -> void   # pod rows from the track's "items" zones
+static func odds(place: int, racers: int) -> Dictionary; static func roll(place, racers, rng) -> String
+func add_pod(s: float, d: float) -> Pod
+func step(dt: float, inputs: Array) -> void          # roulette, use on the use_item edge, pickups, shots, goo, magnets
+func give(kart_id: int, item: String) -> void; func use(kart_id: int) -> bool
+func hit(k: KartState, by_id: int, item: String) -> void   # spin-out or shield_blocked
+func wants_use(kart_id: int, skill: float) -> bool   # the policy (bots, Auto items)
+func dodge_d(s, d, ahead) -> float; func pod_d(s, d, ahead) -> float; func threatened(id) -> bool  # for bots
+func live_shots() -> int; func live_goos() -> int
+
+class_name KartItemViews extends Node3D            # draws KartItemLogic's state; no logic
+func bind(logic: KartItemLogic, race: KartRaceLogic) -> void
+func sync(dt: float) -> void
+
+class_name KartFx extends Node3D                   # effects; only reads KartState and events
+var views: Array; var camera: KartChaseCamera
+func begin(kart_views: Array) -> void; func listen(events: KartRaceEvents) -> void
+func step(race: KartRaceLogic, dt: float) -> void   # sparks from drift_dir/drift_tier, flames from boosts
+func boost(id: int, seconds := BOOST_SEC, color := FLAME) -> void
+func draft_screen(race, cam, hud) -> float           # the draft streaks' strength and screen point
 
 class_name KartStatus extends PanelContainer         # placeholder HUD widget
 func set_state(place: int, racers: int, lap: int, laps: int, race_text: String) -> void
@@ -251,7 +338,7 @@ func hide_board() -> void
 
 `KartRace.gd` (the `Game`): `signal race_began(race)`, `enum Flow { IDLE, COUNTDOWN, RACING,
 RESULTS, PODIUM, DONE }`, and the members `race`, `gp`, `scoring`, `track`, `world`, `camera`,
-`views`, `bots`, `lineup`, `flow`, `current`, `ftp_w`, `sim_time`, `test_input`. Builders:
+`views`, `bots`, `items`, `lineup`, `flow`, `current`, `ftp_w`, `sim_time`, `test_input`. Builders:
 `_build_world()`, `_build_camera()`, `_build_racers()`, `_build_items()`, `_build_hud()`,
 `_build_audio()`, `_build_fx()`.
 
@@ -262,28 +349,32 @@ All on the race's `KartRaceEvents` (`race.events`). Kart ids index `race.karts`;
 
 | Signal | Emitted by | Listened to by (now / Phase 2) |
 | --- | --- | --- |
-| `race_started()` | KartRaceLogic, when the countdown ends | KartRace (flow → RACING, "GO!") / audio, camera |
-| `lap_completed(kart_id, lap, lap_time)` | KartRaceLogic, the first time a kart completes `lap` | KartScoring (+30, best lap) / HUD lap banner, audio |
-| `final_lap(kart_id)` | KartRaceLogic, when a kart starts its last lap | KartRace ("Final lap!") / HUD banner, music variation |
-| `kart_finished(kart_id, place, time)` | KartRaceLogic (karts still running when the rider finishes get projected times) | / HUD, audio |
+| `race_started()` | KartRaceLogic, when the countdown ends | KartRace (flow → RACING, "GO!"), audio |
+| `lap_completed(kart_id, lap, lap_time)` | KartRaceLogic, the first time a kart completes `lap` | KartScoring (+30, best lap), HUD lap banner, audio |
+| `final_lap(kart_id)` | KartRaceLogic, when a kart starts its last lap | KartRace (banner), audio (fanfare, final-lap music) |
+| `kart_finished(kart_id, place, time)` | KartRaceLogic (karts still running when the rider finishes get projected times) | audio (cheer, the rider's horn) |
 | `race_finished(order)` | KartRaceLogic, once, when the rider finishes | KartRace (GP record, results board), KartScoring (points × 20) |
-| `position_changed(kart_id, old, new)` | KartRaceLogic, once per change of place | KartScoring (overtakes) / HUD pop, racer list |
-| `drift_started(kart_id, dir)` | KartPhysics (Phase 2) | / fx, audio, camera |
-| `drift_tier(kart_id, tier)` | KartPhysics (Phase 2) | / fx sparks, audio pings, drift meter |
-| `boost_started(kart_id, kind, tier)` | KartPhysics, items (Phase 2); kind `drift`/`pad`/`item`/`start` | KartScoring (mini-turbo awards, boosts) / fx, audio, camera |
-| `item_picked(kart_id, item)` | KartItemLogic (Phase 2) | / item button, audio |
-| `item_used(kart_id, item)` | KartItemLogic (Phase 2) | / item views, audio |
-| `kart_hit(kart_id, by_id, item)` | KartItemLogic (Phase 2) | KartScoring (+25 when by the rider) / fx, camera shake |
-| `shield_blocked(kart_id)` | KartItemLogic (Phase 2) | / fx, audio |
-| `wall_bump(kart_id, strength)` | KartPhysics, on hitting the barrier (not while grinding along it) | / camera shake, audio |
-| `kart_bump(a_id, b_id, strength)` | KartRaceLogic, from `resolve_contacts` | / audio, fx |
+| `position_changed(kart_id, old, new)` | KartRaceLogic, once per change of place | KartScoring (overtakes) |
+| `drift_started(kart_id, dir)` | KartPhysics | (tests; bots read `drift_dir`) |
+| `drift_tier(kart_id, tier)` | KartPhysics | KartFx (tier bursts), audio (tier pings) |
+| `boost_started(kart_id, kind, tier)` | KartPhysics (`drift`, `pad`, `start`); KartItemLogic (`item`, once per Turbo Can) | KartScoring (boosts; mini-turbos +10/20/35), KartFx (flames, tier colour), camera (kick), audio |
+| `item_picked(kart_id, item)` | KartItemLogic, when the item lands (after the rider's roulette) | audio |
+| `item_used(kart_id, item)` | KartItemLogic | audio |
+| `kart_hit(kart_id, by_id, item)` | KartItemLogic | KartScoring (+25 when by the rider), KartFx (stars), camera (shake), audio |
+| `shield_blocked(kart_id)` | KartItemLogic | KartFx, audio |
+| `wall_bump(kart_id, strength)` | KartPhysics, on hitting the barrier (not while grinding along it) | camera shake, KartFx, audio |
+| `kart_bump(a_id, b_id, strength)` | KartRaceLogic, from `resolve_contacts` | camera shake, KartFx, audio |
+
+`KartItemLogic.pod_broken(pod_index, kart_id)` (on the item logic, not the race's events) fires
+when a kart breaks a pod: KartItemViews bursts it.
 
 ## The race and the Grand Prix
 
 - **Grid**: staggered slots, alternately left and right of the centre (±2.5 m), 6 m behind the
   line then 4.5 m apart. By default the bots fill it in id order (kart 1 on pole, the
   strongest) and the rider starts last.
-- **Countdown**: inputs are ignored (A1's rocket start reads the input then). **Laps**: `lap`
+- **Countdown**: the karts stay put; `KartPhysics.countdown_step` reads each input's cadence for
+  the rocket start, and `launch` boosts the karts that earned it at GO. **Laps**: `lap`
   counts start-line crossings (0 on the grid, 1 on lap 1, laps + 1 at the finish), down on a
   backward wrap, so `progress = lap × length + s` is continuous. Lap events fire only for a lap
   never reached before.
@@ -297,6 +388,77 @@ All on the race's `KartRaceEvents` (`race.events`). Kart ids index `race.karts`;
 - **`request_finish`** (Kotlin's 1.5× hard stop, or End): the race in progress counts as it
   stands, and the game ends at once.
 
+## Handling (KartPhysics)
+
+- **The bike → the kart**: watts drive a virtual bike (85 kg, Crr 0.005, CdA 0.32, half the
+  road's grade, light inertia, a coast brake); the kart's target speed is the bike's ×
+  `SPEED_SCALE`, times surface (off-road 55%), boost (×1.35) and drift (×0.97) shares.
+- **Steering**: lean → dead zone and curve → yaw rate; the assist adds the road's curvature, a
+  pull parallel to it and an edge guard. With the face lost (`tracking` false) the assist is
+  full and no drift starts.
+- **Drift**: |lean| ≥ 0.65 held 0.12 s at ≥ 40% of `top_speed` hops into a slide; leaning in
+  tightens the arc. The charge runs at full rate in a corner (× 1.6 with the knob up: the
+  resistance at `drift_resistance` or risen 5 since the drift began), a quarter on a straight.
+  Tiers at `TIER_SEC`; easing below 0.3 for 0.15 s releases a mini-turbo (`TURBO_SEC` by tier).
+  The views read `slide`, `hop`, `drift_dir`, `drift_tier`; the HUD's drift meter reads the
+  charge and `knob_boosting`.
+- **Boosts**: mini-turbo, pad (the track's `boost` zones, once a visit), rocket start (cadence ≥
+  70 for 0.3 s while "2" shows), the Turbo Can (`apply_boost` + the items' event). **Climbs**:
+  standing on a `climb` zone cuts the drag 20%. **Drafting**: CdA −30% 1.5-8 m behind a kart.
+- **Contacts**: circles of `KART_RADIUS`, the lighter kart pushed further, velocities traded.
+
+## Bots (KartBotDriver)
+
+- **Power**: their share of the rider's FTP (`bot_pcts`), wandering ±4% over minutes; never
+  rubber-banded. **Cadence**: each persona's own (74-96 rpm), wandering ±4 rpm; only the
+  `rocket` personas (three of seven) spin up for the rocket start.
+- **Line**: pure pursuit of a lane ahead on the racing line plus the persona's offset (faded in
+  sharp corners), the lane moving at a capped rate. An enum FSM picks the lane: DODGE (goo or a
+  puck ahead) → PASS (a slower kart in its lane: a side, held) → CRUISE (its line, drawn to pods
+  when it holds no item); side-by-side karts push the lane apart.
+- **Drift**, deliberate only: outside a drift the lean stays under 0.6 (below the physics'
+  entry). Where `wants_drift` says the corner is worth it and its drift skill says yes, it
+  pulses a 0.8 lean until the physics starts the drift (giving up after 0.35 s); then
+  `lean_for_drift` holds the arc pure pursuit wants, and it releases on the corner's exit, near
+  the inside edge, or (with a tier) when even `drift_curvature`'s widest arc is too tight.
+- **Items**: `KartItemLogic.wants_use(id, item_skill)`; hazards and pods from the same logic.
+
+## Items (KartItemLogic, KartItemViews)
+
+- Pod rows sit on the track's `items` zones; a pod respawns in 3 s. A bot's item lands at once;
+  the rider's after a 0.9 s roulette (the button spins through the icons, then lands).
+- The rider fires on the `use_item` edge (the item button, 260 px, top right; a tap during the
+  roulette does nothing), or through the bots' policy with Auto items on.
+- Odds by position (the back gets more turbo, drone and magnet). Effects go only through
+  `KartPhysics` (`apply_boost`, `apply_spinout`, `apply_pull`) and out through the race's events.
+
+| Item id | Name | Effect |
+| --- | --- | --- |
+| `turbo` | Turbo Can | a 1.2 s boost; one `boost_started(id, "item", 0)` |
+| `puck` | Bumper Puck | fired forward, bounces off walls 3 times, spins out the first kart it hits |
+| `drone` | Seeker Drone | flies to the kart one place ahead and spins it out |
+| `goo` | Goo Puddle | dropped behind; the first kart through spins out |
+| `shield` | Shield Bubble | 8 s, absorbs one hit (`shield_blocked`) |
+| `magnet` | Draft Magnet | 3 s pull toward the kart ahead (`apply_pull`: up to its speed + 4 m/s, onto its line) |
+
+## Scoring (KartScoring)
+
+- Live awards through `award()` (the effort multiplier applies): an overtake +15 (only a place
+  better than any reached this race), a mini-turbo +10/20/35 by tier (at most one per 4 s), an
+  item hit +25, a lap +30; at each finish the race's points × 20.
+- **Stars per minute**, tuned in simulation with the merged physics, bots and items (Meadow
+  Ring, one 3-lap race and the 14.5 s around it, 6 seeds a point; points a minute at 1.0×):
+
+| difficulty | thresholds (1, 2, 3 stars) | mid-pack (4th-5th) | podium (2nd-3rd) | winning at 1.0× |
+| --- | --- | --- | --- | --- |
+| easy | 65, 115, 220 | 81-104 (mean 92) | 108-129 | 147-226 |
+| standard | 75, 135, 245 | 97-127 (mean 114) | 127-162 | 146-250 |
+| hard | 85, 140, 255 | 98-127 (mean 112) | 108-171 | 180-252 |
+
+  A mid-pack ride earns one star and a podium two; three take podiums plus effort (up to 1.5×):
+  a win at 1.0× stays under the third star unless the rider is far above the field.
+  Provisional until the bike.
+
 ## Kotlin, options and the result
 
 - `GameCatalog.KART_RACE` mirrors `info()`: `minutes` and `open`, 300-3600 s, no roles, camera
@@ -309,7 +471,7 @@ All on the race's `KartRaceEvents` (`race.events`). Kart ids index `race.karts`;
   so `InputBus.standing` works here; the simulator toggles it with Space. Calibration is the
   `lean_x` one.
 - Options (`GameOptions`, per rider): `driver` (the roster), `assist` (off / low / high, default
-  high), `camera` (chase / close), `auto_items` (off / on; race-systems wires it).
+  high), `camera` (chase / close), `auto_items` (off / on: `KartItemLogic.auto_rider`).
 - Result `stats`: `position` (GP standing), `races`, `wins`, `podiums`, `best_lap` (s),
   `race_time` (s), `boosts`, `items_hit`, `avg_power` (W), `ghost_trace` (the rider's distance
   in metres every `ghost_interval` s, at most 3,600 points), plus the framework's
@@ -344,15 +506,25 @@ a rider and the camera tracking.
 and the HUD. Keep the hot path allocation-free, and watch it as Phase 2 adds drift, items and
 smarter bots.
 
+### Desktop draw calls after the Phase 2 merge (2026-10-14, before the world merge)
+
+From the capture scripts on the Mac: racing with both HUDs 112-147 (3D about 66, KartHud about
+58, the framework HUD about 15), the results board about 185. **Over the 120 budget**: re-measure
+on the tablet after the world merge and trim (the boards and the HUD are the biggest shares).
+
 ## Tests
 
-- `tests/unit/kart_track_model_test`, `kart_physics_test`, `kart_race_logic_test`,
-  `kart_grand_prix_test`, `kart_race_scene_test` (GdUnit4). Shared tracks:
+- `tests/unit/` (GdUnit4): `kart_track_model_test`, `kart_physics_test`, `kart_handling_test`,
+  `kart_chase_camera_test`, `kart_race_logic_test`, `kart_grand_prix_test`, `kart_race_scene_test`,
+  `kart_bot_driver_test`, `kart_item_logic_test`, `kart_item_views_test`, `kart_scoring_test`,
+  `kart_racers_test`, `kart_presentation_test`. Shared tracks:
   `preload("res://tests/kart_fixtures.gd")` (circle, oval, meadow).
 - `tests/sim_kart_check.gd`: a 5-minute local GP at 4× with the keys; must end on the finish
   line and show the summary (`PASS sim kart`).
-- `tests/capture_kart.gd`: windowed screenshots per track, forward and reversed;
-  `--play=SECONDS` for a recording.
+- Windowed screenshots: `tests/capture_kart.gd` (per track, forward and reversed;
+  `--compose` for the hero shots; `--play=SECONDS` for a recording), `capture_kart_hud.gd` (the
+  HUD and flow screens), `capture_kart_items.gd` (each item), `capture_racers.gd` (the roster).
+  Drifts in the captures are real ones (an arrow key held into a corner).
 - Run the full unit suite, `sim_demo_check` and `sim_kart_check` before every commit.
 
 ## GDScript gotchas met so far
@@ -365,9 +537,9 @@ smarter bots.
 - `Array(typed_array)` returns the same array, not a copy: appending to it mutates the source.
 - A `-s` script compiles before the autoloads exist: keep it untyped where it touches them.
 
-## Presentation (Phase 2, E1)
+## Presentation (HUD, effects, audio)
 
-The HUD follows the web slice's layout. **Additions only; no frozen API changed.**
+The HUD follows the web slice's layout.
 
 - **Framework skin hook** (`Hud.set_skin`): new keys `ride_panel: false`, `clock_value_size`,
   `reserve_right` (docs/GAMES.md "HUD kit"). Kart Race's skin is `KartHud.hud_skin()`; the
@@ -375,21 +547,23 @@ The HUD follows the web slice's layout. **Additions only; no frozen API changed.
 - **KartStatus** (the lap badge, `set_state` unchanged) now sits top left in KartHud, not in the
   framework's top-centre slot.
 - `ui/`: `KartHud` (composition: `status`, `racer_list`, `minimap`, `ride_strip`, `item_button`,
-  `drift_meter`; `update(race, delta, fx)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
+  `drift_meter`; `update(race, delta)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
   `draft`/`draft_point`), `KartItemButton` (round, 260 px, fires on press, circle hit area,
   roulette from `KartState.item`/`roulette_time`), `KartItemIcons` (icons by item-id keyword:
-  turbo, puck, drone, goo, shield, magnet), `KartDriftMeter` (charge in seconds; tier charges
-  from `KartPhysics.DRIFT_TIERS` or `TIER_CHARGE` when defined, else 0.9/2.0/3.4; knob glyph from
-  `knob_boosting`), `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector
-  drawing: one draw call per widget), `KartRaceBoard.show_podium(title, rows, …)` and `mode`.
-  Portraits are baked into one atlas with one shared material, so lists draw in one batch.
+  turbo, puck, drone, goo, shield, magnet: `KartItemLogic.ITEMS`), `KartDriftMeter` (charge in
+  seconds; the tiers are `KartPhysics.TIER_SEC`; knob glyph from `knob_boosting`),
+  `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector drawing: one draw
+  call per widget), `KartRaceBoard.show_podium(title, rows, …)` and `mode`.
+  Portraits (`KartPortraits.texture`) are baked into one atlas with one shared material, so
+  lists draw in one batch; the boards make theirs through `KartHud.portrait_rect`.
 - `world/KartFx.gd`: reads drift/boost/spin/draft from each KartState and `listen(events)`:
   tier bursts, tier-coloured drift-boost flames, hit stars, shield and bump sparks;
-  `draft_screen()` feeds the HUD's draft streaks. `demo_drifts` (off) scripts drifts for captures.
+  `draft_screen()` feeds the HUD's draft streaks. The views take their drift slide from
+  `KartState.slide`; KartFx only sets `boost_glow`.
 - `audio/`: `KartAudio` (music `kart_circuit` with stem intensity and a final-lap variation, tempo
   from cadence on phrase boundaries; engine, rival, screech and crowd loops; one-shots from the
-  events) and `KartSfx` (18 presets, `kart_*`). The style is `res://audio/styles/kart_circuit.tres`
-  (MusicGen only reads that folder).
-- HUD draw calls measured on the desktop (meadow, racing, both HUDs): about 64 for KartHud and 15
-  for the framework HUD, 45 for the 3D view.
+  events) and `KartSfx` (18 presets, `kart_*`, plus each racer's horn as `horn_<racer id>`; the
+  rider's plays at their finish). The style is `res://audio/styles/kart_circuit.tres` (MusicGen
+  only reads that folder).
+- HUD draw calls: see "Desktop draw calls after the Phase 2 merge" under the tablet budget.
 - Tests: `tests/unit/kart_presentation_test.gd`; screenshots: `tests/capture_kart_hud.gd`.

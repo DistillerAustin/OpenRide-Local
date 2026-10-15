@@ -57,10 +57,16 @@ func _draw() -> void:
 	var alpha := lerpf(0.55, 1.0, _level)
 	var font := KartTheme.display()
 	# "DRIFT"
+	# The word ends clear of the bar's slanted shell (its outline included), shrinking to fit.
 	var word := "DRIFT"
-	var at := Vector2(4, 52)
-	draw_string_outline(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, 10, Color(KartTheme.OUTLINE, alpha))
-	draw_string(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, Color(1, 1, 1, alpha))
+	var room := BAR.position.x - 6.0 - SKEW * 0.5 - 10.0
+	var font_size := 40
+	while font_size > 24 and font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 5.0 > room:
+		font_size -= 2
+	var w := font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var at := Vector2(maxf(5.0, room - w), 38.0 + font_size * 0.35)
+	draw_string_outline(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 10, Color(KartTheme.OUTLINE, alpha))
+	draw_string(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 1, 1, alpha))
 	# The bar's slanted shell.
 	var shell := _slant(BAR.grow(6))
 	_d.convex_aa(shell, Color(KartTheme.OUTLINE, 0.9 * alpha))

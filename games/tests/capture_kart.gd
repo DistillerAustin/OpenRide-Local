@@ -136,12 +136,12 @@ func _compose(game: Node, out: String, prefix: String) -> void:
 		await process_frame
 		var k = game.race.karts[0]
 		var curv: float = game.race.track.curvature(game.race.track.wrap(k.s + 10.0))
-		if game.race.time > 9.0 and (absf(curv) > 0.012 or k.drift_dir != 0):
+		if game.race.time > 9.0 and (absf(curv) > 0.016 if k.drift_dir == 0 else curv * -k.drift_dir > 0.004):
 			# A real drift: the arrow key held into the corner (a full lean).
 			_hold(KEY_LEFT if (curv > 0.0 if k.drift_dir == 0 else k.drift_dir < 0) else KEY_RIGHT)
 		else:
 			_steer(game)
-		if k.drift_dir != 0 and k.drift_time > 0.95 and _clear_view(game):
+		if k.drift_dir != 0 and k.drift_tier >= 1 and k.drift_time > 0.95 and _clear_view(game):
 			_save("%s/%s_b_desktop.png" % [out, prefix])
 			shot = true
 			_hold(KEY_NONE)

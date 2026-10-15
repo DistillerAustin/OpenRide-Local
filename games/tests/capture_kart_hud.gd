@@ -56,12 +56,12 @@ func _run() -> void:
 		await process_frame
 		k.item = "turbo" if k.roulette_time <= 0.0 else k.item
 		var curv: float = game.race.track.curvature(game.race.track.wrap(k.s + 10.0))
-		if game.race.time > 6.0 and (absf(curv) > 0.012 or k.drift_dir != 0):
+		if game.race.time > 6.0 and (absf(curv) > 0.016 if k.drift_dir == 0 else curv * -k.drift_dir > 0.004):
 			# Into the corner: hold the key (a full lean) to drift.
 			_hold(KEY_LEFT if (curv > 0.0 if k.drift_dir == 0 else k.drift_dir < 0) else KEY_RIGHT)
 		else:
 			_steer(game)
-		if k.drift_dir != 0 and k.drift_tier >= 2:
+		if k.drift_dir != 0 and k.drift_tier >= 1 and k.drift_time > 1.2 and k.surface == 0:
 			_save("%s/%s_race.png" % [out, prefix])
 			shot = true
 			_hold(KEY_NONE)
