@@ -68,6 +68,7 @@ var world: KartWorld
 var camera: KartChaseCamera
 var views: Array[KartView] = []
 var bots: Array = []  ## KartBotDriver per kart id; null for the rider
+var items: KartItemLogic  ## race-systems: this race's pods, items and projectiles
 var lineup: Array = []  ## KartRoster entries per kart id
 var flow := Flow.IDLE
 var current := {}  ## this race: {track_id, reversed, laps, is_final, index}
@@ -81,6 +82,7 @@ var _status: KartStatus
 var _board: KartRaceBoard
 var _kart_hud: KartHud
 var _fx: KartFx
+var _item_views: KartItemViews  # race-systems
 var _hud_lineup := ""
 var _lights := -1
 var _acc := 0.0
@@ -115,13 +117,9 @@ func info() -> GameInfo:
 	i.effort_in_just_ride = true
 	i.timed_end_mode = "game"  # a timed GP ends on the final race's finish line
 	i.stars_per_minute = true
-	# Points a minute. Provisional until the bike: about 1 star mid-pack at 1.0×, 3 stars takes
-	# podiums and effort (the race-systems agent tunes these in simulation).
-	i.star_thresholds = {
-		"easy": [80, 170, 280],
-		"standard": [100, 200, 320],
-		"hard": [120, 240, 380],
-	}
+	# Points a minute, tuned in simulation (race-systems: KartScoring): about 1 star mid-pack at
+	# 1.0×, 3 stars takes podiums and effort. Provisional until the bike.
+	i.star_thresholds = KartScoring.STAR_THRESHOLDS
 	i.options = [
 		# Racers agent: "Juniper the fox".
 		{"key": "driver", "label": "Driver", "choices": KartRoster.ids(), "labels": KartRoster.option_labels(),
@@ -228,6 +226,9 @@ func _on_option_changed(key: String, _value: String) -> void:
 		"camera":
 			if camera:
 				camera.mode = option("camera")
+		"auto_items":  # race-systems
+			if items:
+				items.auto_rider = option("auto_items") == "on"
 		"driver":
 			_lineup_dirty = true
 			if playing:
@@ -283,17 +284,25 @@ func _build_racers() -> void:
 	bots = [null]
 	for i in range(1, lineup.size()):
 		# Kart 1 is on pole and the strongest; the weakest starts just ahead of the rider.
-		var profile := {
-			"power_pct": pcts[clampi(lineup.size() - 1 - i, 0, pcts.size() - 1)],
-			"line_offset": BOT_LINES[(i - 1) % BOT_LINES.size()],
-			"drift_skill": 0.5, "item_skill": 0.5, "aggression": 0.5,
-		}
+		# race-systems: each bot has its own personality (line, drifting, items, aggression).
+		var profile := KartBotDriver.profile_for(i - 1, pcts[clampi(lineup.size() - 1 - i, 0, pcts.size() - 1)])
 		bots.append(KartBotDriver.new(profile, ftp_w, rng.randi()))
 
 
 ## Race-systems agent: item pods, the held item and projectiles (and the Auto items option).
+## Each race gets its own KartItemLogic (stepped in `_tick` after the race), handed to the bots
+## for their item policy and hazards, and drawn by KartItemViews.
 func _build_items() -> void:
-	pass
+	_item_views = KartItemViews.new()
+	_item_views.name = "Items"
+	world.add_child(_item_views)
+	race_began.connect(func(r: KartRaceLogic):
+		items = KartItemLogic.new(r, rng.randi())
+		items.auto_rider = option("auto_items") == "on"
+		for b in bots:
+			if b:
+				b.items = items
+		_item_views.bind(items, r))
 
 
 ## Presentation agent: the HUD widget, the game HUD, the framework HUD's skin and the boards.
@@ -530,6 +539,8 @@ func _tick(dt: float) -> void:
 				return
 	var inputs := _inputs(dt)
 	race.step(dt, inputs)
+	if items:  # race-systems: pods, items, projectiles
+		items.step(dt, inputs)
 	scoring.step(dt, inputs[RIDER].power_w)
 
 
@@ -566,6 +577,8 @@ func _sync_views(delta: float) -> void:
 		camera.flyover(k, 1.0 - (race.countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)
 	else:
 		camera.follow(k, delta)
+	if _item_views:  # race-systems
+		_item_views.sync(delta)
 	if _fx:
 		_fx.step(race, delta)
 	if _kart_hud:

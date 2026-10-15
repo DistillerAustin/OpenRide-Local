@@ -2,11 +2,16 @@ class_name KartScoring
 extends RefCounted
 ## The rider's score and result stats over a Grand Prix (#43, DESIGN.md "Scoring"). It listens to
 ## each race's events and asks the scene to award points (`awarded`, which the scene passes to
-## `Game.award`, so the effort multiplier applies). v0: the race-systems agent owns tuning, the
-## stars and anti-farming rules.
+## `Game.award`, so the effort multiplier applies).
 ##
-## Live awards: an overtake +15 (a place better than any reached so far this race), a mini-turbo
-## +10/20/35 by tier, an item hit +25, a lap +30; at each finish the race's points × 20.
+## Live awards: an overtake +15 (a place better than any reached so far this race: being passed
+## and passing back pays nothing), a mini-turbo +10/20/35 by tier (at most one per
+## MINI_TURBO_GAP_SEC, so wiggling on a straight doesn't farm), an item hit +25, a lap +30; at
+## each finish the race's points × 20.
+##
+## Stars are per minute of play (`STAR_THRESHOLDS`, KartRace's `info()`), tuned in simulation
+## (tests/unit/kart_scoring_test.gd): a mid-pack ride at 1.0× effort earns about one star, a
+## podium ride two, and three take podiums plus effort. Provisional until the bike.
 
 signal awarded(points: float, reason: String)
 
@@ -16,10 +21,19 @@ const ITEM_HIT := 25.0
 const LAP := 30.0
 const RACE_POINT := 20.0
 const GHOST_MAX_POINTS := 3600
+## A second mini-turbo inside this many seconds of the last scored one scores nothing.
+const MINI_TURBO_GAP_SEC := 4.0
+## Points per minute for one, two and three stars, by difficulty.
+const STAR_THRESHOLDS := {
+	"easy": [55, 120, 210],
+	"standard": [65, 140, 240],
+	"hard": [75, 160, 270],
+}
 
 var rider_id := 0
 var boosts := 0
 var items_hit := 0
+var overtakes := 0
 var laps := 0
 var best_lap := 0.0  ## seconds, 0 before the first lap
 var race_time := 0.0  ## seconds racing (GO to the rider's finish), all races
@@ -35,6 +49,8 @@ var _power_time := 0.0
 var _distance := 0.0
 var _last_progress := 0.0
 var _ghost_clock := 0.0
+var _clock := 0.0  ## seconds stepped, for the mini-turbo gap
+var _last_turbo_award := -INF
 
 
 func begin_race(race: KartRaceLogic) -> void:
@@ -51,6 +67,7 @@ func begin_race(race: KartRaceLogic) -> void:
 
 ## One fixed step while the race runs (the scene calls it with the rider's watts).
 func step(dt: float, power_w: float) -> void:
+	_clock += dt
 	if _race == null or _race.phase != KartRaceLogic.Phase.RACING:
 		return
 	race_time += dt
@@ -114,6 +131,7 @@ func _on_position(kart_id: int, _old: int, new_place: int) -> void:
 	var gained := _best_place - new_place
 	_best_place = new_place
 	if _race and _race.phase == KartRaceLogic.Phase.RACING:
+		overtakes += gained
 		awarded.emit(OVERTAKE * gained, "overtake")
 
 
@@ -121,7 +139,8 @@ func _on_boost(kart_id: int, kind: String, tier: int) -> void:
 	if kart_id != rider_id:
 		return
 	boosts += 1
-	if kind == "drift" and tier >= 1:
+	if kind == "drift" and tier >= 1 and _clock - _last_turbo_award >= MINI_TURBO_GAP_SEC - 0.0001:
+		_last_turbo_award = _clock
 		awarded.emit(MINI_TURBO[mini(tier, 3) - 1], "mini_turbo")
 
 
