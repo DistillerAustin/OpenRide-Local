@@ -47,7 +47,7 @@ const FLYOVER_SEC := 3.5
 const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
 ## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
-const CAMERA_CLEAR := 2.8
+const CAMERA_CLEAR := 4.2
 const GO_SEC := 0.8
 const DEFAULT_FTP := 150.0
 ## The bots' shares of the rider's FTP, weakest to strongest, by difficulty (forgiving: rider

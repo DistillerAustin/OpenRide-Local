@@ -81,7 +81,7 @@ KartBotDriver.think() × 7 ───────────┴─► inputs[] �
 - `sim_time` counts simulated seconds; `test_input` (a `KartInput`) replaces the rider's input
   in tests.
 - **Per frame** (`_sync_views`): views, then the camera (or the fly-over before GO), then other
-  karts within `CAMERA_CLEAR` (2.8 m) of the lens are hidden so none fills the screen (not
+  karts within `CAMERA_CLEAR` (4.2 m) of the lens are hidden so none fills the screen (not
   while the camera is held), then item views, effects, audio and the HUD.
 
 ## Track space
