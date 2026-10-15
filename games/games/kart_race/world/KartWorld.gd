@@ -22,7 +22,7 @@ const WALL_HEIGHT := 0.95
 const TREE_CLEARANCE := 5.0  ## trees keep this far beyond the barrier
 const SECTORS := 12
 const CELL := 110.0
-const CELL_RANGE := 330.0
+const CELL_RANGE := 230.0
 
 const FLAG_COLORS := [Color(0.95, 0.25, 0.2), Color(1.0, 0.8, 0.15), Color(0.2, 0.6, 1.0),
 	Color(0.35, 0.85, 0.35), Color(0.75, 0.35, 0.95), Color(1.0, 0.5, 0.15), Color(0.98, 0.98, 0.98)]
@@ -305,7 +305,18 @@ func commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Mat
 		var kit: KartMeshKit = cells[key]
 		if kit.is_empty():
 			continue
-		var node := KartMeshKit.mesh_node(kit.commit(), mat, "%s_%d_%d" % [node_name, key.x, key.y])
+		# The node sits at the cell's centre (vertices moved to match), so its visibility range
+		# measures from the cell and not from the world's origin.
+		var at := Vector3(centre.x + (key.x + 0.5) * CELL, centre.y, centre.z + (key.y + 0.5) * CELL)
+		var arrays := kit.commit().surface_get_arrays(0)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in verts.size():
+			verts[i] -= at
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var node := KartMeshKit.mesh_node(mesh, mat, "%s_%d_%d" % [node_name, key.x, key.y])
+		node.position = at
 		node.visibility_range_end = CELL_RANGE
 		node.visibility_range_end_margin = 20.0
 		parent.add_child(node)
@@ -688,13 +699,14 @@ func _build_grandstand(parent: Node3D) -> void:
 		var y := 1.2 + r * rise - 0.15
 		var z := -length * 0.5 + 0.6
 		while z < length * 0.5 - 0.5:
-			if rng.randf() < 0.9:
-				var sc := rng.randf_range(0.85, 1.1)
+			# Not every seat is taken: the alpha-tested fans are the start's costliest pixels.
+			if rng.randf() < 0.7:
+				var sc := rng.randf_range(0.9, 1.15)
 				xfs.append(Transform3D(Basis().scaled(Vector3.ONE * sc), Vector3(x + rng.randf_range(-0.1, 0.1), y, z)))
 				var c: Color = shirts[rng.randi() % shirts.size()]
 				c.a = rng.randf()
 				custom.append(c)
-			z += rng.randf_range(0.55, 0.75)
+			z += rng.randf_range(0.6, 0.8)
 	stand.add_child(mm(quad, xfs, "Crowd", crowd_mat, custom))
 
 

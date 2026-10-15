@@ -5,7 +5,7 @@ extends KartDress
 
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
 	var trees := tree_meshes()
-	scatter(foliage, trees, 200, KartWorld.TREE_CLEARANCE, 65.0, Vector2(0.8, 1.35),
+	scatter(foliage, trees, 150, KartWorld.TREE_CLEARANCE, 60.0, Vector2(0.8, 1.35),
 		func(r: RandomNumberGenerator) -> int: return 2 if r.randf() < 0.22 else (1 if r.randf() < 0.35 else 0))
 	scatter_far(woods, trees, 110, -10.0, 170.0, Vector2(1.3, 2.1),
 		func(r: RandomNumberGenerator) -> int: return 3 if r.randf() < 0.7 else 0)

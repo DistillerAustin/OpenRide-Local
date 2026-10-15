@@ -23,7 +23,7 @@ func base_height(x: float, z: float, _r_road: float) -> float:
 
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
 	var trees := tree_meshes(Color(0.18, 0.4, 0.26), true)
-	scatter(foliage, trees, 190, KartWorld.TREE_CLEARANCE, 70.0, Vector2(0.9, 1.6),
+	scatter(foliage, trees, 150, KartWorld.TREE_CLEARANCE, 70.0, Vector2(0.9, 1.6),
 		func(r: RandomNumberGenerator) -> int: return 1 if r.randf() < 0.75 else (2 if r.randf() < 0.6 else 0))
 	scatter_far(woods, trees, 150, -20.0, 260.0, Vector2(1.4, 2.4), func(_r: RandomNumberGenerator) -> int: return 3)
 	var rocks := [_snowy_rock(4), _snowy_rock(5), _snowy_rock(6)]

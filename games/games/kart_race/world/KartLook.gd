@@ -42,7 +42,7 @@ const THEMES := {
 		"wall_a": Color(0.96, 0.96, 0.97), "wall_b": Color(0.16, 0.52, 0.86), "wall_rail": Color(0.9, 0.2, 0.16),
 		"stand_a": Color(0.15, 0.45, 0.85), "stand_b": Color(1.0, 0.78, 0.15), "stand_roof": Color(0.92, 0.24, 0.2),
 		"gate": Color(0.12, 0.14, 0.3), "gate_band": Color(0.9, 0.2, 0.17),
-		"cloud": Color(1.0, 0.97, 0.93), "clouds": 18,
+		"cloud": Color(1.0, 0.97, 0.93), "clouds": 14,
 	},
 	"canyon": {
 		"sun_height": 0.62,
@@ -102,7 +102,7 @@ const THEMES := {
 		"wall_a": Color(0.97, 0.97, 0.99), "wall_b": Color(0.85, 0.14, 0.18), "wall_rail": Color(0.96, 0.97, 1.0),
 		"stand_a": Color(0.85, 0.14, 0.18), "stand_b": Color(0.15, 0.4, 0.75), "stand_roof": Color(0.45, 0.28, 0.18),
 		"gate": Color(0.18, 0.24, 0.4), "gate_band": Color(0.85, 0.14, 0.18),
-		"cloud": Color(0.98, 0.99, 1.0), "clouds": 16,
+		"cloud": Color(0.98, 0.99, 1.0), "clouds": 12,
 	},
 }
 
