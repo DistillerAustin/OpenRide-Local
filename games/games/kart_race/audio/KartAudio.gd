@@ -237,6 +237,7 @@ func _follow_cadence(cadence: float, delta: float) -> void:
 	if _want_for >= TEMPO_HOLD_SEC:
 		tempo_cadence = want
 		_request()
+		_prewarm_final()
 
 
 func music_request() -> Dictionary:
