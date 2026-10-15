@@ -251,7 +251,10 @@ func _build_world() -> void:
 	world.name = "World"
 	if _tuned and _tuning.has_section("world"):
 		for key in _tuning.get_section_keys("world"):
-			world.tuning[key] = bool(_tuning.get_value("world", key))
+			if key == "track":  # world: measure one track ([world] track=canyon_dash)
+				KartTracks.dev_track = str(_tuning.get_value("world", key))
+			else:
+				world.tuning[key] = bool(_tuning.get_value("world", key))
 	_view.add_child(world)
 	if _tuned and bool(_tuning.get_value("render", "glow", false)):
 		world.set_glow(true)

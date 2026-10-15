@@ -39,9 +39,11 @@ static func build() -> KartTrackDef:
 	def.verge = 4.0
 	def.start_s = 0.0
 	def.zones = [
-		{"type": "start", "s0": 1100.0, "s1": 2.0},
+		{"type": "start", "s0": 1100.0, "s1": 50.0},
 		{"type": "items", "s0": 290.0, "s1": 292.0},
-		{"type": "climb", "s0": 465.0, "s1": 650.0},
+		{"type": "climb", "s0": 465.0, "s1": 650.0, "dir": "forward"},
+		# Driven the other way round, the winding descent is the climb.
+		{"type": "climb", "s0": 690.0, "s1": 960.0, "dir": "reversed"},
 		{"type": "items", "s0": 875.0, "s1": 877.0},
 		{"type": "boost", "s0": 1020.0, "s1": 1026.0, "d": -2.8, "w": 1.4},
 		{"type": "boost", "s0": 1020.0, "s1": 1026.0, "d": 2.8, "w": 1.4},

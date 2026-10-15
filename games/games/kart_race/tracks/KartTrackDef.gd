@@ -17,6 +17,11 @@ extends Resource
 @export var banking: PackedFloat32Array  ## per control point, radians; + = the right edge is higher
 @export var verge: float = 4.0  ## off-road band beyond the road before the wall
 ## {type: "climb"|"boost"|"items"|"start", s0: float, s1: float, ...}. Optional extras: `d` (the
-## centre of a boost pad across the road, + = right), `w` (a pad's half-width).
+## centre of a boost pad across the road, + = right), `w` (a pad's half-width), `dir` ("forward"
+## or "reversed": the zone holds in that direction only, e.g. a climb that is a descent the other
+## way round).
 @export var zones: Array[Dictionary]
 @export var start_s: float = 0.0  ## where the start/finish line is, metres from points[0]
+## Where a theme's set pieces go: {type, s, d, r?} with s and d like zones' (metres from
+## points[0] driving forward; d + = right). E.g. Harbor Lights' shore, Frost Pass's lake.
+@export var landmarks: Array[Dictionary] = []

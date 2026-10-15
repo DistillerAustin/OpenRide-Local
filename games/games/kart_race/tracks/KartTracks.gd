@@ -1,18 +1,25 @@
 class_name KartTracks
 extends RefCounted
 ## The cup's tracks, by id (#43). A track is a script under tracks/ whose static `build()`
-## returns its `KartTrackDef`. The world agent adds Canyon Dash, Harbor Lights and Frost Pass
-## here (CUP order is the Grand Prix's order).
+## returns its `KartTrackDef` (CUP order is the Grand Prix's order). Each has its own theme
+## (KartLook) and runs reversed too.
 
-const CUP := ["meadow_ring"]
+const CUP := ["meadow_ring", "canyon_dash", "harbor_lights", "frost_pass"]
 const SCRIPTS := {
 	"meadow_ring": "res://games/kart_race/tracks/meadow_ring.gd",
+	"canyon_dash": "res://games/kart_race/tracks/canyon_dash.gd",
+	"harbor_lights": "res://games/kart_race/tracks/harbor_lights.gd",
+	"frost_pass": "res://games/kart_race/tracks/frost_pass.gd",
 }
 
 static var _lengths := {}
+## Developer aid (KartRace's tuning file, [world] track=...): every race is this track instead.
+static var dev_track := ""
 
 
 static func build(track_id: String) -> KartTrackDef:
+	if dev_track != "" and SCRIPTS.has(dev_track):
+		track_id = dev_track
 	var path: String = SCRIPTS.get(track_id, SCRIPTS[CUP[0]])
 	return load(path).build()
 
