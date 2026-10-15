@@ -514,14 +514,16 @@ func _on_frame(delta: float) -> void:
 	_perf_frames += 1
 	_perf_left -= delta
 	if _perf_left <= 0.0:
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d objects=%d primitives=%d karts=%d" % [
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d" % [
 			_perf_usec / 1000.0 / maxi(_perf_frames, 1),
 			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 			Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
-			race.karts.size() if race else 0])
+			race.karts.size() if race else 0,
+			track.def.id if track else "-", "_rev" if track and track.reversed else "",
+			Flow.keys()[flow], InputBus.tracker_state])
 		_perf_usec = 0
 		_perf_frames = 0
 		_perf_left = PERF_LOG_SEC
