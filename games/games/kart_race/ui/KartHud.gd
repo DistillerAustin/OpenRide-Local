@@ -440,14 +440,14 @@ func _build_countdown() -> void:
 			return
 		var e := 1.0 - pow(1.0 - _ring_t, 3.0)
 		var col := KartTheme.GREEN_TOP if _count.text == "GO!" else KartTheme.GOLD_TOP
-		_count_ring.draw_arc(Vector2(W * 0.5, 470), 120.0 + 380.0 * e, 0, TAU, 64, Color(col, 0.7 * (1.0 - _ring_t)), 26.0 * (1.0 - _ring_t) + 2.0, true))
+		_count_ring.draw_arc(Vector2(W * 0.5, 360), 120.0 + 380.0 * e, 0, TAU, 64, Color(col, 0.7 * (1.0 - _ring_t)), 26.0 * (1.0 - _ring_t) + 2.0, true))
 	_root.add_child(_count_ring)
 	_count = KartTheme.label("", 280, KartTheme.INK)
 	_count.name = "Countdown"
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_count.size = Vector2(1000, 380)
-	_count.position = Vector2((W - 1000) * 0.5, 280)
+	_count.position = Vector2((W - 1000) * 0.5, 170)
 	_count.pivot_offset = _count.size * 0.5
 	_count.add_theme_constant_override("outline_size", 44)
 	_count.visible = false

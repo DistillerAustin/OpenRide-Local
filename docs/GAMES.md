@@ -493,6 +493,15 @@ Dodge Ball, the mode).
   for the camera's roll. Recalibrate, the camera strip and brief messages are exempt by design.
 - Widgets only touch their labels when a value changes: a theme override or new text re-lays
   out the HUD, which cost frame time on the tablet when done every frame.
+- **Skins** (`hud.set_skin(skin)`, opt-in, Kart Race only so far): a game with its own look
+  restyles the persistent panels (`font`, `outline_color`, `outline_size`, `panel`, `button`,
+  `button_pressed`, `end_button`) and can slim the layout: `ride_panel: false` hides the ride
+  panel (the game then shows rpm, watts, resistance and the effort multiplier itself, as Kart
+  Race's bottom ride strip does), `clock_value_size` shrinks the time left and the score (not
+  below `MEDIUM`), and `reserve_right` keeps that many pixels free at the top bar's right end
+  (Kart Race's item button), so the clock and Pause | End sit just left of it. Buttons keep
+  their touch size. `clear_skin()` (and `clear_widgets()`, when the game leaves) puts everything
+  back; `hud_layout_test` and `kart_presentation_test` cover both.
 
 It is sized for a 1920x1080 canvas read from about 1 m away (`HudTheme`). Numbers are 96 px,
 text is never below 34 px, and buttons are 110 px tall.
