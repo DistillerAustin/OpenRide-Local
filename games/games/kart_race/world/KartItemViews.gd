@@ -710,10 +710,10 @@ func _make_drone(i: int) -> Dictionary:
 	root.visible = false
 	add_child(root)
 	var kit := KartMeshKit.new()
-	var shell := Color(0.96, 0.96, 0.98, 0.95)
+	var hull := Color(0.96, 0.96, 0.98, 0.95)
 	var dark := Color(0.12, 0.13, 0.2, 0.6)
 	var accent := Color(0.2, 0.7, 1.0, 0.95)
-	kit.add(KartMeshKit.sphere(0.3, 12, 6), KartMeshKit.xf(Vector3.ZERO, Vector3.ZERO, Vector3(1.0, 0.55, 1.25)), shell)
+	kit.add(KartMeshKit.sphere(0.3, 12, 6), KartMeshKit.xf(Vector3.ZERO, Vector3.ZERO, Vector3(1.0, 0.55, 1.25)), hull)
 	kit.add(KartMeshKit.sphere(0.17, 10, 5, true), KartMeshKit.xf(Vector3(0, 0.1, -0.12), Vector3.ZERO, Vector3(1.0, 0.8, 1.2)), dark)
 	kit.add(KartMeshKit.box(Vector3(0.36, 0.06, 0.12)), KartMeshKit.xf(Vector3(0, -0.08, 0.32)), accent)
 	for k in 4:

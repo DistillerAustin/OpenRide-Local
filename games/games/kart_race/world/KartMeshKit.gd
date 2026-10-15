@@ -170,7 +170,7 @@ static func prism(size: Vector3) -> PrismMesh:
 # --- Smooth shapes (the racers): analytic normals, so a low count still shades round ---
 
 ## A superellipsoid with `radii`: e1 shapes it top to bottom, e2 around (1, 1 = an ellipsoid;
-## 0.3 = a pillowy rounded box). `v_max` < PI cuts it open below (a helmet shell). Indexed.
+## 0.3 = a pillowy rounded box). `v_max` < PI cuts it open below (a helmet dome). Indexed.
 static func blob(radii: Vector3, e1 := 1.0, e2 := 1.0, segments := 12, rings := 8, v_max := PI) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()

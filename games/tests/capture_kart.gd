@@ -188,10 +188,13 @@ func _steer(game: Node) -> void:
 		return
 	var k = race.karts[0]
 	var aim: float = race.track.racing_line(k.s + 12.0) * 0.6
+	# Where the kart will be in half a second (sim_kart_check's driver): a key held until the
+	# line is reached starts a tight drift and runs wide.
+	var d_ahead: float = k.d - k.speed * sin(angle_difference(race.track.yaw_at(k.s), k.heading)) * 0.5
 	var want := KEY_NONE
-	if aim - k.d > 0.7:
+	if aim - d_ahead > 0.7:
 		want = KEY_RIGHT
-	elif aim - k.d < -0.7:
+	elif aim - d_ahead < -0.7:
 		want = KEY_LEFT
 	if want != _held:
 		if _held != KEY_NONE:

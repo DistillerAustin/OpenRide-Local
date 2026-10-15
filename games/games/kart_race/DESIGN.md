@@ -533,14 +533,18 @@ behind): results 171 → 76, podium 145 → 60.
 - `tests/unit/` (GdUnit4): `kart_track_model_test`, `kart_physics_test`, `kart_handling_test`,
   `kart_chase_camera_test`, `kart_race_logic_test`, `kart_grand_prix_test`, `kart_race_scene_test`,
   `kart_bot_driver_test`, `kart_item_logic_test`, `kart_item_views_test`, `kart_scoring_test`,
-  `kart_racers_test`, `kart_presentation_test`. Shared tracks:
+  `kart_racers_test`, `kart_presentation_test`, `kart_tracks_test`, `kart_world_test`. Shared tracks:
   `preload("res://tests/kart_fixtures.gd")` (circle, oval, meadow).
 - `tests/sim_kart_check.gd`: a 5-minute local GP at 4× with the keys; must end on the finish
-  line and show the summary (`PASS sim kart`).
+  line and show the summary (`PASS sim kart`). The keys steer on the kart's position half a
+  second ahead (its heading against the road's): steering on where it is held a full lean
+  until the line, which started tight drifts that ran 2-3 m into the inside verge. The capture
+  scripts drive the same way.
 - Windowed screenshots: `tests/capture_kart.gd` (per track, forward and reversed;
   `--compose` for the hero shots; `--play=SECONDS` for a recording), `capture_kart_hud.gd` (the
   HUD and flow screens), `capture_kart_items.gd` (each item), `capture_racers.gd` (the roster),
-  `measure_kart_hud.gd` (the kart HUD's draw calls).
+  `capture_world.gd` (every track: the grid, chase shots, drone views),
+  `measure_kart_hud.gd` and `measure_kart_board.gd` (the kart HUD's and the boards' draw calls).
   Drifts in the captures are real ones (an arrow key held into a corner).
 - Run the full unit suite, `sim_demo_check` and `sim_kart_check` before every commit.
 
