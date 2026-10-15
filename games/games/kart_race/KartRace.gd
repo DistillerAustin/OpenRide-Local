@@ -325,6 +325,7 @@ func _build_hud() -> void:
 		if key != _hud_lineup:
 			_hud_lineup = key
 			_kart_hud.setup(lineup, track)
+		_kart_hud.set_track(track)  # a new track (or direction) redraws the minimap
 		_kart_hud.set_gameplay_visible(false, false)
 		_lights = -1
 		r.events.lap_completed.connect(func(kart_id: int, lap: int, _t: float):

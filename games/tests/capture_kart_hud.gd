@@ -74,7 +74,11 @@ func _run() -> void:
 		_director.hud.visible = state[1]
 		for i in 12:
 			await process_frame
-		print("CAPTURE draw_calls kart_hud=%s hud=%s: %d" % [state[0], state[1], Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+		var total := 0.0
+		for i in 120:
+			await process_frame
+			total += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+		print("CAPTURE draw_calls kart_hud=%s hud=%s: %.1f (mean of 120 frames)" % [state[0], state[1], total / 120.0])
 	game._kart_hud.visible = true
 	_director.hud.visible = true
 	if OS.get_cmdline_user_args().has("--probe"):

@@ -7,7 +7,8 @@ extends RefCounted
 ##   with the issue's numbers (85 kg, Crr 0.005, CdA 0.32 m², ρ 1.2). The steady speed matches
 ##   the power balance exactly; only the inertia is lighter than a real bike's (INERTIA_KG), so
 ##   the kart answers the pedals in seconds rather than half a minute. With no pedalling a gentle
-##   coast brake stops it in about 15 s, and it never rolls backwards.
+##   coast brake stops it in about 15 s, and it never rolls backwards. On a climb the climbing
+##   force is capped at what the watts push at CLIMB_CRAWL, so a weak rider crawls, never stalls.
 ## - **The kart** runs at the bike's speed × SPEED_SCALE, times its surface and boost multipliers,
 ##   approaching that target at KART_ACCEL / KART_DECEL (so bumps and caps ease in and out).
 ## - **Steering**: the lean, with a dead zone and a curve, sets a yaw rate. The assist (the
@@ -51,6 +52,9 @@ const INERTIA_KG := 20.0
 ## With no pedalling, a gentle brake (fading out by COAST_BRAKE_FADE_W) stops the kart in ~15 s.
 const COAST_BRAKE_N := 3.0
 const COAST_BRAKE_FADE_W := 30.0
+## Climbs: the climbing force is capped at what the watts push at this bike speed (m/s; a kart
+## crawl of about 6 m/s), so no pedalling rider stalls on a climb (a 60 W rider on 7%).
+const CLIMB_CRAWL := 2.5
 ## The share of the road's grade the bike feels (a kart track's hills at full grade would crawl
 ## up at 20 km/h and fly down at 120).
 const GRADE_EFFECT := 0.5
@@ -253,7 +257,15 @@ func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> voi
 
 	# The virtual bike: pedal force against rolling, climbing and air (standing cuts it on climbs).
 	var grade := track.grade(k.s) * GRADE_EFFECT
-	var resist := bike_resistance(k.v_bike, grade, k.draft, OFFROAD_CRR if offroad else 1.0)
+	var crr := OFFROAD_CRR if offroad else 1.0
+	var resist := bike_resistance(k.v_bike, grade, k.draft, crr)
+	if grade > 0.0 and inp.power_w > 0.0:
+		# The climb's floor: the climbing force never exceeds what the rider's watts can push at
+		# CLIMB_CRAWL, so a weak rider crawls up a steep climb instead of stalling. Riders who
+		# can climb at their own pace never feel it.
+		var flat := bike_resistance(k.v_bike, 0.0, k.draft, crr)
+		var cap := maxf(0.0, inp.power_w / CLIMB_CRAWL - bike_resistance(CLIMB_CRAWL, 0.0, k.draft, crr))
+		resist = flat + minf(resist - flat, cap)
 	if k.standing_bonus:
 		resist *= 1.0 - STAND_DRAG_CUT
 	var brake := COAST_BRAKE_N * clampf(1.0 - inp.power_w / COAST_BRAKE_FADE_W, 0.0, 1.0)

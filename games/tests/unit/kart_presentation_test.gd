@@ -71,6 +71,16 @@ func _hud_with_kart_hud() -> Array:
 	return [hud, kh, track]
 
 
+## A control's rect on the screen: a baked widget's (KartBaked) is in its own viewport, offset by
+## the bake's place on screen.
+func _screen_rect(c: Control) -> Rect2:
+	var rect := c.get_global_rect()
+	var bake := c.get_viewport().get_parent()
+	if bake is KartBaked:
+		rect.position += (bake as KartBaked).get_global_rect().position
+	return rect
+
+
 func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 	var parts := _hud_with_kart_hud()
 	var hud: Hud = parts[0]
@@ -103,12 +113,16 @@ func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 	_leaves(kh, leaves)
 	assert_int(leaves.size()).is_greater(20)
 	for c in leaves:
-		var rect := c.get_global_rect()
+		var rect := _screen_rect(c)
+		var bake := c.get_viewport().get_parent()
+		if bake is KartBaked:
+			var area := Rect2(Vector2.ZERO, Vector2((bake as KartBaked).viewport.size))
+			assert_bool(area.encloses(c.get_global_rect().grow(-0.5))).override_failure_message("%s is cut off by its bake" % c.get_path()).is_true()
 		assert_bool(SCREEN.encloses(rect.grow(-0.5))).override_failure_message("%s %s is off screen" % [c.get_path(), rect]).is_true()
 	for i in leaves.size():
 		for j in range(i + 1, leaves.size()):
-			var a := leaves[i].get_global_rect().grow(-0.5)
-			var b := leaves[j].get_global_rect().grow(-0.5)
+			var a := _screen_rect(leaves[i]).grow(-0.5)
+			var b := _screen_rect(leaves[j]).grow(-0.5)
 			if leaves[i].is_ancestor_of(leaves[j]) or leaves[j].is_ancestor_of(leaves[i]):
 				continue
 			assert_bool(a.intersects(b)).override_failure_message("%s %s overlaps %s %s" % [
@@ -122,6 +136,9 @@ func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 	assert_float(item.size.x).is_greater_equal(240.0)
 	assert_bool(item.get_center().x > SCREEN.size.x * 0.8 and item.get_center().y < SCREEN.size.y * 0.3).is_true()
 	assert_bool(hud.ride_panel.visible).is_false()
+	# The slow widgets are baked (one draw call each), and their bakes don't overlap either.
+	for w: Control in [kh.status, kh.racer_list, kh.ride_strip]:
+		assert_object(w.get_viewport().get_parent()).is_instanceof(KartBaked)
 	Effort.begin_segment(false)
 
 
@@ -253,6 +270,19 @@ func test_a_kart_at_the_lens_is_hidden_until_clear() -> void:
 	bot.pos = race.karts[KartRaceLogic.RIDER].pos + race.karts[KartRaceLogic.RIDER].forward() * 10.0
 	game._sync_views(0.0)
 	assert_bool(views[1].visible).is_true()
+
+
+func test_a_new_track_redraws_the_minimap_with_the_same_lineup() -> void:
+	var kh: KartHud = auto_free(KartHud.new())
+	add_child(kh)
+	kh.setup(KartRoster.lineup("raccoon", 8), KartTrackModel.new(Fixtures.meadow()))
+	var before: PackedVector2Array = kh.minimap._pts.duplicate()
+	kh.set_track(KartTrackModel.new(Fixtures.oval(300.0, 30.0, 6.0)))
+	assert_bool(kh.minimap._pts == before).is_false()
+	# The game hands every race's track to the HUD.
+	var game := _game()
+	var kh2: KartHud = game.get("_kart_hud")
+	assert_object(kh2._map_track).is_same(game.get("track"))
 
 
 func test_the_hud_icons_cover_every_item_id() -> void:

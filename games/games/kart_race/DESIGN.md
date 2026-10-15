@@ -391,8 +391,10 @@ when a kart breaks a pod: KartItemViews bursts it.
 ## Handling (KartPhysics)
 
 - **The bike → the kart**: watts drive a virtual bike (85 kg, Crr 0.005, CdA 0.32, half the
-  road's grade, light inertia, a coast brake); the kart's target speed is the bike's ×
-  `SPEED_SCALE`, times surface (off-road 55%), boost (×1.35) and drift (×0.97) shares.
+  road's grade, light inertia, a coast brake; on a climb the climbing force is capped at what the
+  watts push at `CLIMB_CRAWL` (2.5 m/s), so a 60 W rider crawls up 7% instead of stalling).
+  The kart's target speed is the bike's × `SPEED_SCALE`, times surface (off-road 55%), boost
+  (×1.35) and drift (×0.97) shares.
 - **Steering**: lean → dead zone and curve → yaw rate; the assist adds the road's curvature, a
   pull parallel to it and an edge guard. With the face lost (`tracking` false) the assist is
   full and no drift starts.
@@ -508,9 +510,12 @@ smarter bots.
 
 ### Desktop draw calls after the Phase 2 merge (2026-10-14, before the world merge)
 
-From the capture scripts on the Mac: racing with both HUDs 112-147 (3D about 66, KartHud about
-58, the framework HUD about 15), the results board about 185. **Over the 120 budget**: re-measure
-on the tablet after the world merge and trim (the boards and the HUD are the biggest shares).
+The tablet ran Meadow at about 51 fps with about 200 draw calls, the kart HUD about 75 of them.
+The HUD now bakes its slow widgets (`KartBaked`, below) and draws the speed lines in one call.
+`tests/measure_kart_hud.gd` (KartHud alone, a race of bots, the order changing, an item held,
+speed lines on; the mean over 300 frames, bake renders included): **74.0 → 15.4** draw calls.
+From the captures, racing with both HUDs is about 94 on the desktop (3D about 57, the framework
+HUD about 15). The results board is about 185 (re-measure on the tablet after the world merge).
 
 ## Tests
 
@@ -523,7 +528,8 @@ on the tablet after the world merge and trim (the boards and the HUD are the big
   line and show the summary (`PASS sim kart`).
 - Windowed screenshots: `tests/capture_kart.gd` (per track, forward and reversed;
   `--compose` for the hero shots; `--play=SECONDS` for a recording), `capture_kart_hud.gd` (the
-  HUD and flow screens), `capture_kart_items.gd` (each item), `capture_racers.gd` (the roster).
+  HUD and flow screens), `capture_kart_items.gd` (each item), `capture_racers.gd` (the roster),
+  `measure_kart_hud.gd` (the kart HUD's draw calls).
   Drifts in the captures are real ones (an arrow key held into a corner).
 - Run the full unit suite, `sim_demo_check` and `sim_kart_check` before every commit.
 
@@ -547,14 +553,18 @@ The HUD follows the web slice's layout.
 - **KartStatus** (the lap badge, `set_state` unchanged) now sits top left in KartHud, not in the
   framework's top-centre slot.
 - `ui/`: `KartHud` (composition: `status`, `racer_list`, `minimap`, `ride_strip`, `item_button`,
-  `drift_meter`; `update(race, delta)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
+  `drift_meter`; `setup(racers, track)` on a new lineup, `set_track(track)` every race (the
+  minimap redraws for a new track or direction), `update(race, delta)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
   `draft`/`draft_point`), `KartItemButton` (round, 260 px, fires on press, circle hit area,
   roulette from `KartState.item`/`roulette_time`), `KartItemIcons` (icons by item-id keyword:
   turbo, puck, drone, goo, shield, magnet: `KartItemLogic.ITEMS`), `KartDriftMeter` (charge in
   seconds; the tiers are `KartPhysics.TIER_SEC`; knob glyph from `knob_boosting`),
   `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector drawing: one draw
   call per widget), `KartRaceBoard.show_podium(title, rows, …)` and `mode`.
-  Portraits (`KartPortraits.texture`) are baked into one atlas with one shared material, so
+  `KartBaked` (a widget moved into its own small transparent SubViewport that renders only when
+  something in it redraws, moves or shows/hides, drawn as one premultiplied TextureRect: the lap
+  badge, the racer list, the ride strip (at most 5 Hz) and the place badge; the place badge's
+  pop tweens the bake). Portraits (`KartPortraits.texture`) are baked into one atlas with one shared material, so
   lists draw in one batch; the boards make theirs through `KartHud.portrait_rect`.
 - `world/KartFx.gd`: reads drift/boost/spin/draft from each KartState and `listen(events)`:
   tier bursts, tier-coloured drift-boost flames, hit stars, shield and bump sparks;

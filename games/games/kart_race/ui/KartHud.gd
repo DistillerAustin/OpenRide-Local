@@ -37,6 +37,7 @@ const ATLAS_COLS := 4
 const ATLAS_ROWS := 2
 ## Kept free at the right of the framework HUD's top bar for the item button.
 const RESERVE_RIGHT := KartItemButton.SIZE
+const STATUS_BAKE := Vector2(560, 104)  ## room for the lap badge at its widest ("FINAL RACE")
 
 ## racer id -> its portrait (a rendered head), also used by the boards.
 var portraits := {}
@@ -59,6 +60,9 @@ var minimap: KartMinimap
 var ride_strip: KartRideStrip
 var item_button: KartItemButton
 var drift_meter: KartDriftMeter
+var _map_track: KartTrackModel  ## the track the minimap shows
+var _bakes: Array[KartBaked] = []  ## status, racer list, ride strip, place badge
+var _badge_view: KartBaked  ## the place badge on screen (its pop tweens here)
 
 var _root: Control
 var _gameplay: Control
@@ -80,6 +84,7 @@ var _tweens := {}
 var _shown_clock := ""
 var _portrait_shader: Shader
 var _overlay: Control
+var _overlay_kit := KartDraw.new()
 var _line_rng := RandomNumberGenerator.new()
 var _time := 0.0
 var _pics: Array[WeakRef] = []  ## every portrait made, to re-dress once the atlas is baked
@@ -124,6 +129,12 @@ func _init() -> void:
 	drift_meter.position = DRIFT_POS
 	_gameplay.add_child(drift_meter)
 	_build_badge()
+	# The slow-changing widgets render into textures only when they change (KartBaked: one draw
+	# call each on screen instead of a pair per label).
+	_bakes = [KartBaked.new(status, _gameplay, STATUS_BAKE), KartBaked.new(racer_list, _gameplay),
+		KartBaked.new(ride_strip, _gameplay), KartBaked.new(_badge, _gameplay, BADGE_RECT.size + Vector2(0, 40))]
+	_badge_view = _bakes[3]
+	_bakes[2].min_interval = 0.2  # the ride strip's readouts: 5 Hz is plenty
 	item_button = KartItemButton.new()
 	item_button.position = ITEM_POS
 	item_button.used.connect(func(): item_pressed.emit())
@@ -154,7 +165,16 @@ func setup(racers: Array, track: KartTrackModel) -> void:
 	lineup = racers
 	_make_portraits()
 	racer_list.setup(racers, portrait_rect)
-	minimap.set_track(track, racers)
+	_map_track = null
+	set_track(track)
+
+
+## A race's track (each race calls it): the minimap redraws when the track or direction changes.
+func set_track(track: KartTrackModel) -> void:
+	if track == _map_track:
+		return
+	_map_track = track
+	minimap.set_track(track, lineup)
 
 
 # --- Per frame ---
@@ -204,7 +224,7 @@ func _draw_overlay() -> void:
 			var p0 := c + dir * c.x * r0
 			var p1 := c + dir * c.x * r1
 			var side := Vector2(-dir.y, dir.x) * _line_rng.randf_range(1.5, 4.0)
-			_overlay.draw_colored_polygon(PackedVector2Array([p0, p1 + side, p1 - side]), Color(1.0, 0.98, 0.92, 0.35 * speed_lines))
+			_overlay_kit.convex(PackedVector2Array([p0, p1 + side, p1 - side]), Color(1.0, 0.98, 0.92, 0.35 * speed_lines))
 	if draft > 0.01:
 		# Ribbons on a fixed fan of angles, each sliding inward over time.
 		for i in 14:
@@ -217,7 +237,8 @@ func _draw_overlay() -> void:
 			var p_near := draft_point + dir * maxf(near, 70.0)
 			var side := Vector2(-dir.y, dir.x) * 3.5
 			var alpha := 0.42 * draft * sin(phase * PI)
-			_overlay.draw_colored_polygon(PackedVector2Array([p_near, p_far + side, p_far - side]), Color(0.75, 0.95, 1.0, alpha))
+			_overlay_kit.convex(PackedVector2Array([p_near, p_far + side, p_far - side]), Color(0.75, 0.95, 1.0, alpha))
+	_overlay_kit.flush(_overlay)  # every streak in one draw call
 
 
 func set_gameplay_visible(on: bool, animate := true) -> void:
@@ -376,10 +397,11 @@ func _set_place(place: int) -> void:
 	_kill("badge")
 	var tw := create_tween()
 	_tweens["badge"] = tw
-	_badge.scale = Vector2(1.35, 1.35) if better else Vector2(0.8, 0.8)
-	_badge.rotation = -0.08 if better else 0.05
-	tw.tween_property(_badge, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(_badge, "rotation", 0.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var view: Control = _badge_view if _badge_view else _badge
+	view.scale = Vector2(1.35, 1.35) if better else Vector2(0.8, 0.8)
+	view.rotation = -0.08 if better else 0.05
+	tw.tween_property(view, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(view, "rotation", 0.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _build_title() -> void:

@@ -252,3 +252,25 @@ func test_the_kart_follows_the_road_surface_up_a_climb() -> void:
 	assert_float(k.pos.y).is_greater(1.0)
 	# Uphill is slower than the flat.
 	assert_float(k.speed).is_less(0.9 * flat)
+
+
+func test_a_60_w_rider_still_crawls_up_a_7_percent_climb() -> void:
+	# Review focus 4 (very low FTP): a long 7% ramp; a 60 W rider must keep moving up it.
+	var def := Fixtures.oval(600.0, 40.0)
+	var pts := def.points
+	for i in pts.size():
+		pts[i].y = 0.07 * clampf(pts[i].x + 300.0, 0.0, 600.0)
+	def.points = pts
+	var track := KartTrackModel.new(def)
+	assert_float(track.grade(60.0)).is_equal_approx(0.07, 0.005)
+	var physics := KartPhysics.new()
+	var k := _kart(track, 10.0)
+	_run(physics, k, _in(60.0), track, 40.0)
+	assert_float(track.grade(k.s)).is_greater(0.06)  # still on the climb
+	assert_float(k.speed).is_greater(4.0)  # m/s: a crawl, not a stall
+	assert_float(k.s).is_greater(10.0 + 150.0)
+	# The floor doesn't help anyone who doesn't need it: 150 W climbs at its own pace.
+	var strong := _kart(track, 10.0)
+	_run(physics, strong, _in(150.0), track, 20.0)
+	var v := KartPhysics.steady_bike_speed(150.0, 0.07 * KartPhysics.GRADE_EFFECT) * KartPhysics.SPEED_SCALE
+	assert_float(strong.speed).is_equal_approx(v, 0.6)
