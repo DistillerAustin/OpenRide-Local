@@ -1181,6 +1181,146 @@ workout part, or one fixed colour). The beat visuals run on the target's clock, 
 rendered at; check their alignment with the music on the bike. `tests/capture_cadence.gd` plays a
 scripted ride for a recording.
 
+## Kart Race (#43)
+
+A Grand Prix of 3-lap races against seven bots on four original tracks. The rider pedals to
+drive, leans in front of the camera to steer, leans hard to drift, and taps to use items. The
+module contract (interfaces, the scene tree, the signal map, the handling and bot details) is
+`games/games/kart_race/DESIGN.md`; this section is the overview.
+
+**How it plays.**
+
+- **Pedal.** Watts drive a virtual bike (85 kg, the road's grade at half strength), and the
+  kart runs at the bike's speed × 2.4. Nothing is rubber-banded: the bots ride at fixed shares
+  of the rider's FTP. On a climb the climbing force is capped at what the watts push at
+  2.5 m/s, so a weak rider crawls up instead of stalling. Standing on a climb cuts the drag
+  20%, and riding 1.5-8 m behind a kart drafts it.
+- **Lean.** The lean steers, through a dead zone and a curve. The **assist** (option: off,
+  low, high; high by default) adds the road's curvature, a pull back parallel to it and an
+  edge guard. When the tracker loses the face, the assist goes to full and no drift starts.
+- **Drift.** A hard lean (0.65 or more, held 0.12 s, at 40% of cruise or faster) hops into a
+  slide; leaning further in tightens the arc. The charge fills in a corner (a quarter as fast
+  on a straight) through three spark tiers. Turning the **resistance knob** up during a drift
+  charges it 1.6× faster. Easing the lean releases a mini-turbo by tier.
+- **Items.** Rows of pods on each track. The item button (top right, 260 px) spins a 0.9 s
+  roulette, then fires on a tap. The Auto items option uses the bots' policy instead.
+- **Grand Prix.** The cup runs Meadow Ring, Canyon Dash, Harbor Lights and Frost Pass in
+  order, reversed the second time round. Points per race are 15, 12, 10, 8, 6, 4, 2, 1. A
+  timed Just Ride sizes its last race to the time left (1-5 laps), and the game ends the
+  segment on that race's finish line (`timed_end_mode = "game"`). An open Just Ride races until
+  the rider ends it. A results board follows each race, and the podium follows the last.
+- **Boosts** also come from boost pads, a rocket start (70 rpm or more while "2" shows) and
+  the Turbo Can.
+
+**Tracks** (each 1.0-1.3 km, laid out as route cards of straights and exact arcs; climbs stay
+under about 6%, and every track has one climb per direction):
+
+| Track | Theme | Length | Character |
+| --- | --- | --- | --- |
+| Meadow Ring | green hills, grandstand, windmill | 1,148 m | wide sweepers, a long banked left-hander, a climb to a crest, a winding descent |
+| Canyon Dash | red layered rock, mesas, a dry riverbed | 1,278 m | esses through the narrows, a long climb to a hairpin, a sweeping drop |
+| Harbor Lights | a seaside town at sunset | 1,033 m | a quay straight, a tight chicane between warehouses, a long right-hander |
+| Frost Pass | snowy pines, an ice-blue lake | 1,264 m | three banked downhill turns, a fast sweep along the ice, the climb back |
+
+**Items:** Turbo Can (a 1.2 s boost), Bumper Puck (fired ahead, bounces off walls three times),
+Seeker Drone (hits the kart one place ahead), Goo Puddle (dropped behind), Shield Bubble (8 s,
+absorbs one hit) and Draft Magnet (3 s pull toward the kart ahead). The odds favour the back of
+the pack.
+
+**Racers:** eight original animal drivers in light, medium and heavy karts. Juniper (fox),
+Tofu (panda), Pip (frog), Clover (rabbit), Bramble (bear), Ripple (otter), Pebble (penguin) and
+Scout (raccoon). The rider picks one (the Driver option), and the other seven become bots with
+their own line, drift, item and aggression personas. Bot power: easy 0.35→0.60 of FTP, standard
+0.45→0.75, hard 0.55→0.90.
+
+**Scoring.** Live awards go through `award()`, so the effort multiplier applies: an overtake
++15, a mini-turbo +10/20/35, an item hit +25, a lap +30, and the race's points × 20 at each
+finish. Stars are points a minute (standard 75, 135, 245): mid-pack earns one star, a podium
+two, and three takes podiums plus effort.
+
+**Options** (per rider): Driver, Assist, Camera (chase or close) and Auto items. **Stats:**
+`position`, `races`, `wins`, `podiums`, `best_lap`, `race_time`, `boosts`, `items_hit`,
+`avg_power` and `ghost_trace` (the rider's distance every few seconds, for future ghosts).
+
+### On the tablet
+
+Kart Race is the heaviest game so far: eight skinned karts, four dressed tracks and a full
+HUD, with the face tracker running. Here is what holding the frame rate took on the Gen 2
+(PowerVR GX6250, GL Compatibility):
+
+- **Render scale 0.62.** The 3D view renders into a `SubViewport` at 0.62 of 1080p, with no
+  MSAA, and is drawn scaled under the HUD (Dodge Ball's pattern; `scaling_3d_scale` below 1
+  hung the tablet). No full-screen pass: the colour grade is folded into every world shader,
+  and the speed lines are thin polygons.
+- **Cheap surfaces.** The road and terrain are unshaded, with hand-made light and fog.
+  Scenery is lit per vertex, repeats go through MultiMesh, and karts get blob shadows. Each
+  kart is one mesh, rigged in the vertex shader.
+- **Culling.** Trackside dressing sits in cells centred on themselves, with a 230 m
+  visibility range. Karts within 4.2 m of the chase camera are hidden, so none fills the
+  screen.
+- **Baked HUD.** `KartBaked` moves a widget into its own small SubViewport, which renders
+  only when something in it changes. On screen it costs one draw call. The lap badge, racer
+  list, ride strip and place badge are baked (the HUD went from 74 to 15 draw calls), and so
+  are the results board's and the podium's title, rows, blocks and pill (122 to 13, and 102 to
+  16). Portraits share one atlas and one material.
+- **The camera's cost.** The face tracker runs on the CPU at 30 fps beside the game. Measure
+  with someone on the bike: with nobody there, calibration ends unavailable and the tracker is
+  off.
+
+Measured on 2026-10-14 with the mock build and `DEV_TUNING` on, during a 20-minute standard
+Just Ride (a full five-race Grand Prix) with the HUD on. Each perf line is the fps over 1 s,
+taken every 5 s.
+
+| Track (racing) | fps min / avg / max | draw calls avg (max) | primitives avg |
+| --- | --- | --- | --- |
+| Meadow Ring | 7 / 53.0 / 62 (55 without the first lap's two hitches) | 77 (112) | 106k |
+| Canyon Dash | 42 / 56.0 / 62 | 76 (125) | 101k |
+| Harbor Lights | 44 / 57.5 / 62 | 81 (121) | 94k |
+| Frost Pass | 45 / 57.4 / 62 | 72 (99) | 80k |
+| Meadow Ring reversed | 45 / 57.4 / 62 | 74 (103) | 103k |
+| Results boards | 41-54 | 64-74 settled (about 205 while the bakes first render) | about 100k |
+
+**Nobody was on the bike**, so calibration found no face and the camera stopped ("Camera
+steering is off"; tracker state 0). These numbers are therefore **without the tracker's
+cost**, and still need a re-measure with a rider. A second Meadow run with the crowd thinned
+(seats 70% → 55% filled) averaged 50.5, which is within the run-to-run spread, so the trim was
+reverted. Expect to trim for the camera, in this order: the crowd in view, the trackside
+foliage, then the render scale (no lower than 0.58).
+
+For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
+`OPENRIDE_GAMES kart_race perf game_ms=… process_ms=… fps=… draw_calls=… primitives=…` every 5 s.
+`user://kart_tuning.cfg` overrides the render settings (`[render] scale=0.62 msaa=0
+outlines=true`) and switches parts off (`[world] road=false walls=false ground=false
+scenery=false foliage=false props=false woods=false stand=false clouds=false hud=false
+fx=false`).
+
+**Tests and captures.**
+
+- GdUnit: `tests/unit/kart_*_test.gd`, covering the track model, physics, handling, camera,
+  race logic, GP, scene, bots, items, scoring, racers, presentation, tracks and world.
+- `sim_kart_check.gd`: a 5-minute local GP at 4× driven with the keys. It must end on the
+  final race's line before the hard stop, with the summary shown.
+- Windowed captures:
+  - `capture_kart.gd`: `--compose` takes the hero shots; `--play=SECONDS` races for a
+    recording, used with `--write-movie FILE.avi --fixed-fps 30`.
+  - `capture_world.gd`: every track, the grid, the chase cam and drone views.
+  - `capture_kart_hud.gd`: the HUD and the flow screens, with draw-call counts.
+  - `capture_kart_items.gd` and `capture_racers.gd`.
+- Measurements: `measure_kart_hud.gd` and `measure_kart_board.gd` count the HUD's and the
+  boards' draw calls.
+
+**Provisional, to tune on the bike:**
+
+- the star thresholds;
+- the bots' FTP shares;
+- `drift_resistance` (35 / 40 / 45);
+- the drift entry (0.65 lean for 0.12 s) and release (below 0.3 for 0.15 s), against real
+  tracker jitter;
+- the assist's edge guard;
+- the rocket start's 70 rpm;
+- the climb crawl floor (2.5 m/s);
+- `SPEED_SCALE` (2.4), which sets how fast the karts feel.
+
 ## Circuits and the Games hub (#37, #38)
 
 **Circuits.** A circuit is a preset of slots (`CircuitPresets`): a 3 min Cadence Karaoke
