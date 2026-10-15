@@ -347,6 +347,22 @@ func test_the_board_counts_down_to_what_comes_next() -> void:
 	assert_float(board.seconds_left()).is_less_equal(0.0)
 
 
+func test_the_board_bakes_its_rows_title_and_pill() -> void:
+	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
+	add_child(board)
+	var rows := []
+	for i in 8:
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
+	var baked := board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
+	assert_int(baked.size()).is_equal(8)
+	assert_object(board._title.get_parent()).is_instanceof(SubViewport)
+	assert_object(board._pill_box.get_parent()).is_instanceof(SubViewport)
+	board.show_podium("Champion!", rows, "Final standings", 6.0, "Ride summary")
+	baked = board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
+	assert_int(baked.size()).is_equal(8 + 3)  # the standings and the three blocks
+
+
 # --- Audio ---
 
 func test_every_kart_effect_renders_a_clean_sound() -> void:

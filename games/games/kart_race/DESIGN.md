@@ -520,7 +520,13 @@ The HUD now bakes its slow widgets (`KartBaked`, below) and draws the speed line
 `tests/measure_kart_hud.gd` (KartHud alone, a race of bots, the order changing, an item held,
 speed lines on; the mean over 300 frames, bake renders included): **74.0 → 15.4** draw calls.
 From the captures, racing with both HUDs is about 94 on the desktop (3D about 57, the framework
-HUD about 15). The results board is about 185 (re-measure on the tablet after the world merge).
+HUD about 15). The results board was about 185 on screen.
+
+The boards now bake too: the title, subtitle, pill, every row and every podium block are
+`KartBaked` (tweens move the baked rects). `tests/measure_kart_board.gd` (the board alone,
+eight rows, confetti raining; the mean over 300 frames): results **122 → 13**, podium
+**102 → 16** draw calls. In the game (`capture_kart_hud.gd`, the whole frame with the race
+behind): results 171 → 76, podium 145 → 60.
 
 ## Tests
 
