@@ -255,13 +255,17 @@ func _build_world() -> void:
 		world.set_glow(true)
 
 
-## Handling agent: the chase camera (Chase / Close option).
+## Handling agent: the chase camera (Chase / Close option), and each race's handling: the camera
+## watches the rider's boosts, bumps and hits; the drift thresholds scale with the rider's FTP.
 func _build_camera() -> void:
 	camera = KartChaseCamera.new()
 	camera.name = "ChaseCamera"
 	camera.mode = option("camera")
 	world.add_child(camera)
 	camera.current = true
+	race_began.connect(func(r: KartRaceLogic):
+		camera.watch(r.events, RIDER)
+		r.physics.top_speed = KartPhysics.steady_bike_speed(0.6 * ftp_w, 0.0) * KartPhysics.SPEED_SCALE)
 
 
 ## Racers agent (views) and race-systems agent (bots): a KartView per kart, a KartBotDriver per
@@ -546,6 +550,7 @@ func _read_rider() -> KartInput:
 	_rider_input.lean = InputBus.lean_x
 	_rider_input.resistance = InputBus.resistance
 	_rider_input.standing = InputBus.standing
+	_rider_input.tracking = InputBus.tracker_state != InputBus.TRACKER_FACE_LOST  # handling: no drifts on face loss
 	_rider_input.use_item = _item_edge
 	_item_edge = false
 	return _rider_input

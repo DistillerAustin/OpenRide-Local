@@ -91,24 +91,33 @@ func step(dt: float, inputs: Array) -> void:
 		Phase.GRID:
 			return
 		Phase.COUNTDOWN:
+			# Handling hook (Phase 2): the karts stay put, but the rocket start reads the cadence.
+			for k: KartState in karts:
+				physics.countdown_step(k, _input_of(k, inputs), countdown, dt)
 			countdown -= dt
 			if countdown <= 0.0:
 				countdown = 0.0
 				phase = Phase.RACING
 				time = 0.0
 				events.race_started.emit()
+				for k: KartState in karts:
+					physics.launch(k)  # handling hook: rocket starts
 			return
 	time += dt
+	KartPhysics.update_drafts(karts)  # handling hook: who's in whose slipstream this tick
 	for k: KartState in karts:
 		var prev_s := k.s
-		var inp: KartInput = inputs[k.id] if k.id < inputs.size() and inputs[k.id] != null else _idle
-		physics.step(k, inp, track, dt)
+		physics.step(k, _input_of(k, inputs), track, dt)
 		if phase == Phase.RACING and not k.finished:
 			_check_line(k, prev_s, dt)
 	for hit in KartPhysics.resolve_contacts(karts):
 		events.kart_bump.emit(int(hit[0]), int(hit[1]), float(hit[2]))
 	if phase == Phase.RACING:
 		_update_places()
+
+
+func _input_of(k: KartState, inputs: Array) -> KartInput:
+	return inputs[k.id] if k.id < inputs.size() and inputs[k.id] != null else _idle
 
 
 ## Kart ids by race position: finishers in finishing order, then the rest by progress.
