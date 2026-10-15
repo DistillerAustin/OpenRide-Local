@@ -63,4 +63,6 @@ static func build() -> KartTrackDef:
 		{"type": "boost", "s0": m.boost + 2.0, "s1": m.boost + 8.0, "d": -2.6, "w": 1.4},
 		{"type": "boost", "s0": m.boost + 2.0, "s1": m.boost + 8.0, "d": 2.6, "w": 1.4},
 	]
+	# The frozen lake fills the infield beside the shore straight.
+	def.landmarks = [{"type": "lake", "s": m.lake + 10.0, "d": 95.0, "r": 75.0}]
 	return def

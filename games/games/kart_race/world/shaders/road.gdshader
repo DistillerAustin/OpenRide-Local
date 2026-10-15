@@ -1,8 +1,9 @@
-// Meadow Ring's road, kerbs and verges (#43), one unshaded mesh lit by hand. UV is track space:
+// The road, kerbs and verges (#43), one unshaded mesh lit by hand, coloured per theme. UV is track space:
 // x = d (metres across, + right), y = s (metres along from the start line). UV2.x is the road's
 // half-width there. COLOR.r is the racing line (d, mapped from -10..10 m), COLOR.g how hard the
 // corner is (0-1): tyre marks gather there. Everything painted is procedural: asphalt grain,
-// edge lines, the chequered line, the grid boxes, kerbs, tyre marks and mown verge stripes.
+// edge lines, the chequered line, the grid boxes, kerbs, tyre marks, and verges (mown stripes,
+// sand, cobbles or snow).
 shader_type spatial;
 render_mode unshaded, fog_disabled, cull_disabled;
 
@@ -20,6 +21,9 @@ uniform vec3 kerb_a : source_color = vec3(0.86, 0.13, 0.12);
 uniform vec3 kerb_b : source_color = vec3(0.97, 0.97, 0.95);
 uniform vec3 grass_a : source_color = vec3(0.36, 0.62, 0.20);
 uniform vec3 grass_b : source_color = vec3(0.44, 0.70, 0.24);
+uniform float verge_stripes = 0.4;  // mown stripes' contrast (0: none)
+uniform vec3 verge_dust : source_color = vec3(0.42, 0.38, 0.3);
+uniform float cobbles = 0.0;  // 1: the verge is a cobbled quay
 uniform float kerb_width = 0.8;
 uniform float light_gain = 1.0;
 
@@ -93,9 +97,17 @@ void fragment() {
 		// Verge: mown stripes along the track, with clover noise.
 		float stripe = step(0.5, fract(s / 8.0));
 		float n = vnoise(vec2(d, s) * 3.0);
-		col = mix(grass_a, grass_b, 0.35 + 0.4 * stripe) * (0.85 + 0.3 * n);
-		// Rubber and dust thrown onto the grass just off the kerb.
-		col = mix(col, vec3(0.42, 0.38, 0.3), 0.25 * smoothstep(hw + kerb_width + 0.9, hw + kerb_width, ad));
+		col = mix(grass_a, grass_b, 0.35 + verge_stripes * stripe) * (0.85 + 0.3 * n);
+		if (cobbles > 0.0) {
+			// Cobbles: offset rows of rounded setts, dark joints between.
+			vec2 c = vec2(ad * 3.2, s * 2.4);
+			c.x += step(1.0, mod(floor(c.y), 2.0)) * 0.5;
+			vec2 f = abs(fract(c) - 0.5);
+			float joint = smoothstep(0.38, 0.47, max(f.x, f.y));
+			col = mix(col * (0.9 + 0.2 * vnoise(floor(c) * 7.0)), col * 0.55, joint * cobbles);
+		}
+		// Rubber and dust thrown onto the verge just off the kerb.
+		col = mix(col, verge_dust, 0.25 * smoothstep(hw + kerb_width + 0.9, hw + kerb_width, ad));
 	}
 	vec3 lit = col * (hemi(vec3(0.0, 1.0, 0.0)) * 0.55 + sun_color * normalize(sun_dir).y * 1.25) * light_gain;
 	ALBEDO = grade(haze(lit, length(VERTEX)), SCREEN_UV);

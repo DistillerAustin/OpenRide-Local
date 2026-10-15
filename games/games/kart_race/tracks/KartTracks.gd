@@ -13,9 +13,13 @@ const SCRIPTS := {
 }
 
 static var _lengths := {}
+## Developer aid (KartRace's tuning file, [world] track=...): every race is this track instead.
+static var dev_track := ""
 
 
 static func build(track_id: String) -> KartTrackDef:
+	if dev_track != "" and SCRIPTS.has(dev_track):
+		track_id = dev_track
 	var path: String = SCRIPTS.get(track_id, SCRIPTS[CUP[0]])
 	return load(path).build()
 

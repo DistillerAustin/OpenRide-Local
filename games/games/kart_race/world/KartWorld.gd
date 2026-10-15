@@ -1,125 +1,161 @@
 class_name KartWorld
 extends Node3D
-## Kart Race's world (#43), dressed for the hero slice: Meadow Ring in late-afternoon sun.
-## Built from a `KartTrackModel`, so any track and either direction works.
+## Kart Race's world (#43): any of the cup's four tracks, either direction, dressed in its
+## theme (KartLook): Meadow Ring's hills, Canyon Dash's red rock, Harbor Lights' sunset quay,
+## Frost Pass's snow and ice.
 ##
 ## Everything is procedural (KartMeshKit) and lit by hand (KartLook, shaders/): no engine light
-## pass, no per-pixel fog. The road is one unshaded mesh whose shader paints asphalt, lines, the
-## chequered line, grid boxes, kerbs, tyre marks and verges from track-space UVs. Repeated
-## things are MultiMeshes: trees, tyre stacks, fences, flowers, flags, the crowd, clouds.
+## pass, no per-pixel fog. Shared here: the road (one unshaded mesh painted from track-space
+## UVs: asphalt, lines, the chequered line, grid boxes, kerbs, tyre marks, verges), the boost
+## pads and item rows painted over it, the barriers, the land (KartTerrain, one heightfield to
+## the horizon) with a skirt from the barriers' feet, the start gate and its lights, the
+## grandstand and crowd, flags, item-row pylons, climb signs, corner chevrons and clouds. Each
+## theme's KartDress shapes the land and adds its own set pieces.
 ##
-## Draw calls (about 22): sky, road, barriers, ground, embankments, hills, 3 tree kinds, tyre
-## stacks, fences, flowers, stand, crowd, gate, lamps, banners, flag poles, flags, windmill (2),
-## clouds.
+## Static scenery is baked into one mesh per CELL-metre square (culled by the frustum and
+## beyond CELL_RANGE) or per wedge of the far woods (SECTORS); repeated animated things are
+## MultiMeshes. About 30 draw calls in view (`draw_budget()` counts the upper bound).
 
 const ROAD_STEP := 2.0  ## metres between mesh rows along the track
-const SKIRT := 30.0  ## the embankment beyond the barrier, sloping down to the ground
-const GROUND_Y := -0.6
+const SKIRT := 8.0  ## the skirt from the barrier's foot out and down under the land
 const WALL_HEIGHT := 0.95
 const TREE_CLEARANCE := 5.0  ## trees keep this far beyond the barrier
-const HILL_R0 := 300.0  ## the hills start this far from the track's centre
-const HILL_R1 := 760.0
+const SECTORS := 12
+const CELL := 110.0
+const CELL_RANGE := 330.0
 
-const WALL_A := Color(0.96, 0.96, 0.97)
-const WALL_B := Color(0.16, 0.52, 0.86)
-const WALL_RAIL := Color(0.9, 0.2, 0.16)
 const FLAG_COLORS := [Color(0.95, 0.25, 0.2), Color(1.0, 0.8, 0.15), Color(0.2, 0.6, 1.0),
 	Color(0.35, 0.85, 0.35), Color(0.75, 0.35, 0.95), Color(1.0, 0.5, 0.15), Color(0.98, 0.98, 0.98)]
 
-## Dev switches (KartRace's tuning file, [world] section): road, walls, ground, scenery, each
-## true by default. Set before `build`.
+## Dev switches (KartRace's tuning file, [world] section), each true by default, set before
+## `build`: road, walls, ground, scenery, and within the scenery foliage, props, woods, stand,
+## clouds; ground_detail (the land's rock strata and specks).
 var tuning := {}
 var track: KartTrackModel
+var terrain: KartTerrain
+var dress: KartDress
 var centre := Vector3.ZERO
+## How far the track reaches from `centre` (the larger of its x and z half-extents), metres.
+var reach := 0.0
+var look: Dictionary = KartLook.look
+
+var road_mat: ShaderMaterial
+var ground_mat: ShaderMaterial
+var scenery_mat: ShaderMaterial
+var foliage_mat: ShaderMaterial
+var props_mat: ShaderMaterial  ## scenery with COLOR.a = glow (windows, bulbs, signs)
+var tint_mat: ShaderMaterial
+var flag_mat: ShaderMaterial
+var banner_mat: ShaderMaterial
+var crowd_mat: ShaderMaterial
+var lamps_mat: ShaderMaterial
+var water_mat: ShaderMaterial
+var pads_mat: ShaderMaterial
 
 var _built: Node3D
-var _road_mat: ShaderMaterial
-var _ground_mat: ShaderMaterial
-var _scenery_mat: ShaderMaterial
-var _foliage_mat: ShaderMaterial
-var _tint_mat: ShaderMaterial
-var _flag_mat: ShaderMaterial
-var _banner_mat: ShaderMaterial
-var _crowd_mat: ShaderMaterial
-var _lamps_mat: ShaderMaterial
-var _blades: Node3D
+var _sky_mat: ShaderMaterial
 var _env: WorldEnvironment
 var _halos: MultiMeshInstance3D
+var _spinners: Array[Node3D] = []  ## spin(): nodes turning every frame
+var _spin_rates: Array[Vector3] = []  ## their axes × rad/s
 
 
 func _ready() -> void:
 	_build_environment()
-	_road_mat = KartLook.material("road.gdshader")
-	_road_mat.set_shader_parameter("kerb_width", KartTrackModel.KERB_WIDTH)
-	_road_mat.set_shader_parameter("grid_first", KartRaceLogic.GRID_FIRST)
-	_road_mat.set_shader_parameter("grid_gap", KartRaceLogic.GRID_GAP)
-	_road_mat.set_shader_parameter("grid_d", KartRaceLogic.GRID_D)
-	_ground_mat = KartLook.material("ground.gdshader")
-	_scenery_mat = KartLook.material("scenery.gdshader")
-	_foliage_mat = KartLook.material("scenery.gdshader")
-	_foliage_mat.set_shader_parameter("sway", 0.22)
-	_tint_mat = KartLook.material("scenery.gdshader")
-	_tint_mat.set_shader_parameter("tint_custom", true)
-	_flag_mat = KartLook.material("flag.gdshader")
-	_flag_mat.set_shader_parameter("tint_custom", true)
-	_banner_mat = KartLook.material("flag.gdshader")
-	_banner_mat.set_shader_parameter("hang", 1.0)
-	_banner_mat.set_shader_parameter("amplitude", 0.12)
-	_banner_mat.set_shader_parameter("speed", 3.0)
-	_crowd_mat = KartLook.material("crowd.gdshader")
-	_crowd_mat.set_shader_parameter("sprite", _crowd_sprite())
-	_lamps_mat = ShaderMaterial.new()
-	_lamps_mat.shader = KartLook.shader("lamps.gdshader")
+	road_mat = KartLook.material("road.gdshader")
+	road_mat.set_shader_parameter("kerb_width", KartTrackModel.KERB_WIDTH)
+	road_mat.set_shader_parameter("grid_first", KartRaceLogic.GRID_FIRST)
+	road_mat.set_shader_parameter("grid_gap", KartRaceLogic.GRID_GAP)
+	road_mat.set_shader_parameter("grid_d", KartRaceLogic.GRID_D)
+	ground_mat = KartLook.material("ground.gdshader")
+	scenery_mat = KartLook.material("scenery.gdshader")
+	foliage_mat = KartLook.material("scenery.gdshader")
+	foliage_mat.set_shader_parameter("sway", 0.22)
+	props_mat = KartLook.material("scenery.gdshader")
+	props_mat.set_shader_parameter("alpha_glow", true)
+	tint_mat = KartLook.material("scenery.gdshader")
+	tint_mat.set_shader_parameter("tint_custom", true)
+	flag_mat = KartLook.material("flag.gdshader")
+	flag_mat.set_shader_parameter("tint_custom", true)
+	banner_mat = KartLook.material("flag.gdshader")
+	banner_mat.set_shader_parameter("hang", 1.0)
+	banner_mat.set_shader_parameter("amplitude", 0.12)
+	banner_mat.set_shader_parameter("speed", 3.0)
+	crowd_mat = KartLook.material("crowd.gdshader")
+	crowd_mat.set_shader_parameter("sprite", _crowd_sprite())
+	water_mat = KartLook.material("water.gdshader")
+	pads_mat = KartLook.material("pads.gdshader")
+	lamps_mat = ShaderMaterial.new()
+	lamps_mat.shader = KartLook.shader("lamps.gdshader")
 
 
 ## (Re)builds everything for `model` (a new track, or the same one reversed).
 func build(model: KartTrackModel) -> void:
 	track = model
+	KartLook.set_theme(track.def.theme)
+	look = KartLook.look
+	_apply_theme()
 	if _built:
 		_built.queue_free()
 	_built = Node3D.new()
 	_built.name = "Track"
 	add_child(_built)
-	centre = _track_centre()
-	_road_mat.set_shader_parameter("track_length", track.length)
-	var road := KartMeshKit.mesh_node(_road_mesh(), _road_mat, "Road")
+	_spinners.clear()
+	_spin_rates.clear()
+	_measure()
+	dress = KartDress.for_theme(track.def.theme)
+	dress.world = self
+	dress.rng.seed = hash(track.def.id) + (1 if track.reversed else 0)
+	terrain = KartTerrain.new(track, centre, dress.base_height)
+
+	road_mat.set_shader_parameter("track_length", track.length)
+	var road := KartMeshKit.mesh_node(_road_mesh(), road_mat, "Road")
 	road.visible = tuning.get("road", true)
 	_built.add_child(road)
-	var walls := KartMeshKit.mesh_node(_wall_mesh(), _scenery_mat, "Barriers")
+	var paint := _paint_mesh()
+	if paint:
+		var pads := KartMeshKit.mesh_node(paint, pads_mat, "Pads")
+		pads.visible = road.visible
+		_built.add_child(pads)
+	var walls := KartMeshKit.mesh_node(_wall_mesh(), props_mat, "Barriers")
 	walls.visible = tuning.get("walls", true)
 	_built.add_child(walls)
 	var ground := Node3D.new()
 	ground.name = "Ground"
 	ground.visible = tuning.get("ground", true)
 	_built.add_child(ground)
-	ground.add_child(KartMeshKit.mesh_node(_ground_mesh(), _ground_mat, "Meadow"))
-	ground.add_child(KartMeshKit.mesh_node(_skirt_mesh(), _ground_mat, "Embankments"))
-	ground.add_child(KartMeshKit.mesh_node(_hill_mesh(), _ground_mat, "Hills"))
+	ground.add_child(KartMeshKit.mesh_node(
+		terrain.mesh(reach + 60.0, reach + 600.0, look.get("far_tint", Color(0.86, 0.92, 1.0)), dress.ground_tint), ground_mat, "Land"))
+	ground.add_child(KartMeshKit.mesh_node(_skirt_mesh(), ground_mat, "Skirts"))
+
 	var scenery := Node3D.new()
 	scenery.name = "Scenery"
 	scenery.visible = tuning.get("scenery", true)
 	_built.add_child(scenery)
-	var woods := _sector_kits()
 	var foliage := {}
-	_build_trees(foliage, woods)
-	_build_flowers(foliage)
-	_commit_cells(scenery, foliage, "Foliage", _foliage_mat)
-	_commit_sectors(scenery, woods, "Woods", _foliage_mat)
 	var props := {}
-	_build_tyres(props)
-	_build_fences(props)
-	_commit_cells(scenery, props, "Props", _scenery_mat)
-	_build_grandstand(scenery)
+	var woods := sector_kits()
+	_build_track_furniture(props)
+	dress.dress(scenery, foliage, props, woods)
+	if tuning.get("foliage", true):
+		commit_cells(scenery, foliage, "Foliage", foliage_mat)
+	if tuning.get("props", true):
+		commit_cells(scenery, props, "Props", props_mat)
+	if tuning.get("woods", true):
+		commit_sectors(scenery, woods, "Woods", foliage_mat)
+	if tuning.get("stand", true):
+		_build_grandstand(scenery)
 	_build_gate(scenery)
 	_build_flags(scenery)
-	_build_windmill(scenery)
-	_build_clouds(scenery)
+	if tuning.get("clouds", true):
+		_build_clouds(scenery)
+	ground_mat.set_shader_parameter("detail", 1.0 if tuning.get("ground_detail", true) else 0.0)
 	set_start_lights(0)
 
 
 ## The start gantry: 0 dark, 1-5 red lamps lit, 6 all green.
 func set_start_lights(stage: int) -> void:
-	_lamps_mat.set_shader_parameter("stage", stage)
+	lamps_mat.set_shader_parameter("stage", stage)
 	if _halos:
 		var mm := _halos.multimesh
 		mm.visible_instance_count = mini(stage, 5) if stage < 6 else 5
@@ -141,20 +177,154 @@ func set_glow(on: bool) -> void:
 		env.set_glow_level(i, 1.0 if i == 1 or i == 2 else 0.0)
 
 
+## Turns `node` about its local `axis` at `rate` rad/s every frame (windmill sails, a lighthouse
+## lamp, a ski lift's wheel).
+func spin(node: Node3D, axis: Vector3, rate: float) -> void:
+	_spinners.append(node)
+	_spin_rates.append(axis.normalized() * rate)
+
+
 func _process(delta: float) -> void:
-	if _blades:
-		_blades.rotate_object_local(Vector3.FORWARD, delta * 0.7)
+	for i in _spinners.size():
+		var r := _spin_rates[i]
+		_spinners[i].rotate_object_local(r.normalized(), r.length() * delta)
+
+
+## The most draw calls the built track can issue (every mesh and multimesh node under it; the
+## frustum and the visibility ranges cull many in play), and its triangles. The sky adds one.
+func draw_budget() -> Dictionary:
+	var calls := 1
+	var tris := 0
+	var stack: Array[Node] = [_built]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MeshInstance3D and n.mesh:
+			calls += n.mesh.get_surface_count() * (2 if n.material_override and n.material_override.next_pass else 1)
+			tris += _tris(n.mesh)
+		elif n is MultiMeshInstance3D and n.multimesh and n.multimesh.mesh:
+			calls += 1
+			tris += _tris(n.multimesh.mesh) * n.multimesh.instance_count
+	return {"calls": calls, "triangles": tris}
+
+
+static func _tris(mesh: Mesh) -> int:
+	var t := 0
+	for i in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(i)
+		var idx = arrays[Mesh.ARRAY_INDEX]
+		t += (idx.size() if idx != null and idx.size() > 0 else arrays[Mesh.ARRAY_VERTEX].size()) / 3
+	return t
+
+
+# --- Placement helpers (for the dressers) ---
+
+## A spot `out` metres beyond the barrier at s on `side`, at least `clearance` beyond every
+## barrier, on the ground. Null when another stretch of road is too close.
+func beyond(s: float, side: float, out: float, clearance := TREE_CLEARANCE) -> Variant:
+	var edge := track.half_width(s) + track.verge
+	var p := track.position_at(track.wrap(s), side * (edge + out))
+	if not clear_of_road(p, clearance):
+		return null
+	p.y = terrain.height_at(p.x, p.z)
+	return p
+
+
+## Whether (x, z) is at least `clearance` metres beyond every barrier.
+func clear_of_road(p: Vector3, clearance: float) -> bool:
+	var rough := terrain.road_clearance(p.x, p.z)
+	if rough > clearance + 12.0:
+		return true
+	if rough < clearance - 12.0:
+		return false
+	var near := track.project(p)
+	return absf(near.d) >= track.half_width(near.s) + track.verge + clearance
+
+
+## The ground's height at (x, z).
+func ground_at(x: float, z: float) -> float:
+	return terrain.height_at(x, z)
+
+
+## Where the track def's first landmark of `type` is: {p (on the ground), s, d (this
+## direction's), dir (the road's horizontal direction there), out (horizontal, from the road
+## toward p), r}; empty when the track has none.
+func landmark(type: String) -> Dictionary:
+	for lm in track.def.landmarks:
+		if lm.type != type:
+			continue
+		var s0 := float(lm.s) - track.def.start_s
+		var s := fposmod(-s0, track.length) if track.reversed else fposmod(s0, track.length)
+		var d := -float(lm.get("d", 0.0)) if track.reversed else float(lm.get("d", 0.0))
+		var on := track.position_at(s, 0.0)
+		var p := track.position_at(s, d)
+		var pt := track.sample(s)
+		var out := Vector3(p.x - on.x, 0.0, p.z - on.z)
+		out = out.normalized() if out.length() > 0.01 else pt.right
+		p.y = terrain.height_at(p.x, p.z) if terrain else p.y
+		return {"p": p, "s": s, "d": d, "dir": Vector3(pt.tangent.x, 0.0, pt.tangent.z).normalized(),
+			"out": out, "r": float(lm.get("r", 0.0))}
+	return {}
+
+
+## Whether s is along the grandstand (outside the start straight).
+func in_stand(s: float) -> bool:
+	var ss := s - track.length if s > track.length * 0.5 else s
+	return ss > -70.0 and ss < 26.0
+
+
+func sector_of(p: Vector3) -> int:
+	var a := atan2(p.z - centre.z, p.x - centre.x)
+	return posmod(int(floor((a + PI) / TAU * SECTORS)), SECTORS)
+
+
+func sector_kits() -> Array:
+	var kits := []
+	for i in SECTORS:
+		kits.append(KartMeshKit.new())
+	return kits
+
+
+func commit_sectors(parent: Node3D, kits: Array, node_name: String, mat: Material) -> void:
+	for i in kits.size():
+		var kit: KartMeshKit = kits[i]
+		if not kit.is_empty():
+			parent.add_child(KartMeshKit.mesh_node(kit.commit(), mat, "%s%d" % [node_name, i]))
+
+
+## The trackside cell kit for `p` (created on demand).
+func cell(cells: Dictionary, p: Vector3) -> KartMeshKit:
+	var key := Vector2i(floori((p.x - centre.x) / CELL), floori((p.z - centre.z) / CELL))
+	if not cells.has(key):
+		cells[key] = KartMeshKit.new()
+	return cells[key]
+
+
+func commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Material) -> void:
+	for key: Vector2i in cells:
+		var kit: KartMeshKit = cells[key]
+		if kit.is_empty():
+			continue
+		var node := KartMeshKit.mesh_node(kit.commit(), mat, "%s_%d_%d" % [node_name, key.x, key.y])
+		node.visibility_range_end = CELL_RANGE
+		node.visibility_range_end_margin = 20.0
+		parent.add_child(node)
+
+
+func mm(mesh: Mesh, xfs: Array, node_name: String, mat: Material, custom: Array = []) -> MultiMeshInstance3D:
+	var node := KartMeshKit.multimesh_node(mesh, xfs, node_name, custom)
+	node.material_override = mat
+	return node
 
 
 # --- Environment ---
 
 func _build_environment() -> void:
-	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = KartLook.shader("sky.gdshader")
-	sky_mat.set_shader_parameter("noise_tex", KartLook.noise())
-	sky_mat.set_shader_parameter("sun_dir", KartLook.SUN_DIR.normalized())
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = KartLook.shader("sky.gdshader")
+	_sky_mat.set_shader_parameter("noise_tex", KartLook.noise())
 	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	sky.sky_material = _sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_32
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -169,16 +339,33 @@ func _build_environment() -> void:
 	add_child(_env)
 
 
-func _track_centre() -> Vector3:
+## Sets the current theme's colours on the sky, road, ground and water.
+func _apply_theme() -> void:
+	KartLook.apply(_sky_mat, look.sky)
+	_sky_mat.set_shader_parameter("sun_dir", KartLook.sun_dir())
+	KartLook.apply(road_mat, look.road)
+	if not look.road.has("cobbles"):
+		road_mat.set_shader_parameter("cobbles", 0.0)
+	KartLook.apply(ground_mat, look.ground)
+	if look.has("water"):
+		KartLook.apply(water_mat, look.water)
+	_env.environment.ambient_light_color = look.light.sky_color
+
+
+## The track's bounding box: its centre (at ground level) and reach.
+func _measure() -> void:
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
+	var ylo := INF
 	var s := 0.0
 	while s < track.length:
 		var p := track.sample(s).position
 		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.z))
 		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
+		ylo = minf(ylo, p.y)
 		s += 10.0
-	return Vector3((lo.x + hi.x) * 0.5, GROUND_Y, (lo.y + hi.y) * 0.5)
+	centre = Vector3((lo.x + hi.x) * 0.5, ylo - 0.6, (lo.y + hi.y) * 0.5)
+	reach = maxf(hi.x - lo.x, hi.y - lo.y) * 0.5
 
 
 # --- Road ---
@@ -217,344 +404,224 @@ func _road_mesh() -> ArrayMesh:
 	return st.commit()
 
 
-## The barrier: panels alternating white and blue under a red rail, darker at the foot.
+## Boost pads and item rows: quads 3 cm over the road, painted by pads.gdshader. UV = (across,
+## along) 0-1; COLOR.r = kind (0 pad, 1 item row), COLOR.g = length / 20 m.
+func _paint_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for z in track.zones:
+		var kind := -1.0
+		var d0 := 0.0
+		var d1 := 0.0
+		var s0 := float(z.s0)
+		var s1 := float(z.s1)
+		if z.type == "boost":
+			kind = 0.0
+			var c := float(z.get("d", 0.0))
+			var w := float(z.get("w", 1.4))
+			d0 = c - w
+			d1 = c + w
+		elif z.type == "items":
+			kind = 1.0
+			var mid := s0 + track.delta(s0, s1) * 0.5
+			s0 = mid - 1.1
+			s1 = mid + 1.1
+			var hw := track.half_width(track.wrap(mid))
+			d0 = -hw + 0.4
+			d1 = hw - 0.4
+		if kind < 0.0:
+			continue
+		any = true
+		var length := track.delta(s0, s1)
+		if length < 0.0:
+			length += track.length
+		var steps := maxi(1, ceili(length / 2.0))
+		for k in steps:
+			var a := s0 + length * k / steps
+			var b := s0 + length * (k + 1) / steps
+			var va := float(k) / steps
+			var vb := float(k + 1) / steps
+			var col := Color(kind, length / 20.0, 0.0)
+			var quad := [[a, d0, 0.0, va], [b, d0, 0.0, vb], [b, d1, 1.0, vb], [a, d0, 0.0, va], [b, d1, 1.0, vb], [a, d1, 1.0, va]]
+			for q in quad:
+				st.set_color(col)
+				st.set_uv(Vector2(q[2], q[3]))
+				st.set_normal(Vector3.UP)
+				st.add_vertex(track.position_at(track.wrap(q[0]), q[1]) + Vector3.UP * 0.03)
+	return st.commit() if any else null
+
+
+## The barrier: panels alternating in the theme's two colours under a rail, darker at the foot.
 func _wall_mesh() -> ArrayMesh:
 	var kit := KartMeshKit.new()
 	var rows := maxi(8, roundi(track.length / ROAD_STEP))
 	var step := track.length / rows
 	var top := Vector3.UP * WALL_HEIGHT
 	var rail := Vector3.UP * (WALL_HEIGHT + 0.14)
+	# A little self-light (props_mat's alpha glow) keeps the panels bright on the shaded side.
+	var wall_a: Color = look.wall_a
+	var wall_b: Color = look.wall_b
+	var wall_rail: Color = look.wall_rail
+	wall_a.a = 0.3
+	wall_b.a = 0.3
+	wall_rail.a = 0.2
 	for i in rows:
 		var s0 := i * step
-		var s1 := (i + 1) * step
-		var color: Color = WALL_A if (i >> 1) & 1 == 0 else WALL_B
+		var s1 := fmod((i + 1) * step, track.length)
+		var color: Color = wall_a if (i >> 1) & 1 == 0 else wall_b
 		for side: float in [-1.0, 1.0]:
 			var e0 := track.half_width(s0) + track.verge
-			var e1 := track.half_width(fmod(s1, track.length)) + track.verge
+			var e1 := track.half_width(s1) + track.verge
 			var a := track.position_at(s0, side * e0)
-			var b := track.position_at(fmod(s1, track.length), side * e1)
+			var b := track.position_at(s1, side * e1)
 			var a2 := track.position_at(s0, side * (e0 + 0.45))
-			var b2 := track.position_at(fmod(s1, track.length), side * (e1 + 0.45))
+			var b2 := track.position_at(s1, side * (e1 + 0.45))
 			var foot := color.darkened(0.35)
-			# Front face (towards the road), shaded darker at the foot: two strips.
+			foot.a = 0.0
 			var mid := Vector3.UP * (WALL_HEIGHT * 0.35)
 			if side > 0.0:
 				kit.quad(a, a + mid, b + mid, b, foot)
 				kit.quad(a + mid, a + top, b + top, b + mid, color)
-				kit.quad(a + top, a + rail, b + rail, b + top, WALL_RAIL)
-				kit.quad(a + rail, a2 + rail, b2 + rail, b + rail, WALL_RAIL.darkened(0.1))
+				kit.quad(a + top, a + rail, b + rail, b + top, wall_rail)
+				kit.quad(a + rail, a2 + rail, b2 + rail, b + rail, wall_rail.darkened(0.1))
+				kit.quad(a2, b2, b2 + rail, a2 + rail, foot.darkened(0.2))
 			else:
 				kit.quad(b, b + mid, a + mid, a, foot)
 				kit.quad(b + mid, b + top, a + top, a + mid, color)
-				kit.quad(b + top, b + rail, a + rail, a + top, WALL_RAIL)
-				kit.quad(b + rail, b2 + rail, a2 + rail, a + rail, WALL_RAIL.darkened(0.1))
+				kit.quad(b + top, b + rail, a + rail, a + top, wall_rail)
+				kit.quad(b + rail, b2 + rail, a2 + rail, a + rail, wall_rail.darkened(0.1))
+				kit.quad(b2, a2, a2 + rail, b2 + rail, foot.darkened(0.2))
 	return kit.commit()
 
 
 # --- Ground ---
 
-func _ground_mesh() -> ArrayMesh:
-	var kit := KartMeshKit.new()
-	var r := HILL_R0 + 40.0
-	var segs := 32
-	var c := centre + Vector3.UP * 0.0
-	for i in segs:
-		var a0 := TAU * i / segs
-		var a1 := TAU * (i + 1) / segs
-		kit.quad(c, c + Vector3(cos(a1), 0, sin(a1)) * r, c + Vector3(cos(a0), 0, sin(a0)) * r, c, Color.WHITE)
-	return kit.commit()
-
-
-## From the barrier's foot out and down to the meadow.
+## From the barrier's foot out and down under the land, so the land never shows a seam.
 func _skirt_mesh() -> ArrayMesh:
-	var kit := KartMeshKit.new()
-	var rows := maxi(8, roundi(track.length / (ROAD_STEP * 2.0)))
+	var rows := maxi(8, roundi(track.length / ROAD_STEP))
 	var step := track.length / rows
+	var ends := []
 	for i in rows:
-		var s0 := i * step
-		var s1 := fmod((i + 1) * step, track.length)
+		var s := i * step
+		var row := []
 		for side: float in [-1.0, 1.0]:
-			var e0 := track.half_width(s0) + track.verge + 0.4
-			var e1 := track.half_width(s1) + track.verge + 0.4
-			var a := track.position_at(s0, side * e0)
-			var b := track.position_at(s1, side * e1)
-			var cc := track.position_at(s1, side * (e1 + SKIRT))
-			var d := track.position_at(s0, side * (e0 + SKIRT))
-			cc.y = GROUND_Y + 0.02
-			d.y = GROUND_Y + 0.02
-			kit.quad(a, b, cc, d, Color.WHITE)
-	var mesh := kit.commit()
-	return mesh
-
-
-func _hill_height(p: Vector2, noise: FastNoiseLite) -> float:
-	var r := p.distance_to(Vector2(centre.x, centre.z))
-	var rise := smoothstep(HILL_R0, HILL_R0 + 180.0, r)
-	var n := noise.get_noise_2d(p.x, p.y) * 0.5 + 0.5
-	return GROUND_Y + rise * (12.0 + 55.0 * n) + smoothstep(HILL_R0 + 200.0, HILL_R1, r) * 40.0
-
-
-## A ring of rolling hills around the whole circuit.
-func _hill_mesh() -> ArrayMesh:
-	var noise := FastNoiseLite.new()
-	noise.seed = 31
-	noise.frequency = 0.006
-	noise.fractal_octaves = 3
+			var e := track.half_width(s) + track.verge + 0.45
+			var foot := track.position_at(s, side * e)
+			var end := track.position_at(s, side * (e + SKIRT))
+			end.y = minf(foot.y - 0.5, terrain.height_at(end.x, end.z) - 0.35)
+			row.append([foot, end])
+		ends.append(row)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var segs := 72
-	var rings := 12
-	var pts := []
-	for j in rings + 1:
-		var r := lerpf(HILL_R0, HILL_R1, pow(float(j) / rings, 1.3))
-		var row := []
-		for i in segs:
-			var a := TAU * i / segs
-			var p := Vector2(centre.x + cos(a) * r, centre.z + sin(a) * r)
-			row.append(Vector3(p.x, _hill_height(p, noise), p.y))
-		pts.append(row)
-	for j in rings:
-		for i in segs:
-			var i1 := (i + 1) % segs
-			var tint := Color.WHITE.lerp(Color(0.86, 0.92, 1.0), float(j) / rings)
-			for v in [pts[j][i], pts[j + 1][i], pts[j + 1][i1], pts[j][i], pts[j + 1][i1], pts[j][i1]]:
-				st.set_color(tint)
+	for i in rows:
+		var a: Array = ends[i]
+		var b: Array = ends[(i + 1) % rows]
+		for side in 2:
+			var p0: Vector3 = a[side][0]
+			var p1: Vector3 = b[side][0]
+			var p2: Vector3 = b[side][1]
+			var p3: Vector3 = a[side][1]
+			# Lit as land: the normal faces up whichever way the quad winds.
+			var n := (p1 - p0).cross(p3 - p0).normalized()
+			if n.y < 0.0:
+				n = -n
+			for v in [p0, p1, p2, p0, p2, p3]:
+				st.set_color(Color.WHITE)
+				st.set_normal(n)
 				st.add_vertex(v)
-	st.generate_normals()
 	return st.commit()
 
 
-## The surface height out here: the embankment, the meadow, or the hills.
-func _ground_at(p: Vector3, near: KartTrackPoint) -> float:
-	var edge := track.half_width(near.s) + track.verge + 0.4
-	var out := absf(near.d) - edge
-	var foot := track.position_at(near.s, signf(near.d) * edge).y
-	return lerpf(foot, GROUND_Y, clampf(out / SKIRT, 0.0, 1.0))
+# --- Track furniture ---
+
+## Item-row pylons, climb signs and corner chevrons, baked into the trackside props.
+func _build_track_furniture(props: Dictionary) -> void:
+	var pylon := _pylon_mesh()
+	var sign := _climb_sign_mesh()
+	for z in track.zones:
+		if z.type == "items":
+			var mid := track.wrap(float(z.s0) + track.delta(z.s0, z.s1) * 0.5)
+			for side: float in [-1.0, 1.0]:
+				var p := track.position_at(mid, side * (track.half_width(mid) + KartTrackModel.KERB_WIDTH + 1.2))
+				cell(props, p).add_baked(pylon, Transform3D(Basis(Vector3.UP, track.yaw_at(mid)), p))
+		elif z.type == "climb":
+			var s := track.wrap(float(z.s0) - 12.0)
+			for side: float in [-1.0, 1.0]:
+				var p := track.position_at(s, side * (track.half_width(s) + track.verge - 0.6))
+				# Facing the oncoming karts.
+				cell(props, p).add_baked(sign, Transform3D(Basis(Vector3.UP, track.yaw_at(s)), p))
+	_build_chevrons(props)
 
 
-## A spot `out` metres beyond the barrier at s on `side`, clear of every other stretch of road.
-func _beyond(s: float, side: float, out: float, clearance := TREE_CLEARANCE) -> Variant:
-	var edge := track.half_width(s) + track.verge
-	var p := track.position_at(s, side * (edge + out))
-	var near := track.project(p)
-	if absf(near.d) < track.half_width(near.s) + track.verge + clearance:
-		return null
-	p.y = _ground_at(p, near)
-	return p
-
-
-# --- Scenery ---
-
-func _tree_meshes() -> Array:
-	var leaf := Color(0.30, 0.56, 0.18, 1.0)
-	var trunk := Color(0.42, 0.28, 0.17, 0.0)
-	# Round broadleaf: a trunk and a cluster of blobs, darker underneath.
-	var kit := KartMeshKit.new()
-	kit.ao_y0 = 1.0
-	kit.ao_y1 = 5.5
-	kit.ao_min = 0.5
-	kit.add(KartMeshKit.cylinder(0.18, 0.3, 2.4, 5), KartMeshKit.xf(Vector3(0, 1.2, 0)), trunk)
-	for b in [[Vector3(0, 3.6, 0), 1.95], [Vector3(1.1, 3.0, 0.3), 1.35], [Vector3(-1.0, 3.1, -0.4), 1.4],
-			[Vector3(0.1, 4.6, -0.1), 1.3]]:
-		var c := leaf.lerp(Color(0.45, 0.68, 0.22, 1.0), clampf((b[0].y - 3.0) / 1.7, 0.0, 1.0))
-		c.a = clampf(b[0].y / 5.0, 0.0, 1.0)
-		kit.add(KartMeshKit.sphere(b[1], 7, 3), KartMeshKit.xf(b[0]), c)
-	var broad := kit.commit()
-	# Pine: three stacked cones.
-	kit = KartMeshKit.new()
-	kit.ao_y0 = 0.5
-	kit.ao_y1 = 7.0
-	kit.ao_min = 0.45
-	kit.add(KartMeshKit.cylinder(0.15, 0.25, 1.6, 5), KartMeshKit.xf(Vector3(0, 0.8, 0)), trunk)
-	for k in 3:
-		var y := 1.4 + k * 1.7
-		var c := Color(0.16, 0.40, 0.22, clampf(y / 6.0, 0.0, 1.0)).lerp(Color(0.24, 0.5, 0.26, 1.0), k / 3.0)
-		kit.add(KartMeshKit.cylinder(0.0, 2.1 - k * 0.55, 2.6, 7), KartMeshKit.xf(Vector3(0, y + 1.3, 0)), c)
-	var pine := kit.commit()
-	# Bush.
-	kit = KartMeshKit.new()
-	kit.ao_y0 = 0.0
-	kit.ao_y1 = 1.4
-	kit.ao_min = 0.5
-	for b in [[Vector3(0, 0.6, 0), 0.9], [Vector3(0.7, 0.45, 0.2), 0.65]]:
-		kit.add(KartMeshKit.sphere(b[1], 6, 3), KartMeshKit.xf(b[0]), Color(0.34, 0.58, 0.2, 0.5))
-	var bush := kit.commit()
-	# Far pine for the hills: two cones, few sides.
-	kit = KartMeshKit.new()
-	kit.ao_y0 = 0.0
-	kit.ao_y1 = 6.0
-	kit.ao_min = 0.5
-	kit.add(KartMeshKit.cylinder(0.0, 2.0, 3.6, 5), KartMeshKit.xf(Vector3(0, 2.6, 0)), Color(0.18, 0.42, 0.22, 0.6))
-	kit.add(KartMeshKit.cylinder(0.0, 1.4, 2.8, 5), KartMeshKit.xf(Vector3(0, 4.6, 0)), Color(0.24, 0.5, 0.26, 1.0))
-	var far := kit.commit()
-	return [broad, pine, bush, far]
-
-
-## Static scenery is baked into one mesh per cell: the trackside scenery into CELL-metre squares
-## (culled by the frustum and beyond CELL_RANGE metres), the woods on the hills into SECTORS
-## wedges around the circuit's centre (culled by the frustum). One draw call each.
-const SECTORS := 12
-const CELL := 110.0
-const CELL_RANGE := 330.0
-
-
-func _sector_of(p: Vector3) -> int:
-	var a := atan2(p.z - centre.z, p.x - centre.x)
-	return posmod(int(floor((a + PI) / TAU * SECTORS)), SECTORS)
-
-
-func _sector_kits() -> Array:
-	var kits := []
-	for i in SECTORS:
-		kits.append(KartMeshKit.new())
-	return kits
-
-
-func _commit_sectors(parent: Node3D, kits: Array, node_name: String, mat: Material) -> void:
-	for i in kits.size():
-		var kit: KartMeshKit = kits[i]
-		if not kit.is_empty():
-			parent.add_child(KartMeshKit.mesh_node(kit.commit(), mat, "%s%d" % [node_name, i]))
-
-
-## The trackside cell kit for `p` (created on demand).
-func _cell(cells: Dictionary, p: Vector3) -> KartMeshKit:
-	var key := Vector2i(floori((p.x - centre.x) / CELL), floori((p.z - centre.z) / CELL))
-	if not cells.has(key):
-		cells[key] = KartMeshKit.new()
-	return cells[key]
-
-
-func _commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Material) -> void:
-	for key: Vector2i in cells:
-		var kit: KartMeshKit = cells[key]
-		if kit.is_empty():
-			continue
-		var node := KartMeshKit.mesh_node(kit.commit(), mat, "%s_%d_%d" % [node_name, key.x, key.y])
-		node.visibility_range_end = CELL_RANGE
-		node.visibility_range_end_margin = 20.0
-		parent.add_child(node)
-
-
-func _build_trees(cells: Dictionary, kits: Array) -> void:
-	var meshes := _tree_meshes()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(track.def.id) + 7
-	var placed := 0
-	var tries := 0
-	while placed < 200 and tries < 5000:
-		tries += 1
-		var s := rng.randf_range(0.0, track.length)
-		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var out := TREE_CLEARANCE + rng.randf_range(0.0, 60.0) * rng.randf()
-		if side > 0.0 and out < 22.0 and _in_stand(s):
-			continue
-		var spot = _beyond(s, side, out)
-		if spot == null:
-			continue
-		var kind := 2 if rng.randf() < 0.22 else (1 if rng.randf() < 0.35 else 0)
-		var size := rng.randf_range(0.8, 1.35)
-		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size, size * rng.randf_range(0.9, 1.25), size))
-		var p: Vector3 = spot - Vector3.UP * 0.15
-		_cell(cells, p).add_baked(meshes[kind], Transform3D(basis, p))
-		placed += 1
-	# Woods on the hills' lower slopes.
-	var noise := FastNoiseLite.new()
-	noise.seed = 31
-	noise.frequency = 0.006
-	noise.fractal_octaves = 3
-	for i in 100:
-		var a := rng.randf() * TAU
-		var r := rng.randf_range(HILL_R0 - 20.0, HILL_R0 + 170.0)
-		var p := Vector2(centre.x + cos(a) * r, centre.z + sin(a) * r)
-		var kind := 3 if rng.randf() < 0.7 else 0
-		var size := rng.randf_range(1.3, 2.1)
-		var at := Vector3(p.x, _hill_height(p, noise) - 0.3, p.y)
-		kits[_sector_of(at)].add_baked(meshes[kind], Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), at))
-
-
-## Tyre stacks in front of the barrier on the outside of the corners.
-func _build_tyres(cells: Dictionary) -> void:
-	var kit := KartMeshKit.new()
-	var tyre := KartMeshKit.cylinder(0.42, 0.42, 0.3, 6)
-	for k in 3:
-		kit.add(tyre, KartMeshKit.xf(Vector3(0, 0.15 + k * 0.3, 0)), Color(0.15, 0.15, 0.16, 0.0) if k != 1 else Color(1, 1, 1, 0.0))
-	var mesh := kit.commit()
-	var tints := [Color(0.95, 0.2, 0.16), Color(0.98, 0.98, 0.98), Color(0.2, 0.55, 1.0), Color(1.0, 0.8, 0.15)]
+## Chevron boards on the barrier round the outside of tight corners, pointing the way.
+func _build_chevrons(props: Dictionary) -> void:
+	var left := _chevron_mesh(1.0)
+	var right := _chevron_mesh(-1.0)
 	var s := 0.0
-	var n := 0
 	while s < track.length:
 		var k := track.curvature(s)
-		if absf(k) > 0.011:
-			var side := -signf(k)  # the outside of the corner
-			var edge := track.half_width(s) + track.verge - 0.5
-			var p := track.position_at(s, side * edge)
-			var tint: Color = tints[n % tints.size()]
-			_cell(cells, p).add_baked(mesh, Transform3D(Basis(Vector3.UP, track.yaw_at(s)), p), Color(lerpf(1.0, tint.r, 0.8), lerpf(1.0, tint.g, 0.8), lerpf(1.0, tint.b, 0.8)) if n % 2 == 0 else tint)
-			n += 1
-			s += 1.6
+		if absf(k) > 1.0 / 32.0 and not in_stand(s):
+			var side := signf(k)  # the outside (+ curvature turns left: the right edge)
+			var p := track.position_at(s, side * (track.half_width(s) + track.verge - 0.05))
+			# The board's front (+z) faces the road.
+			var face := -track.sample(s).right * side
+			var basis := Basis(Vector3.UP.cross(face), Vector3.UP, face)
+			cell(props, p).add_baked(left if k > 0.0 else right, Transform3D(basis, p))
+			s += 5.0
 		else:
-			s += 4.0
+			s += 2.0
 
 
-## White post-and-rail fences along the meadows.
-func _build_fences(cells: Dictionary) -> void:
+## A board facing +z (from the outside wall toward the road), its arrow pointing along -x for
+## `dir` = 1 (the board's left as seen from the road).
+func _chevron_mesh(dir: float) -> ArrayMesh:
 	var kit := KartMeshKit.new()
-	var white := Color(0.97, 0.96, 0.92, 0.0)
-	kit.ao_y0 = 0.0
-	kit.ao_y1 = 1.1
-	kit.ao_min = 0.7
-	kit.add(KartMeshKit.box(Vector3(0.14, 1.15, 0.14)), KartMeshKit.xf(Vector3(0, 0.57, 0)), white)
-	for y: float in [0.45, 0.9]:
-		kit.add(KartMeshKit.box(Vector3(0.07, 0.11, 3.0)), KartMeshKit.xf(Vector3(0, y, -1.5)), white)
-	var mesh := kit.commit()
-	for side: float in [-1.0, 1.0]:
-		var s := 0.0
-		while s < track.length:
-			var spot = _beyond(s, side, 14.0, 6.0)
-			var spot2 = _beyond(s + 4.0, side, 14.0, 6.0)
-			if spot != null and spot2 != null:
-				var dir: Vector3 = (spot2 - spot)
-				dir.y = 0.0
-				if dir.length() > 2.0 and dir.length() < 6.5:
-					var basis := Basis.looking_at(dir.normalized(), Vector3.UP).scaled(Vector3(1, 1, dir.length() / 3.0))
-					_cell(cells, spot).add_baked(mesh, Transform3D(basis, spot))
-			s += 4.0
+	var back := Color(0.08, 0.08, 0.1, 0.0)
+	var yellow := Color(1.0, 0.8, 0.1, 0.35)
+	kit.add(KartMeshKit.box(Vector3(1.9, 1.1, 0.08)), KartMeshKit.xf(Vector3(0, 1.75, 0)), back)
+	kit.add(KartMeshKit.box(Vector3(0.1, 1.3, 0.1)), KartMeshKit.xf(Vector3(-0.6, 0.65, -0.05)), Color(0.5, 0.5, 0.52, 0.0))
+	kit.add(KartMeshKit.box(Vector3(0.1, 1.3, 0.1)), KartMeshKit.xf(Vector3(0.6, 0.65, -0.05)), Color(0.5, 0.5, 0.52, 0.0))
+	for k in 2:
+		var x := (-0.35 + k * 0.6) * dir
+		for half: float in [-1.0, 1.0]:
+			# Each chevron: two slanted bars meeting at the point.
+			kit.add(KartMeshKit.box(Vector3(0.5, 0.16, 0.04)),
+				KartMeshKit.xf(Vector3(x + 0.12 * dir, 1.75 + half * 0.2, 0.05), Vector3(0, 0, half * 42.0 * dir)), yellow)
+	return kit.commit()
 
 
-## Clumps of wildflowers on the embankments.
-func _build_flowers(cells: Dictionary) -> void:
+## An item-row pylon: a striped post with a glowing orb.
+func _pylon_mesh() -> ArrayMesh:
 	var kit := KartMeshKit.new()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 99
-	var colors := [Color(1.0, 0.9, 0.25), Color(1, 1, 1), Color(0.95, 0.45, 0.75), Color(0.7, 0.5, 1.0), Color(1.0, 0.55, 0.2)]
-	kit.add(KartMeshKit.sphere(0.32, 5, 1, true), KartMeshKit.xf(Vector3.ZERO, Vector3.ZERO, Vector3(1.4, 0.6, 1.4)), Color(0.3, 0.55, 0.18, 0.4))
-	for i in 6:
-		var p := Vector3(rng.randf_range(-0.55, 0.55), rng.randf_range(0.18, 0.42), rng.randf_range(-0.55, 0.55))
-		var c: Color = colors[rng.randi() % colors.size()]
-		c.a = 1.0
-		kit.add(KartMeshKit.sphere(0.085, 4, 1), KartMeshKit.xf(p), c)
-	var mesh := kit.commit()
-	var placed := 0
-	var tries := 0
-	while placed < 360 and tries < 4000:
-		tries += 1
-		var s := rng.randf_range(0.0, track.length)
-		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var spot = _beyond(s, side, rng.randf_range(1.0, 22.0), 0.8)
-		if spot == null:
-			continue
-		var sc := rng.randf_range(0.8, 1.6)
-		var p: Vector3 = spot
-		_cell(cells, p).add_baked(mesh, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * sc), p))
-		placed += 1
+	kit.add(KartMeshKit.cylinder(0.16, 0.22, 1.6, 8), KartMeshKit.xf(Vector3(0, 0.8, 0)), Color(0.96, 0.96, 0.98, 0.0))
+	for k in 3:
+		kit.add(KartMeshKit.cylinder(0.2, 0.21, 0.18, 8), KartMeshKit.xf(Vector3(0, 0.35 + k * 0.45, 0)), Color(0.55, 0.3, 0.95, 0.0))
+	kit.add(KartMeshKit.sphere(0.32, 10, 5), KartMeshKit.xf(Vector3(0, 1.85, 0)), Color(0.75, 0.55, 1.0, 1.0))
+	kit.add(KartMeshKit.cylinder(0.32, 0.36, 0.14, 8), KartMeshKit.xf(Vector3(0, 0.07, 0)), Color(0.2, 0.2, 0.24, 0.0))
+	return kit.commit()
 
 
-## Whether s is along the grandstand (outside the start straight).
-func _in_stand(s: float) -> bool:
-	var ss := s - track.length if s > track.length * 0.5 else s
-	return ss > -70.0 and ss < 26.0
+## The climb sign: a yellow board on two posts with a mountain and an up-arrow, facing the
+## oncoming karts (+z).
+func _climb_sign_mesh() -> ArrayMesh:
+	var kit := KartMeshKit.new()
+	var post := Color(0.55, 0.55, 0.58, 0.0)
+	var board := Color(1.0, 0.78, 0.1, 0.25)
+	var ink := Color(0.1, 0.1, 0.12, 0.0)
+	for x: float in [-0.75, 0.75]:
+		kit.add(KartMeshKit.box(Vector3(0.12, 2.4, 0.12)), KartMeshKit.xf(Vector3(x, 1.2, -0.05)), post)
+	kit.add(KartMeshKit.box(Vector3(2.2, 1.5, 0.08)), KartMeshKit.xf(Vector3(0, 2.4, 0)), board)
+	kit.add(KartMeshKit.box(Vector3(2.3, 1.6, 0.06)), KartMeshKit.xf(Vector3(0, 2.4, -0.02)), ink)
+	# The mountain: a slope up to the right.
+	kit.quad(Vector3(-0.9, 1.85, 0.05), Vector3(0.9, 2.55, 0.05), Vector3(0.9, 1.85, 0.05), Vector3(-0.9, 1.85, 0.05), ink)
+	# The arrow: a shaft and a head, pointing up.
+	kit.add(KartMeshKit.box(Vector3(0.16, 0.6, 0.04)), KartMeshKit.xf(Vector3(-0.45, 2.5, 0.06)), ink)
+	kit.quad(Vector3(-0.75, 2.75, 0.06), Vector3(-0.45, 3.05, 0.06), Vector3(-0.15, 2.75, 0.06), Vector3(-0.75, 2.75, 0.06), ink)
+	return kit.commit()
 
+
+# --- The start: grandstand, gate, flags ---
 
 ## The grandstand on the outside of the start straight, full of fans.
 func _build_grandstand(parent: Node3D) -> void:
@@ -578,30 +645,34 @@ func _build_grandstand(parent: Node3D) -> void:
 	kit.ao_y1 = 6.0
 	kit.ao_min = 0.6
 	var concrete := Color(0.78, 0.77, 0.74, 0.0)
-	var seat_a := Color(0.15, 0.45, 0.85, 0.0)
-	var seat_b := Color(1.0, 0.78, 0.15, 0.0)
+	var seat_a: Color = look.stand_a
+	var seat_b: Color = look.stand_b
+	var roof: Color = look.stand_roof
+	# Footings down to the land, so the stand never floats over a dip.
+	kit.add(KartMeshKit.box(Vector3(back_x(rows, depth) + 0.6, 6.0, length)), KartMeshKit.xf(Vector3(back_x(rows, depth) * 0.5, -3.0, 0)), concrete.darkened(0.2))
 	# Front wall with a coloured fascia.
 	kit.add(KartMeshKit.box(Vector3(0.4, 1.4, length)), KartMeshKit.xf(Vector3(0.0, 0.7, 0)), concrete)
-	kit.add(KartMeshKit.box(Vector3(0.45, 0.35, length)), KartMeshKit.xf(Vector3(-0.02, 1.25, 0)), Color(0.9, 0.2, 0.18, 0.0))
+	kit.add(KartMeshKit.box(Vector3(0.45, 0.35, length)), KartMeshKit.xf(Vector3(-0.02, 1.25, 0)), Color(roof.r, roof.g, roof.b, 0.0))
 	for r in rows:
 		var x := 0.6 + r * depth
 		var y := 1.2 + r * rise
 		kit.add(KartMeshKit.box(Vector3(depth, y, length)), KartMeshKit.xf(Vector3(x + depth * 0.5, y * 0.5, 0)), concrete)
-		kit.add(KartMeshKit.box(Vector3(0.35, 0.22, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.11, 0)), seat_a if r % 2 == 0 else seat_b)
-	var back_x := 0.6 + rows * depth
+		var seat: Color = seat_a if r % 2 == 0 else seat_b
+		kit.add(KartMeshKit.box(Vector3(0.35, 0.22, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.11, 0)), Color(seat.r, seat.g, seat.b, 0.0))
+	var bx := back_x(rows, depth)
 	var top_y := 1.2 + rows * rise
-	kit.add(KartMeshKit.box(Vector3(0.4, top_y + 2.6, length)), KartMeshKit.xf(Vector3(back_x + 0.2, (top_y + 2.6) * 0.5, 0)), Color(0.2, 0.26, 0.55, 0.0))
-	kit.add(KartMeshKit.box(Vector3(0.1, 0.5, length)), KartMeshKit.xf(Vector3(back_x - 0.02, top_y + 0.9, 0)), Color(1.0, 0.8, 0.2, 0.0))
+	kit.add(KartMeshKit.box(Vector3(0.4, top_y + 2.6, length)), KartMeshKit.xf(Vector3(bx + 0.2, (top_y + 2.6) * 0.5, 0)), Color(seat_a.r * 0.5, seat_a.g * 0.5, seat_a.b * 0.6, 0.0))
+	kit.add(KartMeshKit.box(Vector3(0.1, 0.5, length)), KartMeshKit.xf(Vector3(bx - 0.02, top_y + 0.9, 0)), Color(seat_b.r, seat_b.g, seat_b.b, 0.0))
 	# Roof on posts, striped.
 	for i in 8:
 		var z := -length * 0.5 + 2.0 + i * (length - 4.0) / 7.0
 		kit.add(KartMeshKit.cylinder(0.12, 0.12, 4.6, 6), KartMeshKit.xf(Vector3(0.3, top_y + 0.6 - 1.6, z)), Color(0.9, 0.9, 0.92, 0.0))
 	for i in 12:
 		var z0 := -length * 0.5 + i * length / 12.0
-		var stripe := Color(0.97, 0.97, 0.97, 0.0) if i % 2 == 0 else Color(0.92, 0.24, 0.2, 0.0)
-		kit.add(KartMeshKit.box(Vector3(back_x + 1.4, 0.25, length / 12.0)),
-			KartMeshKit.xf(Vector3(back_x * 0.5 + 0.1, top_y + 2.75, z0 + length / 24.0), Vector3(0, 0, -7)), stripe)
-	stand.add_child(KartMeshKit.mesh_node(kit.commit(), _scenery_mat, "Stand"))
+		var stripe := Color(0.97, 0.97, 0.97, 0.0) if i % 2 == 0 else Color(roof.r, roof.g, roof.b, 0.0)
+		kit.add(KartMeshKit.box(Vector3(bx + 1.4, 0.25, length / 12.0)),
+			KartMeshKit.xf(Vector3(bx * 0.5 + 0.1, top_y + 2.75, z0 + length / 24.0), Vector3(0, 0, -7)), stripe)
+	stand.add_child(KartMeshKit.mesh_node(kit.commit(), scenery_mat, "Stand"))
 	# The crowd.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
@@ -624,10 +695,14 @@ func _build_grandstand(parent: Node3D) -> void:
 				c.a = rng.randf()
 				custom.append(c)
 			z += rng.randf_range(0.55, 0.75)
-	stand.add_child(_mm(quad, xfs, "Crowd", _crowd_mat, custom))
+	stand.add_child(mm(quad, xfs, "Crowd", crowd_mat, custom))
 
 
-## The start gate over the line: pillars, a beam with five lamps, chequered banners, pennants.
+static func back_x(rows: int, depth: float) -> float:
+	return 0.6 + rows * depth
+
+
+## The start gate over the line: pillars, a beam with five lamps, chequered banners.
 func _build_gate(parent: Node3D) -> void:
 	var s := 1.0
 	var hw := track.half_width(s)
@@ -642,13 +717,16 @@ func _build_gate(parent: Node3D) -> void:
 	kit.ao_y0 = 0.0
 	kit.ao_y1 = 4.0
 	kit.ao_min = 0.65
-	var navy := Color(0.12, 0.14, 0.3, 0.0)
+	var navy: Color = look.gate
+	navy.a = 0.0
+	var band: Color = look.gate_band
+	band.a = 0.0
 	var white := Color(0.96, 0.96, 0.97, 0.0)
 	for side: float in [-1.0, 1.0]:
 		kit.add(KartMeshKit.box(Vector3(1.0, height + 1.2, 1.0)), KartMeshKit.xf(Vector3(side * span, (height + 1.2) * 0.5, 0)), white)
 		for k in 4:
-			kit.add(KartMeshKit.box(Vector3(1.04, 0.4, 1.04)), KartMeshKit.xf(Vector3(side * span, 0.8 + k * 1.5, 0)), Color(0.9, 0.2, 0.17, 0.0))
-		kit.add(KartMeshKit.box(Vector3(1.6, 0.5, 1.6)), KartMeshKit.xf(Vector3(side * span, 0.25, 0)), navy)
+			kit.add(KartMeshKit.box(Vector3(1.04, 0.4, 1.04)), KartMeshKit.xf(Vector3(side * span, 0.8 + k * 1.5, 0)), band)
+		kit.add(KartMeshKit.box(Vector3(1.6, 3.0, 1.6)), KartMeshKit.xf(Vector3(side * span, -1.0, 0)), navy)
 	kit.add(KartMeshKit.box(Vector3(span * 2.0 + 1.0, 1.5, 1.1)), KartMeshKit.xf(Vector3(0, height, 0)), navy)
 	# Chequered fascia on both faces of the beam.
 	var cells := 24
@@ -659,7 +737,7 @@ func _build_gate(parent: Node3D) -> void:
 				var x1 := -span - 0.5 + (span * 2.0 + 1.0) * (i + 1) / cells
 				var y0 := height + 0.75 - 0.4 * (j + 1)
 				var y1 := y0 + 0.4
-				var c := Color(0.05, 0.05, 0.06) if (i + j) % 2 == 0 else Color(0.97, 0.97, 0.97)
+				var c := Color(0.05, 0.05, 0.06, 0.0) if (i + j) % 2 == 0 else Color(0.97, 0.97, 0.97, 0.0)
 				var z := face * 0.56
 				if face > 0.0:
 					kit.quad(Vector3(x0, y0, z), Vector3(x0, y1, z), Vector3(x1, y1, z), Vector3(x1, y0, z), c)
@@ -667,40 +745,27 @@ func _build_gate(parent: Node3D) -> void:
 					kit.quad(Vector3(x1, y0, z), Vector3(x1, y1, z), Vector3(x0, y1, z), Vector3(x0, y0, z), c)
 	# Lamp housings on the grid side (+z: behind the line, where the karts wait).
 	kit.add(KartMeshKit.box(Vector3(5.2, 1.0, 0.5)), KartMeshKit.xf(Vector3(0, height - 1.15, 0.5)), Color(0.08, 0.08, 0.1, 0.0))
-	gate.add_child(KartMeshKit.mesh_node(kit.commit(), _scenery_mat, "Gate"))
+	gate.add_child(KartMeshKit.mesh_node(kit.commit(), scenery_mat, "Gate"))
 	var lamps := KartMeshKit.new()
 	var halo_xfs := []
 	for i in 5:
 		var x := -2.0 + i * 1.0
 		lamps.add(KartMeshKit.sphere(0.3, 10, 5), KartMeshKit.xf(Vector3(x, height - 1.15, 0.78)), Color(i / 5.0, 1.0, 0.0))
 		halo_xfs.append(Transform3D(Basis().scaled(Vector3.ONE * 1.6), gate.transform * Vector3(x, height - 1.15, 0.95)))
-	gate.add_child(KartMeshKit.mesh_node(lamps.commit(), _lamps_mat, "Lamps"))
+	gate.add_child(KartMeshKit.mesh_node(lamps.commit(), lamps_mat, "Lamps"))
 	# Fake glow: additive halos for the lit lamps (cheaper than Environment glow).
-	var halo_mat := StandardMaterial3D.new()
-	halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	halo_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	halo_mat.billboard_keep_scale = true
-	halo_mat.vertex_color_use_as_albedo = true
-	halo_mat.albedo_texture = KartMeshKit.soft_disc(64)
-	halo_mat.no_depth_test = false
-	halo_mat.disable_fog = true
-	var hq := QuadMesh.new()
-	hq.size = Vector2(1.0, 1.0)
-	hq.material = halo_mat
 	_halos = MultiMeshInstance3D.new()
 	_halos.name = "LampHalos"
 	_halos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = hq
-	mm.instance_count = halo_xfs.size()
+	var mmesh := MultiMesh.new()
+	mmesh.transform_format = MultiMesh.TRANSFORM_3D
+	mmesh.use_colors = true
+	mmesh.mesh = halo_quad()
+	mmesh.instance_count = halo_xfs.size()
 	for i in halo_xfs.size():
-		mm.set_instance_transform(i, halo_xfs[i])
-		mm.set_instance_color(i, Color(1, 0.3, 0.2, 0.9))
-	_halos.multimesh = mm
+		mmesh.set_instance_transform(i, halo_xfs[i])
+		mmesh.set_instance_color(i, Color(1, 0.3, 0.2, 0.9))
+	_halos.multimesh = mmesh
 	parent.add_child(_halos)
 	# Chequered banners hanging from the beam on the road side.
 	var banner := SurfaceTool.new()
@@ -719,17 +784,36 @@ func _build_gate(parent: Node3D) -> void:
 				var u1 := float(i + 1) / nx
 				var v0 := float(j) / ny
 				var v1 := float(j + 1) / ny
-				var corners := [[u0, v0], [u1, v0], [u1, v1], [u0, v0], [u1, v1], [u0, v1]]
-				for uv in corners:
+				for uv in [[u0, v0], [u1, v0], [u1, v1], [u0, v0], [u1, v1], [u0, v1]]:
 					banner.set_color(c)
 					banner.set_uv(Vector2(uv[0], uv[1]))
 					banner.set_normal(Vector3.BACK)
 					banner.add_vertex(Vector3(x0 + uv[0] * w, top - uv[1] * h, 0.62))
-	var bn := KartMeshKit.mesh_node(banner.commit(), _banner_mat, "Banners")
-	gate.add_child(bn)
+	gate.add_child(KartMeshKit.mesh_node(banner.commit(), banner_mat, "Banners"))
 
 
-## Flags on tall poles along the infield side of the start straight, and on the gate.
+static var _halo_quad: QuadMesh
+
+
+## A soft additive billboard (lamp halos; dressers use it for bulbs that should bloom).
+static func halo_quad() -> QuadMesh:
+	if _halo_quad == null:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.billboard_keep_scale = true
+		mat.vertex_color_use_as_albedo = true
+		mat.albedo_texture = KartMeshKit.soft_disc(64)
+		mat.disable_fog = true
+		_halo_quad = QuadMesh.new()
+		_halo_quad.size = Vector2(1.0, 1.0)
+		_halo_quad.material = mat
+	return _halo_quad
+
+
+## Flags on tall poles along both sides of the start straight (not in front of the stand).
 func _build_flags(parent: Node3D) -> void:
 	var poles := KartMeshKit.new()
 	var flag_xfs := []
@@ -743,109 +827,63 @@ func _build_flags(parent: Node3D) -> void:
 			if side > 0.0 and s > -66.0 and s < 22.0:
 				continue  # the grandstand is there
 			var p := track.position_at(ss, side * (hw + track.verge + 1.2))
-			poles.add(KartMeshKit.cylinder(0.06, 0.08, 7.0, 5), KartMeshKit.xf(p + Vector3.UP * 3.5), Color(0.92, 0.92, 0.94, 0.0))
+			poles.add(KartMeshKit.cylinder(0.06, 0.08, 9.0, 5), KartMeshKit.xf(p + Vector3.UP * 2.5), Color(0.92, 0.92, 0.94, 0.0))
 			var yaw := track.yaw_at(ss) + PI * 0.5
 			flag_xfs.append(Transform3D(Basis(Vector3.UP, yaw), p + Vector3.UP * 6.3))
 			custom.append(FLAG_COLORS[n % FLAG_COLORS.size()])
 			n += 1
 		s += 7.0
-	parent.add_child(KartMeshKit.mesh_node(poles.commit(), _scenery_mat, "FlagPoles"))
-	var cloth := PlaneMesh.new()
-	cloth.size = Vector2(1.7, 1.05)
-	cloth.subdivide_width = 8
-	cloth.orientation = PlaneMesh.FACE_Z
-	cloth.center_offset = Vector3(0.85, -0.5, 0)
-	# UV.x runs along the cloth from the pole (the wave grows with it).
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var arr := cloth.get_mesh_arrays()
-	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	var uvs: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
-	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
-	for i in idx:
-		st.set_color(Color.WHITE if uvs[i].y > 0.25 else Color(0.85, 0.85, 0.85))
-		st.set_uv(Vector2(verts[i].x / 1.7, uvs[i].y))
-		st.set_normal(Vector3.BACK)
-		st.add_vertex(verts[i])
-	parent.add_child(_mm(st.commit(), flag_xfs, "Flags", _flag_mat, custom))
+	parent.add_child(KartMeshKit.mesh_node(poles.commit(), scenery_mat, "FlagPoles"))
+	parent.add_child(mm(flag_cloth(), flag_xfs, "Flags", flag_mat, custom))
 
 
-## A windmill on a rise in the infield, its sails turning.
-func _build_windmill(parent: Node3D) -> void:
-	var spot := Vector3.ZERO
-	var found := false
-	for attempt in [[70.0, -48.0], [40.0, -55.0], [110.0, -50.0], [70.0, 48.0]]:
-		var s: float = track.wrap(attempt[0])
-		var p := track.position_at(s, attempt[1])
-		var near := track.project(p)
-		if absf(near.d) > track.half_width(near.s) + track.verge + 18.0:
-			spot = p
-			spot.y = GROUND_Y
-			found = true
-			break
-	if not found:
-		return
-	var mill := Node3D.new()
-	mill.name = "Windmill"
-	var look := track.position_at(track.wrap(-20.0), 0.0)
-	look.y = spot.y
-	mill.transform = Transform3D(Basis.looking_at((look - spot).normalized(), Vector3.UP), spot)
-	parent.add_child(mill)
-	var kit := KartMeshKit.new()
-	kit.ao_y0 = 0.0
-	kit.ao_y1 = 10.0
-	kit.ao_min = 0.65
-	kit.add(KartMeshKit.cylinder(2.3, 3.6, 13.0, 8), KartMeshKit.xf(Vector3(0, 6.5, 0)), Color(0.96, 0.93, 0.86, 0.0))
-	kit.add(KartMeshKit.cylinder(0.0, 2.8, 3.4, 8), KartMeshKit.xf(Vector3(0, 14.6, 0)), Color(0.55, 0.25, 0.18, 0.0))
-	kit.add(KartMeshKit.box(Vector3(1.2, 2.2, 0.3)), KartMeshKit.xf(Vector3(0, 1.1, -3.4)), Color(0.4, 0.26, 0.16, 0.0))
-	for y: float in [5.5, 9.5]:
-		kit.add(KartMeshKit.box(Vector3(0.9, 0.9, 0.2)), KartMeshKit.xf(Vector3(0, y, -3.0 + (y - 5.5) * 0.14)), Color(0.25, 0.35, 0.5, 0.0))
-	kit.add(KartMeshKit.cylinder(0.35, 0.35, 1.2, 8), KartMeshKit.xf(Vector3(0, 13.2, -2.6), Vector3(90, 0, 0)), Color(0.3, 0.2, 0.15, 0.0))
-	mill.add_child(KartMeshKit.mesh_node(kit.commit(), _scenery_mat, "Tower"))
-	var blades := KartMeshKit.new()
-	for i in 4:
-		var rot := Basis(Vector3.FORWARD, i * PI * 0.5)
-		blades.add(KartMeshKit.box(Vector3(0.3, 7.5, 0.2)), Transform3D(rot, rot * Vector3(0, 4.0, 0)), Color(0.45, 0.32, 0.22, 0.0))
-		blades.add(KartMeshKit.box(Vector3(1.5, 6.0, 0.08)), Transform3D(rot, rot * Vector3(0.85, 4.6, 0.05)), Color(0.97, 0.95, 0.9, 0.0))
-	_blades = Node3D.new()
-	_blades.name = "Sails"
-	_blades.position = Vector3(0, 13.2, -3.3)
-	mill.add_child(_blades)
-	_blades.add_child(KartMeshKit.mesh_node(blades.commit(), _scenery_mat, "SailMesh"))
+static var _cloth: ArrayMesh
 
 
-## Soft cumulus cards far away, over the hills.
+## A flag's cloth, 1.7 × 1.05 m from the pole along +x; UV.x runs along it (the wave grows).
+static func flag_cloth() -> ArrayMesh:
+	if _cloth == null:
+		var cloth := PlaneMesh.new()
+		cloth.size = Vector2(1.7, 1.05)
+		cloth.subdivide_width = 8
+		cloth.orientation = PlaneMesh.FACE_Z
+		cloth.center_offset = Vector3(0.85, -0.5, 0)
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var arr := cloth.get_mesh_arrays()
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var uvs: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+		for i in idx:
+			st.set_color(Color.WHITE if uvs[i].y > 0.25 else Color(0.85, 0.85, 0.85))
+			st.set_uv(Vector2(verts[i].x / 1.7, uvs[i].y))
+			st.set_normal(Vector3.BACK)
+			st.add_vertex(verts[i])
+		_cloth = st.commit()
+	return _cloth
+
+
+## Soft cumulus cards far away, over the hills, in the theme's tint.
 func _build_clouds(parent: Node3D) -> void:
-	var img := Image.create(128, 64, true, Image.FORMAT_RGBA8)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	var blobs := []
-	for i in 9:
-		blobs.append([Vector2(rng.randf_range(22, 106), rng.randf_range(30, 44) - absf(i - 4) * 1.5), rng.randf_range(12, 22)])
-	for y in 64:
-		for x in 128:
-			var a := 0.0
-			for b in blobs:
-				var r: float = Vector2(x, y).distance_to(b[0]) / b[1]
-				a = maxf(a, clampf(1.2 - r, 0.0, 1.0))
-			a *= smoothstep(60.0, 44.0, float(y))
-			var shade := lerpf(1.0, 0.82, clampf((y - 26.0) / 30.0, 0.0, 1.0))
-			img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 1.02, clampf(a * 1.4, 0.0, 1.0)))
-	img.generate_mipmaps()
+	var count: int = look.get("clouds", 26)
+	if count <= 0:
+		return
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.billboard_keep_scale = true
-	mat.albedo_texture = ImageTexture.create_from_image(img)
-	mat.albedo_color = Color(1.0, 0.97, 0.93)
+	mat.albedo_texture = _cloud_texture()
+	mat.albedo_color = look.get("cloud", Color(1.0, 0.97, 0.93))
 	mat.disable_fog = true
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.0, 1.0)
 	quad.material = mat
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
 	var xfs := []
-	for i in 26:
-		var a := TAU * i / 26.0 + rng.randf_range(-0.12, 0.12)
+	for i in count:
+		var a := TAU * i / count + rng.randf_range(-0.12, 0.12)
 		var r := rng.randf_range(560.0, 820.0)
 		var sc := rng.randf_range(70.0, 150.0)
 		xfs.append(Transform3D(Basis().scaled(Vector3(sc, sc * 0.55, sc)),
@@ -853,12 +891,29 @@ func _build_clouds(parent: Node3D) -> void:
 	parent.add_child(KartMeshKit.multimesh_node(quad, xfs, "Clouds"))
 
 
-# --- Helpers ---
+static var _cloud_tex: ImageTexture
 
-func _mm(mesh: Mesh, xfs: Array, node_name: String, mat: Material, custom: Array = []) -> MultiMeshInstance3D:
-	var node := KartMeshKit.multimesh_node(mesh, xfs, node_name, custom)
-	node.material_override = mat
-	return node
+
+static func _cloud_texture() -> ImageTexture:
+	if _cloud_tex == null:
+		var img := Image.create(128, 64, true, Image.FORMAT_RGBA8)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 11
+		var blobs := []
+		for i in 9:
+			blobs.append([Vector2(rng.randf_range(22, 106), rng.randf_range(30, 44) - absf(i - 4) * 1.5), rng.randf_range(12, 22)])
+		for y in 64:
+			for x in 128:
+				var a := 0.0
+				for b in blobs:
+					var r: float = Vector2(x, y).distance_to(b[0]) / b[1]
+					a = maxf(a, clampf(1.2 - r, 0.0, 1.0))
+				a *= smoothstep(60.0, 44.0, float(y))
+				var shade := lerpf(1.0, 0.82, clampf((y - 26.0) / 30.0, 0.0, 1.0))
+				img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 1.02, clampf(a * 1.4, 0.0, 1.0)))
+		img.generate_mipmaps()
+		_cloud_tex = ImageTexture.create_from_image(img)
+	return _cloud_tex
 
 
 ## The crowd sprite: a fan in a T-shirt (R), the head (G) and raised arms (B), 32x48.

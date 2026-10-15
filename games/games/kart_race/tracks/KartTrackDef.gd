@@ -22,3 +22,6 @@ extends Resource
 ## way round).
 @export var zones: Array[Dictionary]
 @export var start_s: float = 0.0  ## where the start/finish line is, metres from points[0]
+## Where a theme's set pieces go: {type, s, d, r?} with s and d like zones' (metres from
+## points[0] driving forward; d + = right). E.g. Harbor Lights' shore, Frost Pass's lake.
+@export var landmarks: Array[Dictionary] = []

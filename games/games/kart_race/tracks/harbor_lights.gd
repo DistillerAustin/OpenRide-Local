@@ -56,4 +56,6 @@ static func build() -> KartTrackDef:
 		{"type": "boost", "s0": m.boost + 8.0, "s1": m.boost + 14.0, "d": -2.4, "w": 1.4},
 		{"type": "boost", "s0": m.boost + 8.0, "s1": m.boost + 14.0, "d": 2.4, "w": 1.4},
 	]
+	# The quay runs along the start straight, the sea on the left (driving forward).
+	def.landmarks = [{"type": "shore", "s": 20.0, "d": -(WIDE + def.verge + 7.0)}]
 	return def

@@ -56,4 +56,9 @@ static func build() -> KartTrackDef:
 		{"type": "boost", "s0": m.boost + 4.0, "s1": m.boost + 10.0, "d": -2.6, "w": 1.4},
 		{"type": "boost", "s0": m.boost + 4.0, "s1": m.boost + 10.0, "d": 2.6, "w": 1.4},
 	]
+	# The dry riverbed winds through the infield; a rock arch stands over the esses.
+	def.landmarks = [
+		{"type": "river", "s": 40.0, "d": 70.0},
+		{"type": "arch", "s": m.climb0 + 60.0, "d": 0.0},
+	]
 	return def
