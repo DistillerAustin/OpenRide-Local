@@ -17,7 +17,7 @@ with Godot's default font.
 | File | Source URL | Author | Licence |
 | --- | --- | --- | --- |
 | `audio/sfx/*.tres` (14 `SfxPreset` parameter sets: synth settings, no samples) | Written for this repo (#36) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| `audio/styles/*.tres` (6 `MusicStyle` parameter sets: scales, chord progressions, patterns, synth settings; `drive` names the samples listed below) | Written for this repo (#36) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `audio/styles/*.tres` (7 `MusicStyle` parameter sets; `kart_circuit` is Kart Race's, #43: scales, chord progressions, patterns, synth settings; `drive` names the samples listed below) | Written for this repo (#36) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `addons/gdUnit4/**/*.png` (9 UI images of the test framework; test-only, not exported) | https://github.com/godot-gdunit-labs/gdUnit4/tree/v6.2.1 | Mike Schulze and GdUnit4 contributors | MIT (`addons/gdUnit4/LICENSE`; code recorded in `THIRD_PARTY_NOTICES.md`) |
 | `audio/samples/kick_punchy.wav` (from `Bass Drum/Wav/Bass Drum__009.wav`, resampled to 22.05 kHz mono) | https://opengameart.org/content/sfx-the-ultimate-2017-16-bit-mini-pack | phoenix1291 | CC0 1.0 |
 | `audio/samples/snare_crack.wav` (from `Snare/Wav/Snare__003.wav`, resampled) | https://opengameart.org/content/sfx-the-ultimate-2017-16-bit-mini-pack | phoenix1291 | CC0 1.0 |
@@ -50,5 +50,8 @@ default font and the repo's own `bright` music style.
 | `games/kart_race/world/shaders/*.gdshader`, `*.gdshaderinc` (road, ground, sky, scenery, kart toon, outline, crowd, flags, lamps) and `games/kart_race/ui/shaders/*.gdshader` (text gradient, portrait, sunburst) | Written for this repo (#43) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | Every mesh and texture in `KartMeshKit.gd`, `KartWorld.gd`, `KartView.gd`, `KartFx.gd`, `KartHud.gd` and `KartRaceBoard.gd` (karts, the eight animal drivers, trees, grandstand, crowd sprite, start gate, flags, fences, windmill, hills, clouds, portraits, the item icon, confetti; built from primitive shapes and generated images in code) | Written for this repo (#43) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
-Kart Race (#43) adds no recorded or imported asset: everything is procedural, and its display
-face is the engine's built-in default font made heavy and slanted with a `FontVariation`.
+| `games/kart_race/audio/KartSfx.gd` (18 `SfxPreset` parameter sets in code: engine, screech, crowd, tier pings, whoosh, pickup, roulette, fire, hit, shield, lap chime, fanfare, countdown, bump, cheer; synth settings, no samples) | Written for this repo (#43) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/kart_race/ui/fonts/LilitaOne-Regular.ttf` (unchanged; Kart Race's display face) | https://github.com/google/fonts/tree/main/ofl/lilitaone | Juan Montoreano | SIL OFL 1.1 (`games/kart_race/ui/fonts/LilitaOne-OFL.txt`) |
+
+Kart Race (#43) adds one imported asset, the OFL display font above; everything else is
+procedural.

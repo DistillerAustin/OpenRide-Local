@@ -57,8 +57,6 @@ const BOT_PCTS := {
 }
 const BOT_LINES := [-1.5, 1.5, -0.5, 0.5, -2.0, 2.0, 0.0]
 const ASSIST := {"off": 0.0, "low": 0.5, "high": 1.0}
-const MUSIC_STYLE := {"name": "racer", "stem_gates": {"harmony": 0.4, "lead": 0.75}}
-const MUSIC_BPM := 90.0
 
 var race: KartRaceLogic
 var gp: KartGrandPrix
@@ -83,6 +81,7 @@ var _board: KartRaceBoard
 var _kart_hud: KartHud
 var _fx: KartFx
 var _item_views: KartItemViews  # race-systems
+var _audio: KartAudio  # presentation
 var _hud_lineup := ""
 var _lights := -1
 var _acc := 0.0
@@ -305,46 +304,44 @@ func _build_items() -> void:
 		_item_views.bind(items, r))
 
 
-## Presentation agent: the HUD widget, the game HUD, the framework HUD's skin and the boards.
+## Presentation agent: the game HUD (KartHud: lap badge, racer list, minimap, ride strip, item
+## button, drift meter, position), the framework HUD's skin (fonts, panels, the ride panel hidden
+## for the strip, room for the item button), the boards, and the lap and final-lap banners.
 func _build_hud() -> void:
-	_status = KartStatus.new()
-	hud.add_widget(_status)
-	hud.set_skin(_hud_skin())
+	hud.set_skin(KartHud.hud_skin())
 	_kart_hud = KartHud.new()
 	add_child(_kart_hud)
+	_status = _kart_hud.status
 	if _tuned:
 		_kart_hud.visible = bool(_tuning.get_value("world", "hud", true))
 	_kart_hud.item_pressed.connect(_on_item_pressed)
 	_board = KartRaceBoard.new()
 	_board.portrait_maker = _kart_hud.portrait_rect
 	add_child(_board)
-	race_began.connect(func(_r: KartRaceLogic):
-		var key := ",".join(lineup.map(func(r): return str(r.id)))
+	race_began.connect(func(r: KartRaceLogic):
+		var key := ",".join(lineup.map(func(x): return str(x.id)))
 		if key != _hud_lineup:
 			_hud_lineup = key
 			_kart_hud.setup(lineup, track)
 		_kart_hud.set_gameplay_visible(false, false)
-		_lights = -1)
+		_lights = -1
+		r.events.lap_completed.connect(func(kart_id: int, lap: int, _t: float):
+			# "LAP 2/3"; the last lap has its own banner (_on_final_lap).
+			if kart_id == RIDER and lap + 1 < r.laps:
+				_kart_hud.banner("LAP %d/%d" % [lap + 1, r.laps], 1.1)))
 
 
-## The framework HUD's panels in Kart Race's look (Hud.set_skin: fonts, panels, buttons only).
-static func _hud_skin() -> Dictionary:
-	var panel := KartTheme.badge(KartTheme.PANEL, 0.0, 22, KartTheme.PANEL_EDGE)
-	panel.content_margin_left = 28
-	panel.content_margin_right = 28
-	panel.content_margin_top = 14
-	panel.content_margin_bottom = 16
-	var button := KartTheme.badge(Color(0.36, 0.22, 0.86, 0.95), 0.0, 22, Color(0.75, 0.66, 1.0))
-	var pressed := KartTheme.badge(Color(0.5, 0.36, 1.0, 1.0), 0.0, 22, Color(0.9, 0.85, 1.0))
-	var end := KartTheme.badge(Color(0.75, 0.16, 0.32, 0.95), 0.0, 22, Color(1.0, 0.6, 0.7))
-	return {"font": KartTheme.display(true), "outline_color": KartTheme.OUTLINE, "outline_size": 8,
-		"panel": panel, "button": button, "button_pressed": pressed, "end_button": end}
-
-
-## Presentation agent: music and effects.
+## Presentation agent: music and effects (KartAudio: the kart_circuit style with stems and a
+## final-lap variation, engine and tyre loops, every effect through AudioDirector).
 func _build_audio() -> void:
-	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM, int(segment.get("seed", 0)))
-	AudioDirector.set_intensity(0.5)
+	if _audio:
+		_audio.queue_free()
+	_audio = KartAudio.new()
+	_audio.game = self
+	_audio.music_seed = int(segment.get("seed", 0))
+	add_child(_audio)
+	_audio.start_music()
+	race_began.connect(func(r: KartRaceLogic): _audio.listen(r))
 
 
 ## Presentation agent: sparks, flames, dust, speed lines.
@@ -355,8 +352,9 @@ func _build_fx() -> void:
 	world.add_child(_fx)
 	if _tuned and not bool(_tuning.get_value("world", "fx", true)):
 		_fx.visible = false
-		_fx.demo_drifts = false
-	race_began.connect(func(_r: KartRaceLogic): _fx.begin(views))
+	race_began.connect(func(r: KartRaceLogic):
+		_fx.begin(views)
+		_fx.listen(r.events))
 
 
 # --- The Grand Prix ---
@@ -407,7 +405,7 @@ func _on_race_started() -> void:
 
 func _on_final_lap(kart_id: int) -> void:
 	if kart_id == RIDER and race.laps > 1:
-		_kart_hud.banner("FINAL LAP!", 1.6)
+		_kart_hud.banner("FINAL LAP!", 1.6, "Give it everything", true)
 
 
 func _on_race_finished(order: Array) -> void:
@@ -416,11 +414,15 @@ func _on_race_finished(order: Array) -> void:
 	won = gp.champion() == RIDER
 	flow = Flow.RESULTS
 	_flow_left = RESULTS_SEC
+	var totals := {}  # presentation: the GP total beside each race result
+	for row in gp.standings():
+		totals[row.kart_id] = row.points
 	var rows := []
 	for i in order.size():
 		var id: int = order[i]
 		var k: KartState = race.karts[id]
 		rows.append({"name": _racer_name(id), "detail": "+%d" % KartGrandPrix.POINTS[i] if i < KartGrandPrix.POINTS.size() else "",
+			"total": _pts(int(totals.get(id, 0))),
 			"racer_id": str(lineup[id].id), "you": id == RIDER,
 			"time": KartTheme.race_time(k.finish_time) if i == 0 else "+%.3f" % maxf(0.0, k.finish_time - race.karts[order[0]].finish_time)})
 	var place := order.find(RIDER) + 1
@@ -438,11 +440,13 @@ func _after_board() -> void:
 		_flow_left = PODIUM_SEC
 		var rows := []
 		for row in gp.standings():
-			rows.append({"name": _racer_name(row.kart_id), "detail": "%d pts" % row.points,
+			rows.append({"name": _racer_name(row.kart_id), "detail": _pts(row.points), "points": _pts(row.points),
 				"racer_id": str(lineup[row.kart_id].id), "you": row.kart_id == RIDER,
 				"time": "%d win%s" % [row.wins, "" if row.wins == 1 else "s"]})
 		var champ := gp.champion() == RIDER
-		_board.show_board("Champion!" if champ else "Grand Prix standings", rows, "Final standings", PODIUM_SEC, "Ride summary")
+		var place := gp.place_of(RIDER)
+		var title := "Champion!" if champ else ("Grand Prix podium!" if place <= 3 else "Grand Prix standings")
+		_board.show_podium(title, rows, "Final standings · %d race%s" % [gp.races_run(), "" if gp.races_run() == 1 else "s"], PODIUM_SEC, "Ride summary")
 		return
 	if flow == Flow.PODIUM:
 		_finish_gp()
@@ -480,6 +484,11 @@ func _bot_pcts() -> Array:
 	for i in RACERS - 1:
 		out.append(lerpf(span[0], span[1], float(i) / (RACERS - 2)))
 	return out
+
+
+## "1 pt", "12 pts" (presentation).
+static func _pts(n: int) -> String:
+	return "%d pt%s" % [n, "" if n == 1 else "s"]
 
 
 func _racer_name(kart_id: int) -> String:
@@ -581,16 +590,19 @@ func _sync_views(delta: float) -> void:
 		_item_views.sync(delta)
 	if _fx:
 		_fx.step(race, delta)
-	if _kart_hud:
+	if _audio:  # presentation
+		_audio.step(race, Flow.keys()[flow], delta)
+	if _kart_hud:  # presentation: speed lines and draft streaks
 		var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
 		_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))
+		_kart_hud.draft = _fx.draft_screen(race, camera, _kart_hud) if _fx and flow == Flow.RACING else 0.0
 
 
 func _update_hud(delta: float) -> void:
 	var k: KartState = race.karts[RIDER]
 	var race_text := "Final race" if bool(current.get("is_final", false)) else "Race %d" % (int(current.get("index", 0)) + 1)
 	_status.set_state(k.place, race.karts.size(), k.lap, race.laps, race_text)
-	_kart_hud.update(race, _fx.drift_charge if _fx else 0.0, _fx.drift_tier if _fx else 0)
+	_kart_hud.update(race, delta, _fx)
 	var lights := 0
 	if flow == Flow.COUNTDOWN:
 		if race.countdown <= COUNTDOWN_SEC:
@@ -612,12 +624,10 @@ func _update_hud(delta: float) -> void:
 			hud.hide_message()
 
 
-## The item slot was tapped: use the item (the race-systems agent's KartItemLogic reads the
-## edge). For the hero slice it also fires the boost's look.
+## The item button was tapped: the rider's next KartInput carries `use_item` (an edge that the
+## race-systems agent's KartItemLogic reads).
 func _on_item_pressed() -> void:
 	_item_edge = true
-	if _fx and flow == Flow.RACING:
-		_fx.boost(RIDER, 1.2)
 
 
 func _show_message(text: String, seconds: float) -> void:

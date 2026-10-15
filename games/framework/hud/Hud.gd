@@ -48,6 +48,7 @@ var ride_panel: PanelContainer
 var clock_panel: PanelContainer
 
 var frame: MarginContainer
+var top_bar: HBoxContainer
 var circuit_strip: CircuitStrip
 var _widgets: HBoxContainer
 var _message: Label
@@ -73,6 +74,7 @@ func _init() -> void:
 	rows.add_child(sensor_banner)
 
 	var top := _box(HBoxContainer.new(), rows, "TopBar")
+	top_bar = top
 	var left := _box(VBoxContainer.new(), top, "Left")
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ride_panel = _panel(left, "RidePanel")
@@ -165,8 +167,30 @@ func clear_widgets() -> void:
 ## Layout, sizes, colours that carry meaning (the rpm band, the effort glow) and every number
 ## stay the framework's. Games that never call it look exactly as before; `clear_skin` (and
 ## `clear_widgets`, when a game leaves) puts everything back.
+##
+## Three layout keys let a game with its own ride readout slim the HUD down (Kart Race draws a
+## ride-metrics strip at the bottom centre and a big item button in the top-right corner):
+## `ride_panel: false` hides the ride panel (the game then shows rpm, watts, resistance and the
+## effort multiplier itself); `clock_value_size` (int) shrinks the time left and the score (never
+## below `HudTheme.MEDIUM`); `reserve_right` (px) keeps that much of the top bar's right end free,
+## so the clock and Pause | End sit just left of it. Every button keeps its full touch size.
 func set_skin(skin: Dictionary) -> void:
 	clear_skin()
+	if skin.has("ride_panel") and not bool(skin.ride_panel):
+		_skin_set(ride_panel, "property", "visible", false)
+	if skin.has("clock_value_size"):
+		var size := maxi(int(skin.clock_value_size), HudTheme.MEDIUM)
+		for node in clock_panel.find_children("*", "Label", true, false):
+			var value := node as Label
+			if value.get_theme_font_size("font_size") > HudTheme.MEDIUM:
+				_skin_set(value, "font_size", "font_size", size)
+	if float(skin.get("reserve_right", 0.0)) > 0.0:
+		var spacer := Control.new()
+		spacer.name = "ReservedRight"
+		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spacer.custom_minimum_size = Vector2(float(skin.reserve_right), 0)
+		top_bar.add_child(spacer)
+		_skin_saved.append([spacer, "node", &"", false, null])
 	var labels: Array[Node] = []
 	for root in [ride_panel, clock_panel]:
 		labels.append_array(root.find_children("*", "Label", true, false))
@@ -201,6 +225,15 @@ func clear_skin() -> void:
 		var key: StringName = entry[2]
 		var had: bool = entry[3]
 		match kind:
+			"node":
+				c.get_parent().remove_child(c)
+				c.queue_free()
+			"property":
+				c.set(key, entry[4])
+			"font_size":
+				c.remove_theme_font_size_override(key)
+				if had:
+					c.add_theme_font_size_override(key, entry[4])
 			"font":
 				c.remove_theme_font_override(key)
 				if had:
@@ -222,6 +255,12 @@ func clear_skin() -> void:
 
 func _skin_set(c: Control, kind: String, key: StringName, value: Variant) -> void:
 	match kind:
+		"property":
+			_skin_saved.append([c, kind, key, true, c.get(key)])
+			c.set(key, value)
+		"font_size":
+			_skin_saved.append([c, kind, key, c.has_theme_font_size_override(key), c.get_theme_font_size(key)])
+			c.add_theme_font_size_override(key, value)
 		"font":
 			_skin_saved.append([c, kind, key, c.has_theme_font_override(key), c.get_theme_font(key) if c.has_theme_font_override(key) else null])
 			c.add_theme_font_override(key, value)

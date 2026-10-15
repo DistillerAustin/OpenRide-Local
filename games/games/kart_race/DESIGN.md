@@ -364,3 +364,32 @@ smarter bots.
 - Type inference from a Variant is an error in this project (`var x := dict.key` fails): type it.
 - `Array(typed_array)` returns the same array, not a copy: appending to it mutates the source.
 - A `-s` script compiles before the autoloads exist: keep it untyped where it touches them.
+
+## Presentation (Phase 2, E1)
+
+The HUD follows the web slice's layout. **Additions only; no frozen API changed.**
+
+- **Framework skin hook** (`Hud.set_skin`): new keys `ride_panel: false`, `clock_value_size`,
+  `reserve_right` (docs/GAMES.md "HUD kit"). Kart Race's skin is `KartHud.hud_skin()`; the
+  framework ride panel is hidden for this game only and the ride strip replaces it.
+- **KartStatus** (the lap badge, `set_state` unchanged) now sits top left in KartHud, not in the
+  framework's top-centre slot.
+- `ui/`: `KartHud` (composition: `status`, `racer_list`, `minimap`, `ride_strip`, `item_button`,
+  `drift_meter`; `update(race, delta, fx)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
+  `draft`/`draft_point`), `KartItemButton` (round, 260 px, fires on press, circle hit area,
+  roulette from `KartState.item`/`roulette_time`), `KartItemIcons` (icons by item-id keyword:
+  turbo, puck, drone, goo, shield, magnet), `KartDriftMeter` (charge in seconds; tier charges
+  from `KartPhysics.DRIFT_TIERS` or `TIER_CHARGE` when defined, else 0.9/2.0/3.4; knob glyph from
+  `knob_boosting`), `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector
+  drawing: one draw call per widget), `KartRaceBoard.show_podium(title, rows, …)` and `mode`.
+  Portraits are baked into one atlas with one shared material, so lists draw in one batch.
+- `world/KartFx.gd`: reads drift/boost/spin/draft from each KartState and `listen(events)`:
+  tier bursts, tier-coloured drift-boost flames, hit stars, shield and bump sparks;
+  `draft_screen()` feeds the HUD's draft streaks. `demo_drifts` (off) scripts drifts for captures.
+- `audio/`: `KartAudio` (music `kart_circuit` with stem intensity and a final-lap variation, tempo
+  from cadence on phrase boundaries; engine, rival, screech and crowd loops; one-shots from the
+  events) and `KartSfx` (18 presets, `kart_*`). The style is `res://audio/styles/kart_circuit.tres`
+  (MusicGen only reads that folder).
+- HUD draw calls measured on the desktop (meadow, racing, both HUDs): about 64 for KartHud and 15
+  for the framework HUD, 45 for the 3D view.
+- Tests: `tests/unit/kart_presentation_test.gd`; screenshots: `tests/capture_kart_hud.gd`.

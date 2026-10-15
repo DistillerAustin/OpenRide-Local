@@ -1,24 +1,42 @@
 class_name KartRaceBoard
 extends CanvasLayer
-## The results board between races, and the final standings (#43): a violet sunburst over the
-## still-running race, a big gradient title that pops in, finishing rows that slide in one by
-## one (place, portrait, name, time, points chip; the rider's row in gold), confetti, and a
-## chunky pill counting down to the next race. Shown without any touch needed.
+## The flow screens between and after races (#43), shown with no touch needed and timed by the
+## game (a pill counts down to what comes next):
+##
+## - `show_board`: the results board. A violet sunburst over the still-running race, a big
+##   gradient title that pops in, then the finishing order sliding in row by row: place,
+##   portrait, name, time gap, the race's points chip and the Grand Prix total. The rider's row
+##   is gold. Confetti when the rider made the podium.
+## - `show_podium`: the Grand Prix podium. The top three on gold, silver and bronze blocks that
+##   rise in turn (third, second, then the champion with a burst), big portraits, names and
+##   points, and the full standings beside it, under a shower of confetti.
+##
+## The title sits left of the framework HUD's clock and Pause | End (top right), so nothing that
+## stays touchable is ever covered.
 
 const LAYER := 9  ## under the HUD (10), over the 3D view
-const ROW_W := 860.0
+const W := 1920.0
+const H := 1080.0
+const TITLE_CENTRE := 650.0  ## clear of the framework's clock cluster at the top right
+const ROW_W := 980.0
 const ROW_H := 62.0
-const CONFETTI := 90
+const ROWS_TOP := 360.0
+const MINI_W := 640.0
+const MINI_H := 58.0
+const CONFETTI := 110
+const PODIUM_COLORS := [Color(1.0, 0.78, 0.2), Color(0.8, 0.84, 0.92), Color(0.86, 0.52, 0.26)]
 
 ## racer id -> portrait texture (KartHud renders them); rows may carry `racer_id`.
 var portraits := {}
 var portrait_maker: Callable  ## (racer_id, size, you) -> Control, when set
+## What's showing: "", "results" or "podium".
+var mode := ""
 
 var _root: Control
 var _burst: ColorRect
 var _title: Label
 var _subtitle: Label
-var _rows_box: Control
+var _content: Control
 var _pill: PanelContainer
 var _pill_label: Label
 var _confetti: Control
@@ -26,6 +44,7 @@ var _bits := []  # [pos, vel, rot, spin, color, size]
 var _rng := RandomNumberGenerator.new()
 var _left := 0.0
 var _next_text := ""
+var _rain := false
 
 
 func _init() -> void:
@@ -33,7 +52,7 @@ func _init() -> void:
 	visible = false
 	_rng.seed = 3
 	_root = Control.new()
-	_root.size = Vector2(HudTheme.W, HudTheme.H)
+	_root.size = Vector2(W, H)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	_burst = ColorRect.new()
@@ -41,37 +60,42 @@ func _init() -> void:
 	_burst.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mat := ShaderMaterial.new()
 	mat.shader = load(KartTheme.SHADERS + "sunburst.gdshader")
-	mat.set_shader_parameter("centre", Vector2(0.5, 0.18))
+	mat.set_shader_parameter("centre", Vector2(TITLE_CENTRE / W, 0.16))
 	mat.set_shader_parameter("alpha", 0.86)
 	_burst.material = mat
 	_root.add_child(_burst)
-	_title = KartTheme.label("", 140, KartTheme.INK)
+	_title = KartTheme.label("", 130, KartTheme.INK)
+	_title.name = "Title"
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title.size = Vector2(1400, 190)
-	_title.position = Vector2((HudTheme.W - 1400) * 0.5, 120)
+	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_title.size = Vector2(1160, 200)
+	_title.position = Vector2(TITLE_CENTRE - 580, 50)
 	_title.pivot_offset = _title.size * 0.5
 	_title.add_theme_constant_override("outline_size", 30)
 	KartTheme.gradient(_title, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
 	_root.add_child(_title)
-	_subtitle = KartTheme.label("", 32, KartTheme.CHIP)
+	_subtitle = KartTheme.label("", 36, KartTheme.CHIP)
+	_subtitle.name = "Subtitle"
 	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_subtitle.size = Vector2(1400, 60)
-	_subtitle.position = Vector2((HudTheme.W - 1400) * 0.5, 300)
+	_subtitle.size = Vector2(1160, 56)
+	_subtitle.position = Vector2(TITLE_CENTRE - 580, 248)
 	_root.add_child(_subtitle)
-	_rows_box = Control.new()
-	_rows_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rows_box.position = Vector2((HudTheme.W - ROW_W) * 0.5, 398)
-	_root.add_child(_rows_box)
+	_content = Control.new()
+	_content.name = "Content"
+	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_content.size = _root.size
+	_root.add_child(_content)
 	_pill = PanelContainer.new()
+	_pill.name = "Pill"
 	_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var ps := KartTheme.badge(Color(1.0, 0.78, 0.18), 0.0, 44, Color(0.6, 0.3, 0.0))
 	ps.content_margin_left = 54
 	ps.content_margin_right = 54
-	ps.content_margin_top = 10
-	ps.content_margin_bottom = 14
+	ps.content_margin_top = 8
+	ps.content_margin_bottom = 12
 	_pill.add_theme_stylebox_override("panel", ps)
 	_root.add_child(_pill)
-	_pill_label = KartTheme.label("", 46, KartTheme.OUTLINE, true)
+	_pill_label = KartTheme.label("", 44, KartTheme.OUTLINE, true)
 	_pill_label.add_theme_constant_override("outline_size", 0)
 	_pill_label.add_theme_constant_override("shadow_offset_y", 0)
 	_pill_label.add_theme_constant_override("shadow_offset_x", 0)
@@ -83,40 +107,102 @@ func _init() -> void:
 	_root.add_child(_confetti)
 
 
-## rows: [{name, detail}] in order, optionally with racer_id, time, points, you. `subtitle` and
-## `next_sec` (a countdown to what follows, with `next_text`) are optional.
+## The results board. rows: [{name, detail}] in finishing order, optionally with racer_id, time,
+## points (or detail: the race's points), total (the GP total) and you. `subtitle` and `next_sec`
+## (a countdown to what follows, with `next_text`) are optional.
 func show_board(title: String, rows: Array, subtitle := "", next_sec := 0.0, next_text := "Next race") -> void:
-	_title.text = title
-	_subtitle.text = subtitle.to_upper()
-	for c in _rows_box.get_children():
-		c.queue_free()
+	mode = "results"
+	_open(title, subtitle, next_sec, next_text)
 	for i in rows.size():
 		var row := _row(i, rows[i])
-		row.position = Vector2(0, i * (ROW_H + 7))
-		_rows_box.add_child(row)
-		row.modulate.a = 0.0
-		var tw := row.create_tween()
-		tw.tween_interval(0.25 + i * 0.07)
-		tw.tween_property(row, "modulate:a", 1.0, 0.2)
-		tw.parallel().tween_property(row, "position:x", 0.0, 0.35).from(220.0).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_left = next_sec
-	_next_text = next_text
-	_pill.visible = next_sec > 0.0
-	_update_pill()
-	_pill.reset_size()
-	_pill.position = Vector2((HudTheme.W - _pill.size.x) * 0.5, 398 + rows.size() * (ROW_H + 7) + 14)
-	visible = true
-	_title.scale = Vector2(0.2, 0.2)
-	var tt := _title.create_tween()
-	tt.tween_property(_title, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	_bits.clear()
-	for i in CONFETTI:
-		_spawn_bit(true)
+		row.position = Vector2((W - ROW_W) * 0.5, ROWS_TOP + i * (ROW_H + 7))
+		_content.add_child(row)
+		_slide_in(row, 0.25 + i * 0.07, 220.0)
+	_place_pill(Vector2(W * 0.5, ROWS_TOP + rows.size() * (ROW_H + 7) + 16))
+	var rider_place := -1
+	for i in rows.size():
+		if bool(rows[i].get("you", false)):
+			rider_place = i
+	_start_confetti(rider_place >= 0 and rider_place < 3)
+
+
+## The Grand Prix podium and the final standings. rows: standings order, as `show_board`'s
+## (`time` may carry the wins), with `points` the GP total.
+func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, next_text := "Ride summary") -> void:
+	mode = "podium"
+	_open(title, subtitle, next_sec, next_text)
+	# The blocks: second on the left, the champion in the middle, third on the right.
+	var slots := [[1, 300.0, 215.0], [0, 640.0, 285.0], [2, 980.0, 165.0]]  # [place index, centre x, block height]
+	var order := [2, 1, 0]  # third rises first, the champion last
+	for o in order.size():
+		var slot: Array = slots[[2, 0, 1][o]]
+		var place: int = slot[0]
+		if place >= rows.size():
+			continue
+		var node := _podium_block(place, rows[place], slot[1], slot[2])
+		_content.add_child(node)
+		var delay := 0.35 + o * 0.45
+		var final_y := node.position.y
+		node.position.y = H + 40.0
+		var tw := node.create_tween()
+		tw.tween_interval(delay)
+		tw.tween_property(node, "position:y", final_y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		if place == 0:
+			tw.tween_callback(func(): _burst_confetti(Vector2(slot[1], final_y + 40.0)))
+	# The full standings beside the podium.
+	for i in rows.size():
+		var row := _mini_row(i, rows[i])
+		row.position = Vector2(W - 40.0 - MINI_W, ROWS_TOP + i * (MINI_H + 6))
+		_content.add_child(row)
+		_slide_in(row, 0.2 + i * 0.06, 180.0)
+	_place_pill(Vector2(640.0, 938.0))
+	_start_confetti(true)
 
 
 func hide_board() -> void:
 	visible = false
+	mode = ""
 	_bits.clear()
+
+
+## Seconds until what comes next (the pill's countdown).
+func seconds_left() -> float:
+	return _left
+
+
+func _open(title: String, subtitle: String, next_sec: float, next_text: String) -> void:
+	_title.text = title
+	# Long titles shrink to stay clear of the framework's clock.
+	var font_size := 130
+	while font_size > 70 and KartTheme.display().get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > _title.size.x - 60.0:
+		font_size -= 8
+	_title.add_theme_font_size_override("font_size", font_size)
+	(_title.material as ShaderMaterial).set_shader_parameter("span", Vector2(100.0 - font_size * 0.38, 100.0 + font_size * 0.42))
+	_subtitle.text = subtitle.to_upper()
+	for c in _content.get_children():
+		c.queue_free()
+	_left = next_sec
+	_next_text = next_text
+	_pill.visible = next_sec > 0.0
+	_update_pill()
+	visible = true
+	_title.scale = Vector2(0.2, 0.2)
+	var tt := _title.create_tween()
+	tt.tween_property(_title, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+
+func _place_pill(centre: Vector2) -> void:
+	_pill.reset_size()
+	_pill.position = centre - Vector2(_pill.size.x * 0.5, 0.0)
+
+
+func _slide_in(row: Control, delay: float, from_dx: float) -> void:
+	row.modulate.a = 0.0
+	var x := row.position.x
+	var tw := row.create_tween()
+	tw.tween_interval(delay)
+	tw.tween_property(row, "modulate:a", 1.0, 0.2)
+	tw.parallel().tween_property(row, "position:x", x, 0.35).from(x + from_dx).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _process(delta: float) -> void:
@@ -128,12 +214,14 @@ func _process(delta: float) -> void:
 	for b in _bits:
 		b[1].y += 260.0 * delta
 		b[1].x += sin(b[2] * 2.0) * 30.0 * delta
+		b[1] *= 1.0 - 0.6 * delta
 		b[0] += b[1] * delta
 		b[2] += b[3] * delta
-		if b[0].y > HudTheme.H + 30.0:
-			b[0] = Vector2(_rng.randf_range(0, HudTheme.W), -20.0)
+		if b[0].y > H + 30.0 and _rain:
+			b[0] = Vector2(_rng.randf_range(0, W), -20.0)
 			b[1] = Vector2(_rng.randf_range(-60, 60), _rng.randf_range(80, 200))
-	_confetti.queue_redraw()
+	if not _bits.is_empty():
+		_confetti.queue_redraw()
 
 
 func _update_pill() -> void:
@@ -142,11 +230,29 @@ func _update_pill() -> void:
 		_pill_label.text = text
 
 
-func _spawn_bit(initial: bool) -> void:
+# --- Confetti ---
+
+func _start_confetti(rain: bool) -> void:
+	_bits.clear()
+	_rain = rain
+	if not rain:
+		_confetti.queue_redraw()
+		return
+	for i in CONFETTI:
+		_spawn_bit(Vector2(_rng.randf_range(0, W), _rng.randf_range(-H * 0.8, 0)), Vector2(_rng.randf_range(-60, 60), _rng.randf_range(80, 220)))
+
+
+## A burst from a point (the champion's block landing).
+func _burst_confetti(at: Vector2) -> void:
+	for i in 70:
+		var a := _rng.randf_range(-PI * 0.95, -PI * 0.05)
+		_spawn_bit(at, Vector2(cos(a), sin(a)) * _rng.randf_range(300, 900))
+
+
+func _spawn_bit(pos: Vector2, vel: Vector2) -> void:
 	var colors := [Color(1, 0.84, 0.2), Color(0.3, 0.85, 1.0), Color(1, 0.4, 0.6), Color(0.5, 1, 0.5), Color(0.8, 0.55, 1.0), Color(1, 0.55, 0.2)]
-	var pos := Vector2(_rng.randf_range(0, HudTheme.W), _rng.randf_range(-HudTheme.H * 0.8, 0) if initial else -20.0)
-	_bits.append([pos, Vector2(_rng.randf_range(-60, 60), _rng.randf_range(80, 220)), _rng.randf() * TAU,
-		_rng.randf_range(-6, 6), colors[_rng.randi() % colors.size()], Vector2(_rng.randf_range(10, 18), _rng.randf_range(6, 10))])
+	_bits.append([pos, vel, _rng.randf() * TAU, _rng.randf_range(-6, 6), colors[_rng.randi() % colors.size()],
+		Vector2(_rng.randf_range(12, 20), _rng.randf_range(7, 11))])
 
 
 func _draw_confetti() -> void:
@@ -157,6 +263,8 @@ func _draw_confetti() -> void:
 		_confetti.draw_rect(Rect2(-s * 0.5, s), b[4])
 	_confetti.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+
+# --- Rows ---
 
 func _row(i: int, r: Dictionary) -> Control:
 	var you := bool(r.get("you", false))
@@ -174,30 +282,15 @@ func _row(i: int, r: Dictionary) -> Control:
 	place.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	row.add_child(place)
 	var suffix := KartTheme.label(KartTheme.ordinal_suffix(i + 1), 26, place.get_theme_color("font_color"))
-	suffix.position = Vector2(86, 8)
+	suffix.position = Vector2(86, 6)
 	row.add_child(suffix)
 	var rid := str(r.get("racer_id", ""))
 	if rid != "" and portrait_maker.is_valid():
 		var pic: Control = portrait_maker.call(rid, 54.0, you)
 		pic.position = Vector2(130, (ROW_H - 54) * 0.5)
 		row.add_child(pic)
-	var name_label := KartTheme.label(str(r.get("name", "")), 38, ink, true)
-	if you:
-		name_label.add_theme_constant_override("outline_size", 0)
-		name_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
-	name_label.position = Vector2(206, 0)
-	name_label.size = Vector2(330, ROW_H)
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(name_label)
-	var time_label := KartTheme.label(str(r.get("time", "")), 32, ink, true)
-	if you:
-		time_label.add_theme_constant_override("outline_size", 0)
-		time_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
-	time_label.position = Vector2(520, 0)
-	time_label.size = Vector2(190, ROW_H)
-	time_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	row.add_child(time_label)
+	row.add_child(_text(str(r.get("name", "")), 38, ink, you, Rect2(206, 0, 330, ROW_H), HORIZONTAL_ALIGNMENT_LEFT))
+	row.add_child(_text(str(r.get("time", "")), 32, ink, you, Rect2(520, 0, 190, ROW_H), HORIZONTAL_ALIGNMENT_RIGHT))
 	var pts := str(r.get("points", r.get("detail", "")))
 	if pts != "":
 		var chip := PanelContainer.new()
@@ -213,4 +306,115 @@ func _row(i: int, r: Dictionary) -> Control:
 		cl.add_theme_constant_override("outline_size", 8)
 		chip.add_child(cl)
 		row.add_child(chip)
+	if r.has("total"):
+		row.add_child(_text(str(r.total), 36, ink, you, Rect2(830, 0, 130, ROW_H), HORIZONTAL_ALIGNMENT_RIGHT))
 	return row
+
+
+func _text(text: String, font_size: int, ink: Color, you: bool, rect: Rect2, align: HorizontalAlignment) -> Label:
+	var l := KartTheme.label(text, font_size, ink, true)
+	if you:
+		l.add_theme_constant_override("outline_size", 0)
+		l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	l.position = rect.position
+	l.size = rect.size
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.horizontal_alignment = align
+	l.clip_text = true
+	return l
+
+
+func _mini_row(i: int, r: Dictionary) -> Control:
+	var you := bool(r.get("you", false))
+	var row := Panel.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.size = Vector2(MINI_W, MINI_H)
+	var bg := Color(1.0, 0.78, 0.2, 0.95) if you else Color(0.16, 0.1, 0.36, 0.86)
+	row.add_theme_stylebox_override("panel", KartTheme.badge(bg, 0.12, 14, Color(1, 1, 1, 0.5) if you else Color(0.55, 0.42, 1.0, 0.5)))
+	var ink := KartTheme.OUTLINE if you else KartTheme.INK
+	var place := KartTheme.label(str(i + 1), 42, PODIUM_COLORS[i] if i < 3 and not you else (KartTheme.INK if you else KartTheme.CHIP))
+	place.position = Vector2(8, 0)
+	place.size = Vector2(54, MINI_H)
+	place.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	place.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(place)
+	var rid := str(r.get("racer_id", ""))
+	if rid != "" and portrait_maker.is_valid():
+		var pic: Control = portrait_maker.call(rid, 48.0, you)
+		pic.position = Vector2(76, (MINI_H - 48) * 0.5)
+		row.add_child(pic)
+	row.add_child(_text(str(r.get("name", "")), 34, ink, you, Rect2(136, 0, 300, MINI_H), HORIZONTAL_ALIGNMENT_LEFT))
+	row.add_child(_text(str(r.get("points", r.get("detail", ""))), 34, ink, you, Rect2(430, 0, 190, MINI_H), HORIZONTAL_ALIGNMENT_RIGHT))
+	return row
+
+
+## One podium step: the portrait on top, the name, the block with its number and the points.
+func _podium_block(place: int, r: Dictionary, centre_x: float, height: float) -> Control:
+	var you := bool(r.get("you", false))
+	var node := Control.new()
+	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var block_w := 300.0
+	var top := 900.0 - height
+	node.position = Vector2(centre_x - block_w * 0.5, top - 250.0)
+	node.size = Vector2(block_w, height + 250.0)
+	var color: Color = PODIUM_COLORS[place]
+	var block := Panel.new()
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bs := StyleBoxFlat.new()
+	bs.bg_color = color
+	bs.set_corner_radius_all(18)
+	bs.corner_radius_bottom_left = 0
+	bs.corner_radius_bottom_right = 0
+	bs.border_color = color.lightened(0.45)
+	bs.border_width_top = 10
+	bs.shadow_color = Color(0.05, 0.0, 0.15, 0.5)
+	bs.shadow_size = 14
+	bs.anti_aliasing = true
+	block.add_theme_stylebox_override("panel", bs)
+	block.position = Vector2(0, 250)
+	block.size = Vector2(block_w, height)
+	node.add_child(block)
+	var num := KartTheme.label(str(place + 1), mini(150, int(height * 0.56)), KartTheme.INK)
+	num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	num.size = Vector2(block_w, height - 58)
+	num.position = Vector2(0, 254)
+	num.add_theme_constant_override("outline_size", 26)
+	KartTheme.gradient(num, Color(1, 1, 1), color.lightened(0.3))
+	node.add_child(num)
+	var pts := KartTheme.label(str(r.get("points", "")), 36, KartTheme.OUTLINE, true)
+	pts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pts.size = Vector2(block_w, 50)
+	pts.position = Vector2(0, 250 + height - 62)
+	pts.add_theme_constant_override("outline_size", 0)
+	pts.add_theme_constant_override("shadow_offset_y", 0)
+	node.add_child(pts)
+	var d := 156.0 if place == 0 else 136.0
+	var rid := str(r.get("racer_id", ""))
+	if rid != "" and portrait_maker.is_valid():
+		var pic: Control = portrait_maker.call(rid, d, you)
+		pic.position = Vector2((block_w - d) * 0.5, 186 - d)
+		node.add_child(pic)
+	var name_label := KartTheme.label(str(r.get("name", "")), 40 if place == 0 else 36, KartTheme.CHIP if you else KartTheme.INK, true)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.size = Vector2(block_w + 60, 56)
+	name_label.position = Vector2(-30, 190)
+	name_label.clip_text = true
+	node.add_child(name_label)
+	if place == 0:
+		# A little crown over the champion.
+		var crown := Control.new()
+		crown.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		crown.size = Vector2(120, 70)
+		crown.position = Vector2((block_w - 120) * 0.5, 186 - d - 62)
+		crown.draw.connect(func():
+			var pts2 := PackedVector2Array([Vector2(8, 66), Vector2(4, 14), Vector2(34, 40), Vector2(60, 4), Vector2(86, 40), Vector2(116, 14), Vector2(112, 66)])
+			var outline := pts2.duplicate()
+			outline.append(pts2[0])
+			crown.draw_colored_polygon(pts2, Color(1.0, 0.82, 0.2))
+			crown.draw_polyline(outline, KartTheme.OUTLINE, 6.0, true)
+			for p in [Vector2(4, 14), Vector2(60, 4), Vector2(116, 14)]:
+				crown.draw_circle(p, 8.0, KartTheme.OUTLINE)
+				crown.draw_circle(p, 5.0, Color(1.0, 0.4, 0.5)))
+		node.add_child(crown)
+	return node

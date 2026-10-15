@@ -1,14 +1,14 @@
 class_name KartTheme
 extends RefCounted
-## Kart Race's game-UI look (#43, the hero slice): a heavy italic display face, outlines, slanted
+## Kart Race's game-UI look (#43): a chunky rounded display face with dark outlines, slanted
 ## badges, gradients and a purple-night-and-sunset palette shared by the HUD, the title card and
 ## the boards.
 ##
-## The display face is the engine's own font (already in every build, OFL) made heavy and slanted
-## with a FontVariation; swap DISPLAY_FONT_PATH for a bundled OFL display font to change it in one
-## place (none is bundled yet: adding one needs a download).
+## The display face is Lilita One (SIL OFL 1.1, `ui/fonts/LilitaOne-OFL.txt`, listed in
+## assets/SOURCES.md), slanted a little with a FontVariation for the italic badges. Without the
+## file it falls back to the engine's own font, made heavy.
 
-const DISPLAY_FONT_PATH := ""  ## e.g. "res://games/kart_race/ui/fonts/SomeDisplay.ttf" (OFL)
+const DISPLAY_FONT_PATH := "res://games/kart_race/ui/fonts/LilitaOne-Regular.ttf"
 
 const INK := Color(1, 1, 1)
 const OUTLINE := Color(0.13, 0.06, 0.24)
@@ -21,6 +21,13 @@ const VIOLET_TOP := Color(0.86, 0.8, 1.0)
 const VIOLET_BOTTOM := Color(0.5, 0.32, 1.0)
 const GREEN_TOP := Color(0.85, 1.0, 0.5)
 const GREEN_BOTTOM := Color(0.2, 0.8, 0.35)
+const ORANGE_TOP := Color(1.0, 0.86, 0.45)
+const ORANGE_BOTTOM := Color(1.0, 0.42, 0.12)
+const NIGHT := Color(0.1, 0.06, 0.24, 0.86)  ## the tiles' fill
+const TILE_EDGE := Color(0.55, 0.42, 1.0, 0.9)
+## Drift spark tiers 1-3 (the spec's blue, orange, violet), shared by the sparks, the meter and
+## the item ring.
+const TIER_COLORS := [Color(0.3, 0.75, 1.0), Color(1.0, 0.55, 0.15), Color(0.85, 0.45, 1.0)]
 
 const SHADERS := "res://games/kart_race/ui/shaders/"
 
@@ -34,14 +41,15 @@ static func display(upright := false) -> Font:
 	if _fonts.has(key):
 		return _fonts[key]
 	var base: Font = ThemeDB.fallback_font
-	if DISPLAY_FONT_PATH != "" and ResourceLoader.exists(DISPLAY_FONT_PATH):
+	var bundled := DISPLAY_FONT_PATH != "" and ResourceLoader.exists(DISPLAY_FONT_PATH)
+	if bundled:
 		base = load(DISPLAY_FONT_PATH)
 	var v := FontVariation.new()
 	v.base_font = base
-	v.variation_embolden = 1.1
+	v.variation_embolden = 0.0 if bundled else 1.1
 	v.spacing_glyph = 1
 	if not upright:
-		v.variation_transform = Transform2D(Vector2(1, 0), Vector2(-0.22, 1), Vector2.ZERO)
+		v.variation_transform = Transform2D(Vector2(1, 0), Vector2(-0.16, 1), Vector2.ZERO)
 	_fonts[key] = v
 	return v
 

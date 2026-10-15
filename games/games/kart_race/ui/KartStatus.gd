@@ -1,9 +1,9 @@
 class_name KartStatus
 extends PanelContainer
-## Kart Race's widget in the HUD's top-centre slot (#43): a slanted lap badge and the race
-## clock, in the game's display face.
+## Kart Race's lap badge (#43), top left in KartHud (above the race clock and the racer list):
+## a slanted violet badge with the lap in a gold gradient, and the race beside it.
 ##
-##   [ LAP 2/3 ]  RACE 2/5
+##   [ LAP 2/3 ]  RACE 2
 ##
 ## Labels change only with their values (a re-layout every frame cost frame time on the
 ## tablet), so the race clock, which ticks every frame, lives outside the container in KartHud
