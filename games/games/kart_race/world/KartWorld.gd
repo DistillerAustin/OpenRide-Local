@@ -23,6 +23,10 @@ const TREE_CLEARANCE := 5.0  ## trees keep this far beyond the barrier
 const SECTORS := 12
 const CELL := 110.0
 const CELL_RANGE := 230.0
+## The quality governor's trims (KartQualityGovernor): foliage cells drawn to this range, and
+## this share of the crowd.
+const CELL_RANGE_TRIMMED := 150.0
+const CROWD_TRIMMED := 0.5
 
 const FLAG_COLORS := [Color(0.95, 0.25, 0.2), Color(1.0, 0.8, 0.15), Color(0.2, 0.6, 1.0),
 	Color(0.35, 0.85, 0.35), Color(0.75, 0.35, 0.95), Color(1.0, 0.5, 0.15), Color(0.98, 0.98, 0.98)]
@@ -52,7 +56,13 @@ var lamps_mat: ShaderMaterial
 var water_mat: ShaderMaterial
 var pads_mat: ShaderMaterial
 
+## Quality trims in force (set_quality); kept across tracks.
+var foliage_range := CELL_RANGE
+var crowd_share := 1.0
+
 var _built: Node3D
+var _foliage_cells: Array[GeometryInstance3D] = []
+var _crowd: MultiMesh
 var _sky_mat: ShaderMaterial
 var _env: WorldEnvironment
 var _halos: MultiMeshInstance3D
@@ -102,6 +112,8 @@ func build(model: KartTrackModel) -> void:
 	add_child(_built)
 	_spinners.clear()
 	_spin_rates.clear()
+	_foliage_cells.clear()
+	_crowd = null
 	_measure()
 	dress = KartDress.for_theme(track.def.theme)
 	dress.world = self
@@ -151,6 +163,19 @@ func build(model: KartTrackModel) -> void:
 		_build_clouds(scenery)
 	ground_mat.set_shader_parameter("detail", 1.0 if tuning.get("ground_detail", true) else 0.0)
 	set_start_lights(0)
+	set_quality(foliage_range, crowd_share)
+
+
+## The quality governor's world trims: how far foliage cells are drawn (metres), and the share
+## of the crowd shown (the instances are shuffled, so any share thins evenly). Instant: no
+## rebuild, so it can change mid-race.
+func set_quality(foliage_m: float, crowd: float) -> void:
+	foliage_range = foliage_m
+	crowd_share = clampf(crowd, 0.0, 1.0)
+	for node in _foliage_cells:
+		node.visibility_range_end = foliage_range
+	if _crowd:
+		_crowd.visible_instance_count = roundi(_crowd.instance_count * crowd_share)
 
 
 ## The start gantry: 0 dark, 1-5 red lamps lit, 6 all green.
@@ -320,6 +345,8 @@ func commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Mat
 		node.visibility_range_end = CELL_RANGE
 		node.visibility_range_end_margin = 20.0
 		parent.add_child(node)
+		if node_name == "Foliage":
+			_foliage_cells.append(node)
 
 
 func mm(mesh: Mesh, xfs: Array, node_name: String, mat: Material, custom: Array = []) -> MultiMeshInstance3D:
@@ -707,7 +734,18 @@ func _build_grandstand(parent: Node3D) -> void:
 				c.a = rng.randf()
 				custom.append(c)
 			z += rng.randf_range(0.6, 0.8)
-	stand.add_child(mm(quad, xfs, "Crowd", crowd_mat, custom))
+	# Shuffled, so the quality governor's share of the crowd thins every row evenly.
+	for i in range(xfs.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t: Variant = xfs[i]
+		xfs[i] = xfs[j]
+		xfs[j] = t
+		t = custom[i]
+		custom[i] = custom[j]
+		custom[j] = t
+	var crowd := mm(quad, xfs, "Crowd", crowd_mat, custom)
+	_crowd = crowd.multimesh
+	stand.add_child(crowd)
 
 
 static func back_x(rows: int, depth: float) -> float:

@@ -21,6 +21,8 @@ var renders := 0  ## renders made, for tests
 ## At most one render per this many seconds (a readout that changes every frame needn't
 ## re-render every frame); 0 = whenever it changes.
 var min_interval := 0.0
+## Bakes sharing a queue take turns rendering (KartBakeQueue); null renders at once.
+var queue: KartBakeQueue = null
 
 var _keep := 0.0
 var _pending := false
@@ -40,7 +42,9 @@ func _init(w: Control, parent: Control, bake_size := Vector2.ZERO) -> void:
 	viewport.transparent_bg = true
 	viewport.disable_3d = true
 	viewport.gui_disable_input = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	# The first render comes from _process like every other, so a queue can spread it too.
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_pending = true
 	viewport.size = Vector2i(ceili(area.x + PAD * 2.0), ceili(area.y + PAD * 2.0))
 	add_child(viewport)
 	if w.get_parent():
@@ -76,6 +80,8 @@ func _process(delta: float) -> void:
 		_keep -= delta
 		_pending = true
 	if _pending and _since >= min_interval:
+		if queue and not queue.grant(self):
+			return
 		_pending = false
 		_since = 0.0
 		renders += 1

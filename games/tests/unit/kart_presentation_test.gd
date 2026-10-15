@@ -363,6 +363,60 @@ func test_the_board_bakes_its_rows_title_and_pill() -> void:
 	assert_int(baked.size()).is_equal(8 + 3)  # the standings and the three blocks
 
 
+
+func test_the_board_renders_one_bake_a_frame() -> void:
+	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
+	add_child(board)
+	var rows := []
+	for i in 8:
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
+	var bakes := _bakes(board)
+	assert_int(bakes.size()).is_equal(8 + 3)
+	var before := _renders(bakes)
+	assert_int(before).is_equal(0)  # nothing renders until its turn
+	for f in 30:
+		await get_tree().process_frame
+		var now := _renders(bakes)
+		assert_int(now - before).override_failure_message("frame %d rendered %d bakes" % [f, now - before]).is_less_equal(1)
+		before = now
+	# Every bake has had its turn.
+	for b: KartBaked in bakes:
+		assert_int(b.renders).override_failure_message("%s never rendered" % b.name).is_greater(0)
+	assert_int(board.bakes.waiting()).is_equal(0)
+
+
+func test_bake_queue_is_first_come_first_served() -> void:
+	var q := KartBakeQueue.new()
+	var a: Node = auto_free(Node.new())
+	var b: Node = auto_free(Node.new())
+	add_child(a)
+	add_child(b)
+	# b asks first; a, earlier in the tree, must wait its turn.
+	assert_bool(q.grant(b)).is_true()
+	assert_bool(q.grant(a)).is_false()
+	await get_tree().process_frame
+	assert_bool(q.grant(b)).is_false()  # a is ahead now
+	assert_bool(q.grant(a)).is_true()
+	await get_tree().process_frame
+	assert_bool(q.grant(b)).is_true()
+
+
+func _bakes(n: Node) -> Array:
+	var out := []
+	if n is KartBaked and not n.is_queued_for_deletion():
+		out.append(n)
+	for c in n.get_children():
+		out.append_array(_bakes(c))
+	return out
+
+
+func _renders(bakes: Array) -> int:
+	var total := 0
+	for b: KartBaked in bakes:
+		total += b.renders
+	return total
+
 # --- Audio ---
 
 func test_every_kart_effect_renders_a_clean_sound() -> void:

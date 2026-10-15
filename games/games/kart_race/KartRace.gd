@@ -28,10 +28,13 @@ enum Flow { IDLE, COUNTDOWN, RACING, RESULTS, PODIUM, DONE }
 ## The 3D view renders into a SubViewport at this share of 1080p, drawn scaled under the HUD
 ## (Dodge Ball's pattern: the tablet's GPU is fill-rate bound; scaling_3d_scale < 1 hangs it).
 const RENDER_SCALE := 0.62
+## The quality governor's last trim (KartQualityGovernor tier `scale`): no lower than this.
+const RENDER_SCALE_TRIMMED := 0.58
+const FX_CAP_TRIMMED := 0.5
 const MSAA := Viewport.MSAA_DISABLED  ## 2x halved the frame rate on the tablet (Dodge Ball)
 ## Developer aid, off in every build: set true to read `user://kart_tuning.cfg` ([render]
-## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx) and log the frame
-## cost every 5 s.
+## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx; [governor]
+## enabled, tier: a fixed tier with the governor off) and log the frame cost every 5 s.
 const DEV_TUNING := false
 const TUNING_PATH := "user://kart_tuning.cfg"
 const PERF_LOG_SEC := 5.0
@@ -97,6 +100,10 @@ var _item_edge := false
 var _countdown_shown := -1
 var _message_left := 0.0
 var _lineup_dirty := false
+## The adaptive quality for this session (KartQualityGovernor); null when tuning turns it off.
+var quality: KartQualityGovernor
+var _render_scale := RENDER_SCALE
+var _applied_tier := 0
 var _tuning := ConfigFile.new()
 var _tuned := false
 var _perf_usec := 0
@@ -170,7 +177,8 @@ func _ready() -> void:
 		scale = clampf(float(_tuning.get_value("render", "scale", RENDER_SCALE)), 0.4, 1.0)
 	_view = SubViewport.new()
 	_view.name = "View3D"
-	_view.size = Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	_render_scale = scale
+	_view.size = _view_size(scale)
 	_view.msaa_3d = int(_tuning.get_value("render", "msaa", MSAA)) if _tuned else MSAA
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
@@ -193,6 +201,7 @@ func _ready() -> void:
 
 func _on_prepare(seg: Dictionary) -> void:
 	ftp_w = _ftp_of(params)
+	_new_governor()
 	flow = Flow.IDLE
 	sim_time = 0.0
 	_acc = 0.0
@@ -210,6 +219,7 @@ func _on_prepare(seg: Dictionary) -> void:
 	_build_hud()
 	_build_audio()
 	_build_fx()
+	_apply_quality()
 	# The first race's grid shows behind the intro card.
 	_begin_race()
 	stats = scoring.stats(gp)
@@ -375,7 +385,7 @@ func _begin_race() -> void:
 	var key := "%s:%s" % [current.track_id, current.reversed]
 	if key != _built_track:
 		track = KartTrackModel.new(KartTracks.build(current.track_id), current.reversed)
-		world.build(track)
+		world.build(track)  # keeps the quality trims in force
 		_built_track = key
 	race = KartRaceLogic.new()
 	race.physics.assist = ASSIST.get(option("assist"), 1.0)
@@ -514,7 +524,7 @@ func _on_frame(delta: float) -> void:
 	_perf_frames += 1
 	_perf_left -= delta
 	if _perf_left <= 0.0:
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d" % [
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
 			_perf_usec / 1000.0 / maxi(_perf_frames, 1),
 			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 			Engine.get_frames_per_second(),
@@ -523,13 +533,17 @@ func _on_frame(delta: float) -> void:
 			Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
 			race.karts.size() if race else 0,
 			track.def.id if track else "-", "_rev" if track and track.reversed else "",
-			Flow.keys()[flow], InputBus.tracker_state])
+			Flow.keys()[flow], InputBus.tracker_state, _applied_tier])
 		_perf_usec = 0
 		_perf_frames = 0
 		_perf_left = PERF_LOG_SEC
 
 
 func _frame(delta: float) -> void:
+	if quality and quality.sample(delta, flow == Flow.RACING and not paused):
+		_apply_quality()
+		var step: Dictionary = quality.steps.back()
+		print("OPENRIDE_GAMES kart_race quality tier=%d (%s) after %.1f fps on %s" % [step.tier, quality.tier_name(), step.fps, track.def.id if track else "-"])
 	var key := InputBus.is_simulated() and Input.is_key_pressed(KEY_E)
 	_item_edge = _item_edge or (key and not _item_key)
 	_item_key = key
@@ -541,6 +555,41 @@ func _frame(delta: float) -> void:
 			return
 	_sync_views(delta)
 	_update_hud(delta)
+
+
+## A session's governor at full quality (the tier never carries over from the last session).
+## The tuning file can turn it off and fix a tier: [governor] enabled=false tier=2.
+func _new_governor() -> void:
+	quality = KartQualityGovernor.new()
+	var fixed := 0
+	if _tuned:
+		fixed = clampi(int(_tuning.get_value("governor", "tier", 0)), 0, KartQualityGovernor.TIERS.size() - 1)
+		if not bool(_tuning.get_value("governor", "enabled", true)):
+			quality.floor_tier = fixed
+			quality.tier = fixed
+	_applied_tier = -1
+
+
+## Puts the governor's tier in force: the world's foliage and crowd, the effects' caps, the
+## render scale (the last resort: resizing the view costs one hitch).
+func _apply_quality() -> void:
+	var g := quality
+	if g == null or g.tier == _applied_tier:
+		return
+	_applied_tier = g.tier
+	if world:
+		world.set_quality(KartWorld.CELL_RANGE_TRIMMED if g.trims(&"foliage") else KartWorld.CELL_RANGE,
+			KartWorld.CROWD_TRIMMED if g.trims(&"crowd") else 1.0)
+	if _fx:
+		_fx.cap_share = FX_CAP_TRIMMED if g.trims(&"fx") else 1.0
+	var scale := minf(_render_scale, RENDER_SCALE_TRIMMED) if g.trims(&"scale") else _render_scale
+	var size := _view_size(scale)
+	if _view.size != size:
+		_view.size = size
+
+
+func _view_size(scale: float) -> Vector2i:
+	return Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
 
 
 ## One fixed step of the whole game.

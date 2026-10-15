@@ -26,6 +26,15 @@ const DRAFT_LATERAL := 1.6
 
 var views: Array = []
 var camera: KartChaseCamera
+## The quality governor's trim (KartQualityGovernor): the share of PUFFS and SPARKS that may be
+## alive at once. New particles past the cap are skipped; live ones run out.
+var cap_share := 1.0:
+	set(v):
+		cap_share = clampf(v, 0.1, 1.0)
+		_puff_cap = roundi(PUFFS * cap_share)
+		_spark_cap = roundi(SPARKS * cap_share)
+var _puff_cap := PUFFS
+var _spark_cap := SPARKS
 
 var _puff_mm: MultiMesh
 var _spark_mm: MultiMesh
@@ -282,14 +291,14 @@ func _jitter(r: float) -> Vector3:
 
 
 func _puff(p: Vector3, vel: Vector3, life: float, size: Vector2, c: Color) -> void:
-	if _pn >= PUFFS:
+	if _pn >= _puff_cap:
 		return
 	_pp[_pn] = p; _pv[_pn] = vel; _pa[_pn] = 0.0; _pl[_pn] = life; _ps[_pn] = size; _pc[_pn] = c
 	_pn += 1
 
 
 func _spark(p: Vector3, vel: Vector3, life: float, size: Vector2, c: Color) -> void:
-	if _sn >= SPARKS:
+	if _sn >= _spark_cap:
 		return
 	_sp[_sn] = p; _sv[_sn] = vel; _sa[_sn] = 0.0; _sl[_sn] = life; _ss[_sn] = size; _sc[_sn] = c
 	_sn += 1

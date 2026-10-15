@@ -44,6 +44,8 @@ var mode := ""
 var _root: Control
 var _burst: ColorRect
 var _title: Label
+## The board's bakes take turns rendering (KartBakeQueue).
+var bakes := KartBakeQueue.new()
 var _title_view: KartBaked
 var _subtitle: Label
 var _content: Control
@@ -86,14 +88,14 @@ func _init() -> void:
 	_title.add_theme_constant_override("outline_size", 30)
 	KartTheme.gradient(_title, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
 	_root.add_child(_title)
-	_title_view = KartBaked.new(_title, _root)
+	_title_view = _bake(_title, _root)
 	_subtitle = KartTheme.label("", 36, KartTheme.CHIP)
 	_subtitle.name = "Subtitle"
 	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_subtitle.size = Vector2(1160, 56)
 	_subtitle.position = Vector2(TITLE_CENTRE - 580, 248)
 	_root.add_child(_subtitle)
-	KartBaked.new(_subtitle, _root)
+	_bake(_subtitle, _root)
 	_content = Control.new()
 	_content.name = "Content"
 	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -120,7 +122,7 @@ func _init() -> void:
 	_pill_label.add_theme_constant_override("shadow_offset_x", 0)
 	_pill.add_child(_pill_label)
 	_pill.resized.connect(_centre_pill)
-	_pill_view = KartBaked.new(_pill_box, _root)
+	_pill_view = _bake(_pill_box, _root)
 	_confetti = Control.new()
 	_confetti.size = _root.size
 	_confetti.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -138,7 +140,7 @@ func show_board(title: String, rows: Array, subtitle := "", next_sec := 0.0, nex
 		var row := _row(i, rows[i])
 		row.position = Vector2((W - ROW_W) * 0.5, ROWS_TOP + i * (ROW_H + 7))
 		_content.add_child(row)
-		_slide_in(KartBaked.new(row, _content, row.size + SHADOW_ROOM), 0.25 + i * 0.07, 220.0)
+		_slide_in(_bake(row, _content, row.size + SHADOW_ROOM), 0.25 + i * 0.07, 220.0)
 	_place_pill(Vector2(W * 0.5, ROWS_TOP + rows.size() * (ROW_H + 7) + 16))
 	var rider_place := -1
 	for i in rows.size():
@@ -162,7 +164,7 @@ func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, ne
 			continue
 		var block := _podium_block(place, rows[place], slot[1], slot[2])
 		_content.add_child(block)
-		var node := KartBaked.new(block, _content, block.size + SHADOW_ROOM)
+		var node := _bake(block, _content, block.size + SHADOW_ROOM)
 		var delay := 0.35 + o * 0.45
 		var final_y := node.position.y
 		node.position.y = H + 40.0
@@ -176,7 +178,7 @@ func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, ne
 		var row := _mini_row(i, rows[i])
 		row.position = Vector2(W - 40.0 - MINI_W, ROWS_TOP + i * (MINI_H + 6))
 		_content.add_child(row)
-		_slide_in(KartBaked.new(row, _content, row.size + SHADOW_ROOM), 0.2 + i * 0.06, 180.0)
+		_slide_in(_bake(row, _content, row.size + SHADOW_ROOM), 0.2 + i * 0.06, 180.0)
 	_place_pill(Vector2(640.0, 938.0))
 	_start_confetti(true)
 
@@ -211,6 +213,14 @@ func _open(title: String, subtitle: String, next_sec: float, next_text: String) 
 	_title_view.scale = Vector2(0.2, 0.2)
 	var tt := _title_view.create_tween()
 	tt.tween_property(_title_view, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+
+## Bakes `w` in turn with the board's others: one render a frame, so a board's first frame
+## never draws all its widgets at once (the 205-call spike on the tablet).
+func _bake(w: Control, parent: Control, bake_size := Vector2.ZERO) -> KartBaked:
+	var b := KartBaked.new(w, parent, bake_size)
+	b.queue = bakes
+	return b
 
 
 func _place_pill(centre: Vector2) -> void:

@@ -88,6 +88,14 @@ class DefaultHeadTracker(
      * lean), on the camera's thread. Null in release.
      */
     private val frameLog: ((timestampMs: Long, face: FaceObservation?, state: HeadTrackerState) -> Unit)? = null,
+    /**
+     * Mock debug builds only (the "load" switch, docs/GAMES.md "Kart Race → On the tablet"): when
+     * true, a calibration that fails for no face leaves the camera and face detection running, so
+     * a game can be measured with the tracker's real CPU and GPU load and nobody on the bike. The
+     * published state is unchanged (off, `no_face`). Read on each command, not per frame. Always
+     * false in release and `debugReal`.
+     */
+    private val keepCameraOnNoFace: () -> Boolean = { false },
 ) : HeadTracker {
 
     private val lock = Any()
@@ -100,6 +108,7 @@ class DefaultHeadTracker(
     private var cameraFailed = false
     private var cameraRunning = false
     private var permissionGranted = false
+    private var keepAliveOnNoFace = false
 
     /** The active rider's saved extremes, preloaded so [calibrate] can decide synchronously. */
     @Volatile private var savedForProfile: Pair<Long, HeadCalibration?>? = null
@@ -188,10 +197,12 @@ class DefaultHeadTracker(
      */
     private fun refresh(recheckPermission: Boolean = true) {
         val permission = if (recheckPermission) hasCameraPermission() else null
+        val keepAlive = if (recheckPermission) keepCameraOnNoFace() else null
         var start = false
         var stop = false
         synchronized(lock) {
             if (permission != null) permissionGranted = permission
+            if (keepAlive != null) keepAliveOnNoFace = keepAlive
             val engineState = engine.state
             val unavailable = when {
                 !cameraGamesEnabled -> UnavailableReason.CAMERA_GAMES_OFF
@@ -199,7 +210,9 @@ class DefaultHeadTracker(
                 cameraFailed -> UnavailableReason.NO_CAMERA
                 else -> engineState.unavailable
             }
-            val shouldRun = engineState.mode != TrackerMode.OFF && unavailable == null
+            // The load switch: the camera keeps analysing frames while the state reads unavailable.
+            val loadOnly = unavailable == UnavailableReason.NO_FACE && keepAliveOnNoFace
+            val shouldRun = engineState.mode != TrackerMode.OFF && (unavailable == null || loadOnly)
             if (shouldRun && !cameraRunning) {
                 cameraRunning = true
                 engine.onCameraRestarted()
@@ -208,7 +221,7 @@ class DefaultHeadTracker(
                 cameraRunning = false
                 stop = true
             }
-            _state.value = if (shouldRun) {
+            _state.value = if (shouldRun && !loadOnly) {
                 engine.state
             } else {
                 HeadTrackerState(mode = engineState.mode, trackerState = TrackerState.OFF, unavailable = unavailable)

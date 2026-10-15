@@ -162,8 +162,19 @@ class AppContainer(private val applicationContext: Context) {
             },
             scope = containerScope,
             frameLog = if (BuildConfig.DEBUG) ::logHeadFrame else null,
+            keepCameraOnNoFace = ::trackerLoadSwitchOn,
         )
     }
+
+    /**
+     * The mock debug build's tracker load switch: with `files/tracker_load` present, the camera
+     * and face detection keep running after a no-face calibration, so a game's frame rate can be
+     * measured with the tracker's load and nobody on the bike (docs/GAMES.md, Kart Race). Off in
+     * release and `debugReal`, whatever the file says.
+     */
+    private fun trackerLoadSwitchOn(): Boolean =
+        BuildConfig.DEBUG && !BuildConfig.USE_REAL_BIKE_SENSOR &&
+            java.io.File(applicationContext.filesDir, TRACKER_LOAD_FILE).exists()
 
     /**
      * Debug builds: one line per camera frame with the raw and filtered lean, and the face as a
@@ -343,6 +354,7 @@ private const val GAMES_LOG_TAG = "OpenRideGames"
  * per-destination [androidx.lifecycle.ViewModelStoreOwner].
  */
 private const val HEAD_FRAMES_TAG = "HeadTrackerFrames"
+private const val TRACKER_LOAD_FILE = "tracker_load"
 
 fun <T : ViewModel> viewModelFactory(create: () -> T): ViewModelProvider.Factory =
     object : ViewModelProvider.Factory {
