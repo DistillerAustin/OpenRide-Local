@@ -470,6 +470,7 @@ func _begin_race() -> void:
 		track = KartTrackModel.new(KartTracks.build(current.track_id), current.reversed)
 		world.build(track)  # keeps the quality trims in force
 		_built_track = key
+	camera.shot = world.grid_shot  # the title shot frames this track's landmark
 	race = KartRaceLogic.new()
 	race.physics.assist = ASSIST.get(option("assist"), 1.0)
 	race.physics.drift_resistance = float(params.get("drift_resistance", race.physics.drift_resistance))
@@ -508,7 +509,8 @@ func _start_countdown() -> void:
 	_countdown_shown = -1
 	var chip := "Grand Prix · " + _race_label()
 	if _kart_hud:
-		_kart_hud.show_title(chip, track.def.title + (" (reversed)" if track.reversed else ""), FLYOVER_SEC - 0.6)
+		_kart_hud.show_title(chip, track.def.title + (" (reversed)" if track.reversed else ""),
+			FLYOVER_SEC * KartChaseCamera.SHOT_HOLD - 0.5 if not camera.shot.is_empty() else FLYOVER_SEC - 0.6)
 
 
 func _on_race_started() -> void:

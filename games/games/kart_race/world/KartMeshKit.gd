@@ -221,6 +221,53 @@ static func lathe(profile: PackedVector2Array, segments := 12, colors := PackedC
 	return _grid_mesh(verts, normals, cols, count - 1, segments)
 
 
+## A stack of `count` tyres (`radius` out, `hole` in, each `height` tall), revolved in one piece:
+## each tyre's outer wall is bevelled into a dark groove where it meets the next, painted darker
+## toward the grooves (AO), and the top tyre's rim rolls over into a dark hole. `colors` per tyre
+## (white = take the tint), alpha kept.
+static func tyre_stack(count: int, colors: Array, radius := 0.42, hole := 0.2, height := 0.3, segments := 7) -> ArrayMesh:
+	var prof := PackedVector2Array()
+	var cols := PackedColorArray()
+	var bevel := 0.05
+	for k in count:
+		var c: Color = colors[k % colors.size()]
+		var y0 := k * height
+		var y1 := y0 + height
+		var groove := Color(c.r * 0.35, c.g * 0.35, c.b * 0.35, c.a)
+		var shade := Color(c.r * 0.72, c.g * 0.72, c.b * 0.72, c.a)
+		for pc: Array in [[Vector2(radius - bevel, y0), groove], [Vector2(radius, y0 + bevel), c],
+				[Vector2(radius, y1 - bevel), shade], [Vector2(radius - bevel, y1), groove]]:
+			prof.append(pc[0])
+			cols.append(pc[1])
+	var top: Color = colors[(count - 1) % colors.size()]
+	var h := count * height
+	var dark := Color(0.05, 0.05, 0.06, top.a)
+	for pc: Array in [[Vector2(radius - bevel * 2.0, h + 0.02), Color(top.r * 0.9, top.g * 0.9, top.b * 0.9, top.a)],
+			[Vector2(hole + bevel, h + 0.02), Color(top.r * 0.6, top.g * 0.6, top.b * 0.6, top.a)],
+			[Vector2(hole, h - 0.03), dark], [Vector2(hole, h - height * 0.9), dark], [Vector2(0.0, h - height * 0.9), dark]]:
+		prof.append(pc[0])
+		cols.append(pc[1])
+	return lathe(prof, segments, cols)
+
+
+## A barrel `height` tall: a slight bulge, two dark hoops, a bevelled rim and a recessed lid.
+static func barrel(color: Color, radius := 0.35, height := 0.95, segments := 10) -> ArrayMesh:
+	var hoop := Color(color.r * 0.45, color.g * 0.45, color.b * 0.5, color.a)
+	var rim := Color(color.r * 0.7, color.g * 0.7, color.b * 0.7, color.a)
+	var lid := Color(color.r * 0.8, color.g * 0.8, color.b * 0.8, color.a)
+	var pts := [[Vector2(radius - 0.03, 0.0), rim], [Vector2(radius, 0.04), rim], [Vector2(radius, 0.13), hoop],
+		[Vector2(radius + 0.01, 0.19), color], [Vector2(radius + 0.03, height * 0.5), color],
+		[Vector2(radius + 0.01, height - 0.19), color], [Vector2(radius, height - 0.13), hoop],
+		[Vector2(radius, height - 0.04), rim], [Vector2(radius - 0.03, height), color.lightened(0.1)],
+		[Vector2(radius - 0.06, height - 0.03), rim], [Vector2(0.0, height - 0.03), lid]]
+	var prof := PackedVector2Array()
+	var cols := PackedColorArray()
+	for pc: Array in pts:
+		prof.append(pc[0])
+		cols.append(pc[1])
+	return lathe(prof, segments, cols)
+
+
 ## A round tube through `points`, `radii` per point (or one), rounded ends; `colors` per point.
 static func tube(points: PackedVector3Array, radii: PackedFloat32Array, segments := 6, colors := PackedColorArray()) -> ArrayMesh:
 	var count := points.size()
@@ -370,20 +417,22 @@ static func soft_disc(size := 64, hardness := 0.0) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-static func multimesh_node(mesh: Mesh, transforms: Array, node_name: String, custom: Array = []) -> MultiMeshInstance3D:
+static func multimesh_node(mesh: Mesh, transforms: Array, node_name: String, custom: Array = [],
+		colors: Array = []) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = not custom.is_empty()
 	# In the Compatibility renderer, custom data without instance colours multiplies COLOR by zero:
-	# carry white instance colours along with it.
-	mm.use_colors = not custom.is_empty()
+	# carry white instance colours along with it (or the given `colors`).
+	mm.use_colors = not custom.is_empty() or not colors.is_empty()
 	mm.mesh = mesh
 	mm.instance_count = transforms.size()
 	for i in transforms.size():
 		mm.set_instance_transform(i, transforms[i])
 		if not custom.is_empty():
 			mm.set_instance_custom_data(i, custom[i])
-			mm.set_instance_color(i, Color.WHITE)
+		if mm.use_colors:
+			mm.set_instance_color(i, colors[i] if not colors.is_empty() else Color.WHITE)
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = node_name
 	mmi.multimesh = mm

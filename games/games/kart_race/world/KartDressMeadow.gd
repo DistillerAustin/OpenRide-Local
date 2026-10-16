@@ -3,6 +3,10 @@ extends KartDress
 ## fences, tyre stacks on the corners, hay bales, a red barn and a windmill turning on a rise.
 
 
+func dress_hero(scenery: Node3D, _props: Dictionary) -> void:
+	_windmill(scenery)
+
+
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
 	var trees := tree_meshes()
 	scatter(foliage, trees, 150, KartWorld.TREE_CLEARANCE, 60.0, Vector2(0.8, 1.35),
@@ -14,7 +18,6 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	_fences(props)
 	_hay(props)
 	_barn(props)
-	_windmill(scenery)
 
 
 ## Clumps of wildflowers on the embankments.
@@ -33,17 +36,13 @@ func _flowers(cells: Dictionary) -> void:
 ## Tyre stacks in front of the barrier on the outside of the corners.
 func _tyres(cells: Dictionary) -> void:
 	var track := world.track
-	var kit := KartMeshKit.new()
-	var tyre := KartMeshKit.cylinder(0.42, 0.42, 0.3, 6)
-	for k in 3:
-		kit.add(tyre, KartMeshKit.xf(Vector3(0, 0.15 + k * 0.3, 0)), Color(0.15, 0.15, 0.16, 0.0) if k != 1 else Color(1, 1, 1, 0.0))
-	var mesh := kit.commit()
+	var mesh := KartMeshKit.tyre_stack(3, [Color(0.15, 0.15, 0.16, 0.0), Color(1, 1, 1, 0.0), Color(0.15, 0.15, 0.16, 0.0)])
 	var tints := [Color(0.95, 0.2, 0.16), Color(0.98, 0.98, 0.98), Color(0.2, 0.55, 1.0), Color(1.0, 0.8, 0.15)]
 	var s := 0.0
 	var n := 0
 	while s < track.length:
 		var k := track.curvature(s)
-		if absf(k) > 0.011 and absf(k) < 1.0 / 32.0:
+		if absf(k) > 0.011 and not world.in_stand(s):
 			var side := signf(k)  # the outside
 			var p := track.position_at(s, side * (track.half_width(s) + track.verge - 0.5))
 			var tint: Color = tints[n % tints.size()]
@@ -101,7 +100,12 @@ func _hay(cells: Dictionary) -> void:
 ## A red barn with a white-trimmed roof and a silo, out in the infield.
 func _barn(cells: Dictionary) -> void:
 	var track := world.track
-	for attempt: Array in [[420.0, 40.0], [380.0, -40.0], [820.0, 42.0], [300.0, 45.0]]:
+	var attempts: Array = [[420.0, 40.0], [380.0, -40.0], [820.0, 42.0], [300.0, 45.0]]
+	var lm := world.landmark("barn")
+	if not lm.is_empty():
+		attempts.push_front([lm.s, lm.d])
+		attempts.push_front([lm.s, lm.d * 1.4])
+	for attempt: Array in attempts:
 		var s: float = track.wrap(attempt[0])
 		var p := track.position_at(s, attempt[1])
 		if not world.clear_of_road(p, 14.0):
@@ -130,7 +134,11 @@ func _windmill(parent: Node3D) -> void:
 	var track := world.track
 	var spot := Vector3.ZERO
 	var found := false
-	for attempt: Array in [[70.0, -48.0], [40.0, -55.0], [110.0, -50.0], [70.0, 48.0]]:
+	var attempts: Array = [[70.0, -48.0], [40.0, -55.0], [110.0, -50.0], [70.0, 48.0]]
+	var lm := world.landmark("windmill")
+	if not lm.is_empty():
+		attempts.push_front([lm.s, lm.d])
+	for attempt: Array in attempts:
 		var s: float = track.wrap(attempt[0])
 		var p := track.position_at(s, attempt[1])
 		if world.clear_of_road(p, 18.0):
@@ -140,6 +148,7 @@ func _windmill(parent: Node3D) -> void:
 			break
 	if not found:
 		return
+	hero = {"p": spot + Vector3.UP * 11.0, "size": 18.0}
 	var mill := Node3D.new()
 	mill.name = "Windmill"
 	var look_at := track.position_at(track.wrap(-20.0), 0.0)

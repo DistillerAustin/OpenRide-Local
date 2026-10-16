@@ -52,6 +52,10 @@ func _in_river(x: float, z: float) -> float:
 	return smoothstep(10.0, 5.0, absf(v - centre)) * smoothstep(260.0, 200.0, absf(u))
 
 
+func dress_hero(_scenery: Node3D, props: Dictionary) -> void:
+	_arch(props)
+
+
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
 	var rocks := [rock_mesh(Color(0.72, 0.34, 0.2), 1), rock_mesh(Color(0.8, 0.46, 0.28), 2, 0.55),
 		rock_mesh(Color(0.6, 0.28, 0.18), 3, 0.85)]
@@ -62,7 +66,7 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	scatter(foliage, [scrub], 160, 1.0, 30.0, Vector2(0.7, 1.4), func(_r: RandomNumberGenerator) -> int: return 0, 1.0, false, 0.1)
 	scatter_far(woods, [cacti[0], rocks[0], rocks[2]], 120, 10.0, 220.0, Vector2(1.2, 3.0),
 		func(r: RandomNumberGenerator) -> int: return 0 if r.randf() < 0.4 else 1 + r.randi() % 2)
-	_arch(props)
+	_spire(props)
 	_windpump(scenery)
 	_tyres(props)
 
@@ -96,31 +100,54 @@ static func _scrub() -> ArrayMesh:
 	return kit.commit()
 
 
-## The rock arch over the road at the landmark: a half ring of layered red rock.
+## The rock arches over the road at the landmarks: half rings of layered red rock. The one
+## marked `hero` is the title shot's.
 func _arch(props: Dictionary) -> void:
-	var lm := world.landmark("arch")
-	if lm.is_empty():
-		return
 	var track := world.track
-	var span := track.half_width(lm.s) + track.verge + 4.0
+	for lm in world.landmarks("arch"):
+		var span := track.half_width(lm.s) + track.verge + 4.0
+		var kit := KartMeshKit.new()
+		kit.ao_y0 = 0.0
+		kit.ao_y1 = span + 4.0
+		kit.ao_min = 0.55
+		var reds := [Color(0.78, 0.36, 0.2, 0.0), Color(0.66, 0.28, 0.16, 0.0), Color(0.9, 0.55, 0.34, 0.0)]
+		# Built from chunky segments round the half ring, each band its own shade (strata).
+		var segs := 14
+		for i in segs:
+			var a := PI * (i + 0.5) / segs
+			var p := Vector3(cos(a) * (span + 2.2), sin(a) * (span + 2.2) - 2.0, 0.0)
+			var c: Color = reds[i % 3]
+			kit.add(KartMeshKit.box(Vector3(5.2, PI * (span + 2.2) / segs + 0.6, 5.0)),
+				Transform3D(Basis(Vector3.BACK, a), p), c)
+		# Feet: rock piles where the arch meets the ground.
+		for side: float in [-1.0, 1.0]:
+			kit.add(rock_mesh(Color(0.7, 0.32, 0.19), 9), KartMeshKit.xf(Vector3(side * (span + 2.5), -1.0, 0), Vector3.ZERO, Vector3(4.5, 6.0, 4.5)), Color(0.7, 0.32, 0.19, 0.0))
+		var at := track.position_at(lm.s, 0.0)
+		world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, track.yaw_at(lm.s)), at))
+		if lm.get("hero", false) or hero.is_empty():
+			hero = {"p": at + Vector3.UP * (span * 0.75), "size": span * 2.0 + 6.0, "lift": 1.0}
+
+
+## A lone sandstone spire: stacked, tapering strata with a balanced cap rock.
+func _spire(props: Dictionary) -> void:
+	var lm := world.landmark("spire")
+	if lm.is_empty() or not world.clear_of_road(lm.p, 6.0):
+		return
 	var kit := KartMeshKit.new()
 	kit.ao_y0 = 0.0
-	kit.ao_y1 = span + 4.0
-	kit.ao_min = 0.55
-	var reds := [Color(0.78, 0.36, 0.2, 0.0), Color(0.66, 0.28, 0.16, 0.0), Color(0.9, 0.55, 0.34, 0.0)]
-	# Built from chunky segments round the half ring, each band its own shade (strata).
-	var segs := 14
-	for i in segs:
-		var a := PI * (i + 0.5) / segs
-		var p := Vector3(cos(a) * (span + 2.2), sin(a) * (span + 2.2) - 2.0, 0.0)
-		var c: Color = reds[i % 3]
-		kit.add(KartMeshKit.box(Vector3(5.2, PI * (span + 2.2) / segs + 0.6, 5.0)),
-			Transform3D(Basis(Vector3.BACK, a), p), c)
-	# Feet: rock piles where the arch meets the ground.
-	for side: float in [-1.0, 1.0]:
-		kit.add(rock_mesh(Color(0.7, 0.32, 0.19), 9), KartMeshKit.xf(Vector3(side * (span + 2.5), -1.0, 0), Vector3.ZERO, Vector3(4.5, 6.0, 4.5)), Color(0.7, 0.32, 0.19, 0.0))
-	var at := track.position_at(lm.s, 0.0)
-	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, track.yaw_at(lm.s)), at))
+	kit.ao_y1 = 20.0
+	kit.ao_min = 0.6
+	var reds := [Color(0.8, 0.38, 0.22, 0.0), Color(0.68, 0.3, 0.18, 0.0), Color(0.92, 0.58, 0.36, 0.0)]
+	var y := -2.0
+	var r := 6.5
+	for k in 7:
+		var h := rng.randf_range(2.6, 4.2)
+		kit.add(KartMeshKit.cylinder(r * 0.86, r, h, 7), KartMeshKit.xf(Vector3(rng.randf_range(-0.4, 0.4), y + h * 0.5, rng.randf_range(-0.4, 0.4)), Vector3(0, k * 23.0, 0)), reds[k % 3])
+		y += h
+		r *= 0.8 if k < 4 else 0.9
+	kit.add(rock_mesh(Color(0.86, 0.5, 0.3), 12), KartMeshKit.xf(Vector3(0.0, y - 0.6, 0.0), Vector3.ZERO, Vector3(3.6, 2.4, 3.2)), Color(0.86, 0.5, 0.3, 0.0))
+	var at: Vector3 = lm.p
+	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, rng.randf() * TAU), at))
 
 
 ## A farm windpump in the infield, its many-bladed wheel turning.
@@ -170,17 +197,13 @@ func _windpump(parent: Node3D) -> void:
 ## Tyre walls in the theme's colours on the outside of the corners.
 func _tyres(cells: Dictionary) -> void:
 	var track := world.track
-	var kit := KartMeshKit.new()
-	var tyre := KartMeshKit.cylinder(0.42, 0.42, 0.3, 6)
-	for k in 3:
-		kit.add(tyre, KartMeshKit.xf(Vector3(0, 0.15 + k * 0.3, 0)), Color(0.15, 0.15, 0.16, 0.0) if k != 1 else Color(1, 1, 1, 0.0))
-	var mesh := kit.commit()
+	var mesh := KartMeshKit.tyre_stack(3, [Color(0.15, 0.15, 0.16, 0.0), Color(1, 1, 1, 0.0), Color(0.15, 0.15, 0.16, 0.0)])
 	var tints := [Color(0.95, 0.45, 0.12), Color(0.98, 0.98, 0.98), Color(0.1, 0.62, 0.66)]
 	var s := 0.0
 	var n := 0
 	while s < track.length:
 		var k := track.curvature(s)
-		if absf(k) > 0.011 and absf(k) < 1.0 / 32.0:
+		if absf(k) > 0.011 and not world.in_stand(s):
 			var side := signf(k)  # the outside
 			var p := track.position_at(s, side * (track.half_width(s) + track.verge - 0.5))
 			world.cell(cells, p).add_baked(mesh, Transform3D(Basis(Vector3.UP, track.yaw_at(s)), p), tints[n % tints.size()])

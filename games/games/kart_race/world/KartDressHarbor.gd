@@ -9,6 +9,8 @@ const WATER_Y := 0.15  ## above the land's floor (world.centre.y)
 const QUAY_HALF := 320.0  ## the quay runs this far either way along the shore
 
 var _shore := {}
+var _barrels := [KartMeshKit.barrel(Color(0.2, 0.4, 0.75, 0.0)), KartMeshKit.barrel(Color(0.8, 0.22, 0.2, 0.0)),
+	KartMeshKit.barrel(Color(0.25, 0.6, 0.4, 0.0))]
 var _bulbs := []  ## halo transforms
 var _bulb_colors := []
 
@@ -42,6 +44,10 @@ func ground_tint(x: float, z: float, h: float) -> Color:
 	return Color(1.0, 1.0, 1.0).lerp(Color(0.68, 1.0, 0.55), green)
 
 
+func dress_hero(scenery: Node3D, props: Dictionary) -> void:
+	_lighthouse(scenery, props)
+
+
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
 	world.water_mat.set_shader_parameter("ice", 0.0)
 	KartLook.apply(world.water_mat, {"deep": Color(0.12, 0.16, 0.36), "shallow": Color(0.22, 0.34, 0.56),
@@ -49,7 +55,6 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	_sea(scenery)
 	_quay(props)
 	_piers(props)
-	_lighthouse(scenery, props)
 	_houses(props)
 	_lights(props)
 	_lamp_posts(props)
@@ -111,8 +116,7 @@ func _quay(props: Dictionary) -> void:
 				kit.add(KartMeshKit.box(Vector3(0.9, 0.8, 0.9)), Transform3D(Basis(Vector3.UP, rng.randf() * TAU), cp + Vector3.UP * 1.4), Color(0.7, 0.5, 0.3, 0.0))
 			else:
 				for k in 3:
-					kit.add(KartMeshKit.cylinder(0.35, 0.35, 0.95, 8), KartMeshKit.xf(cp + dir * (k * 0.8) + Vector3.UP * 0.48),
-						[Color(0.2, 0.4, 0.75, 0.0), Color(0.8, 0.22, 0.2, 0.0), Color(0.25, 0.6, 0.4, 0.0)][k])
+					kit.add(_barrels[k], KartMeshKit.xf(cp + dir * (k * 0.8)), Color.WHITE)
 		u += step
 
 
@@ -173,14 +177,22 @@ func _lighthouse(parent: Node3D, props: Dictionary) -> void:
 	var p0: Vector3 = _shore.p
 	var water := world.centre.y + WATER_Y
 	var base := p0 + dir * 260.0
+	var reach := 64.0
+	var lm := world.landmark("lighthouse")
+	if not lm.is_empty():
+		# On the point: from the shore line nearest the landmark, out until it stands in the sea.
+		var lp: Vector3 = lm.p
+		base = lp - out * sea_dist(lp.x, lp.z)
+		reach = 34.0
 	# The breakwater: boulders in a line out to sea.
 	var rock := rock_mesh(Color(0.5, 0.48, 0.5), 21)
-	for k in 14:
+	for k in int(reach / 4.5) - 1:
 		var bp := base + out * (k * 4.5) + dir * rng.randf_range(-1.0, 1.0)
 		bp.y = water - 0.6
 		world.cell(props, bp).add_baked(rock, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(2.0, 2.8)), bp))
-	var at := base + out * 64.0
+	var at := base + out * reach
 	at.y = water + 0.6
+	hero = {"p": at + Vector3.UP * 14.0, "size": 28.0}
 	var kit := KartMeshKit.new()
 	kit.ao_y0 = 0.0
 	kit.ao_y1 = 12.0
@@ -194,8 +206,9 @@ func _lighthouse(parent: Node3D, props: Dictionary) -> void:
 	kit.add(KartMeshKit.cylinder(2.0, 2.0, 0.3, 12), KartMeshKit.xf(Vector3(0, 16.9, 0)), Color(0.15, 0.15, 0.18, 0.0))
 	kit.add(KartMeshKit.cylinder(1.0, 1.0, 1.6, 10), KartMeshKit.xf(Vector3(0, 17.9, 0)), Color(1.0, 0.92, 0.6, 1.0))
 	kit.add(KartMeshKit.cylinder(0.0, 1.3, 1.2, 10), KartMeshKit.xf(Vector3(0, 19.3, 0)), Color(0.88, 0.16, 0.16, 0.0))
-	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(), at))
-	_bulbs.append(Transform3D(Basis().scaled(Vector3.ONE * 7.0), at + Vector3.UP * 17.9))
+	# A third bigger than life: it's the town's landmark from the grid.
+	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis().scaled(Vector3.ONE * 1.3), at))
+	_bulbs.append(Transform3D(Basis().scaled(Vector3.ONE * 9.0), at + Vector3.UP * 17.9 * 1.3))
 	_bulb_colors.append(Color(1.0, 0.85, 0.5, 0.9))
 
 

@@ -46,10 +46,15 @@ const SHAKE_ROLL := 0.045  ## radians at full trauma
 const SHAKE_HZ := 22.0
 const BOOST_RUMBLE := 0.22  ## a trauma floor while boosting
 const MIN_CLEARANCE := 0.9  ## above the kart's road height
+const SHOT_HOLD := 0.6  ## the share of the fly-over spent on the title shot (a slow push in)
+const SHOT_PUSH := 1.6  ## metres the title shot pushes in while it holds
 
 var mode := "chase"
 var hold := false
 var held := Transform3D.IDENTITY
+## The track's title shot (KartWorld.grid_shot: {eye, look, fov}): the fly-over opens on it,
+## framing the track's landmark over the grid. Empty: the generic shot in front of the grid.
+var shot := {}
 ## The kart this camera watches for kicks and shakes (`watch`).
 var kart_id := 0
 
@@ -172,6 +177,9 @@ func flyover(k: KartState, t: float, track: KartTrackModel) -> void:
 		return
 	var end := global_transform
 	var m := _mode()
+	if not shot.is_empty():
+		_shot_flyover(k, t, end, m)
+		return
 	# The grid's middle and its frame.
 	var mid_s := track.wrap(-20.0)
 	var centre := track.position_at(mid_s, 0.0)
@@ -201,6 +209,29 @@ func flyover(k: KartState, t: float, track: KartTrackModel) -> void:
 		look = l1.lerp(l3, smoothstep(0.0, 1.0, u))
 	global_transform = Transform3D(Basis.looking_at(look - pos, up), pos)
 	fov = lerpf(52.0, FOV_SLOW + float(m.fov), e)
+
+
+## The fly-over from the track's title shot: hold on it with a slow push in (SHOT_HOLD of the
+## time, while the title card reads), then swing up and down onto the chase spot `end`.
+func _shot_flyover(k: KartState, t: float, end: Transform3D, m: Dictionary) -> void:
+	var eye: Vector3 = shot.eye
+	var aim: Vector3 = shot.look
+	var shot_fov: float = shot.fov
+	var push := (aim - eye).normalized() * SHOT_PUSH
+	if t <= SHOT_HOLD:
+		var p := eye + push * (t / SHOT_HOLD)
+		global_transform = Transform3D(Basis.looking_at(aim - p, Vector3.UP), p)
+		fov = shot_fov
+		return
+	var u := (t - SHOT_HOLD) / (1.0 - SHOT_HOLD)
+	var e := u * u * u * (u * (6.0 * u - 15.0) + 10.0)  # smootherstep
+	var start := eye + push
+	var mid := start.lerp(end.origin, 0.5) + Vector3.UP * 3.5
+	var pos := start * (1.0 - e) * (1.0 - e) + mid * 2.0 * (1.0 - e) * e + end.origin * e * e
+	var l3 := k.pos + Vector3(-sin(k.heading), 0.0, -cos(k.heading)) * float(m.look_ahead) + Vector3.UP * float(m.look_height)
+	var look := aim.lerp(l3, smoothstep(0.0, 1.0, e))
+	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
+	fov = lerpf(shot_fov, FOV_SLOW + float(m.fov), e)
 
 
 ## The second half of the path, p1 → p3 through p2, Catmull-Rom.

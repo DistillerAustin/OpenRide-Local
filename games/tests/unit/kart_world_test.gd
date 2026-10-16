@@ -119,3 +119,84 @@ func test_a_theme_s_optional_surfaces_reset_on_the_next_track() -> void:
 	w.build(KartTrackModel.new(KartTracks.build("meadow_ring")))
 	assert_float(float(w.ground_mat.get_shader_parameter("snow"))).is_equal(0.0)
 	assert_float(float(w.road_mat.get_shader_parameter("verge_gain"))).is_equal(1.0)
+
+
+func test_each_track_s_title_shot_frames_its_landmark_over_the_grid() -> void:
+	# Polish pass 3 (punch list 9): every grid and title shot used to be the same composition.
+	# Now each track's opens on its own landmark, clear of the HUD, with no kart half-hidden
+	# under the title band, both ways round.
+	var w := _world()
+	var screen := Rect2(Vector2.ZERO, KartWorld.SHOT_SIZE)
+	var band := KartWorld.TITLE_BAND
+	var eyes := []
+	for id in KartTracks.CUP:
+		for rev: bool in [false, true]:
+			w.build(KartTrackModel.new(KartTracks.build(id), rev))
+			var what := "%s rev=%s" % [id, rev]
+			var shot := w.grid_shot
+			assert_bool(shot.is_empty()).override_failure_message("%s: no title shot" % what).is_false()
+			if shot.is_empty():
+				continue
+			# The landmark: in front of the lens, inside the frame, clear of the band and the
+			# clock and buttons.
+			var fp := KartWorld.shot_project(shot.eye, shot.look, shot.fov, shot.focus)
+			var at := Vector2(fp.x, fp.y)
+			assert_float(fp.z).override_failure_message("%s: landmark behind the lens" % what).is_greater(0.0)
+			assert_bool(screen.grow(-60.0).has_point(at)).override_failure_message("%s: landmark at %s" % [what, at]).is_true()
+			assert_bool(band.has_point(at) or KartWorld.SHOT_CORNER.has_point(at)).override_failure_message("%s: landmark under the HUD" % what).is_false()
+			# The karts: wholly above the band, or wholly out of shot; at least four whole.
+			var whole := 0
+			for r: Rect2 in w.shot_kart_rects(shot.eye, shot.look, shot.fov):
+				assert_bool(r.position.x == -1.0 and r.size == Vector2.ZERO).override_failure_message("%s: the lens inside a kart" % what).is_false()
+				if r.size == Vector2.ZERO or not r.intersects(screen):
+					continue
+				assert_bool(r.intersects(band)).override_failure_message("%s: a kart under the title band %s" % [what, r]).is_false()
+				if screen.encloses(r):
+					whole += 1
+			assert_int(whole).override_failure_message(what).is_greater_equal(4)
+			eyes.append(shot.eye)
+			await get_tree().process_frame
+	# The flyover opens on it: the camera's first frame is the shot.
+	var cam: KartChaseCamera = auto_free(KartChaseCamera.new())
+	add_child(cam)
+	cam.shot = w.grid_shot
+	var k := KartState.new()
+	k.pos = w.track.position_at(w.track.wrap(-40.0), 0.0)
+	k.heading = w.track.yaw_at(w.track.wrap(-40.0))
+	cam.flyover(k, 0.0, w.track)
+	assert_vector(cam.global_position).is_equal_approx(w.grid_shot.eye, Vector3.ONE * 0.01)
+	# And still lands on the chase spot.
+	cam.flyover(k, 0.999, w.track)
+	var end := cam.global_position
+	cam.snap(k)
+	assert_float(end.distance_to(cam.global_position)).is_less(0.2)
+
+
+func test_the_crowd_varies_by_row_and_waves() -> void:
+	# Punch list 18: heights and shirts vary per row (INSTANCE_CUSTOM.r, the instance colour),
+	# some fans wave (custom.a >= 2), and accent banners hang from the stand's roof.
+	var w := _world()
+	w.build(KartTrackModel.new(KartTracks.build("harbor_lights")))
+	assert_object(w.find_child("Crowd", true, false)).is_not_null()
+	var data := KartWorld.crowd_data(KartLook.look, "harbor", KartWorld.STAND_ROWS, 0.95, 0.6, KartWorld.STAND_LENGTH)
+	var count: int = data.custom.size()
+	assert_int(data.colors.size()).is_equal(count)
+	var lo := INF
+	var hi := -INF
+	var wavers := 0
+	var shirts := {}
+	for i in count:
+		var c: Color = data.custom[i]
+		lo = minf(lo, c.r)
+		hi = maxf(hi, c.r)
+		if c.a >= 2.0:
+			wavers += 1
+		shirts[(data.colors[i] as Color).to_html()] = true
+	assert_float(lo).is_greater(0.6)
+	assert_float(hi).is_less(1.4)
+	assert_float(hi - lo).is_greater(0.2)
+	assert_int(wavers).is_between(count / 10, count / 2)
+	assert_int(shirts.size()).is_greater(20)
+	assert_object(w.find_child("StandBanners", true, false)).is_not_null()
+	# Harbor's stand carries lit lamps.
+	assert_object(w.find_child("StandHalos", true, false)).is_not_null()

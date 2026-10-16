@@ -447,8 +447,8 @@ func _build_title() -> void:
 	bs.border_width_left = 14
 	bs.anti_aliasing = true
 	band.add_theme_stylebox_override("panel", bs)
-	band.position = Vector2(-40, 790)
-	band.size = Vector2(1180, 240)
+	band.position = KartWorld.TITLE_BAND.position
+	band.size = KartWorld.TITLE_BAND.size
 	_title.add_child(band)
 	var chip := PanelContainer.new()
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE

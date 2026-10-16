@@ -109,9 +109,27 @@ KartBotDriver.think() × 7 ───────────┴─► inputs[] �
   on the start line. A zone with `s1 < s0` wraps past the line. A zone with `dir` ("forward" or
   "reversed") holds in that direction only: every track has one climb per direction (a climb
   driven backwards is a descent).
-- The three newer tracks are laid out with `KartTrackShape`, a turtle of straights and arcs
+- Every track is laid out with `KartTrackShape` (Meadow Ring too, since polish pass 3), a turtle of straights and arcs
   (exact radii), sampled every 4 m into control points. Climbs stay under about 6%: the bike
   model stalls weak riders on steeper ones.
+- **Drift corners** (polish pass 3). Drifting is the skill: the charge runs at full rate in any
+  corner tighter than 1/`DRIFT_CHARGE_K` (125 m), tiers at `TIER_SEC` 0.9 / 2.0 / 3.4 s. Every
+  track, both ways round, has at least two corners tighter than 40 m and long enough for a
+  tier-2 mini-turbo at 20 m/s (a strong rider; 0.3 s lost to the entry), and one long enough
+  for tier 3, each with at least 50 m of straight after it to spend the boost
+  (`kart_tracks_test`: `corners()`, `tier_for()`). Tightest radii: Meadow 23.5 m (the crest
+  hairpin), Canyon 22.5 (the summit hairpin), Harbor 18.3 (the chicane), Frost 28.1.
+- **Landmarks** (`KartTrackDef.landmarks`, `KartWorld.landmarks(type)`): Meadow's windmill and
+  barn, Canyon's arches (one marked `hero`) and spire, Harbor's shore and lighthouse, Frost's
+  lakes (the start tarn is `hero`). The dresser places its hero piece first
+  (`KartDress.dress_hero`, setting `KartDress.hero`), then `KartWorld.solve_grid_shot()`
+  searches camera spots round the grid for the title shot (`grid_shot`: the piece on a third,
+  clear of the HUD's title band and top-right cluster, not hidden by land or the stand; no kart
+  under the band or the lens inside one; as many whole karts as it can, big enough to read),
+  and the scatter keeps out of its sight line (`KartDress.in_hero_sight`). `KartRace` hands it
+  to the camera (`camera.shot`); `flyover` holds on it with a slow push in for
+  `KartChaseCamera.SHOT_HOLD` of the fly-over while the title card reads, then swings onto the
+  chase spot. Solved once per build (about 20 ms on the desktop).
 
 ## Interfaces (frozen)
 
@@ -283,7 +301,7 @@ func think(k: KartState, race: KartRaceLogic, dt: float) -> KartInput  # may ret
 
 class_name KartScoring extends RefCounted
 signal awarded(points: float, reason: String)        # KartRace passes it to Game.award()
-const STAR_THRESHOLDS := {"easy": [65, 115, 220], "standard": [75, 135, 245], "hard": [85, 140, 255]}  # points/min
+const STAR_THRESHOLDS := {"easy": [80, 140, 275], "standard": [90, 155, 270], "hard": [100, 165, 300]}  # points/min
 var rider_id := 0
 func begin_race(race: KartRaceLogic) -> void
 func step(dt: float, power_w: float) -> void
@@ -462,18 +480,23 @@ when a kart breaks a pod: KartItemViews bursts it.
 - Live awards through `award()` (the effort multiplier applies): an overtake +15 (only a place
   better than any reached this race), a mini-turbo +10/20/35 by tier (at most one per 4 s), an
   item hit +25, a lap +30; at each finish the race's points × 20.
-- **Stars per minute**, tuned in simulation with the merged physics, bots and items (Meadow
-  Ring, one 3-lap race and the 14.5 s around it, 6 seeds a point; points a minute at 1.0×):
+- **Stars per minute**, tuned in simulation with the merged physics, bots and items (a
+  bot-driven rider against each field, one 3-lap race and the 14.5 s around it, 3 seeds a
+  point; points a minute at 1.0×). Re-validated in polish pass 3 (2026-10-16) over the whole
+  cup, after every track gained corners that pay tier-2 and tier-3 mini-turbos: the cup's
+  average barely moved (standard mid-pack 141 → 138, a win 240 → 237), but Meadow Ring, the old
+  calibration track, rose from 114 to 141, and the cup had always sat above the old
+  Meadow-only thresholds (Harbor's mid-pack took two stars). The thresholds rose to match:
 
-| difficulty | thresholds (1, 2, 3 stars) | mid-pack (4th-5th) | podium (2nd-3rd) | winning at 1.0× |
+| difficulty | thresholds (1, 2, 3 stars) | mid-pack (0.6 FTP) | podium (0.75 FTP, 1st-2nd) | winning at 1.0× (0.95 FTP) |
 | --- | --- | --- | --- | --- |
-| easy | 65, 115, 220 | 81-104 (mean 92) | 108-129 | 147-226 |
-| standard | 75, 135, 245 | 97-127 (mean 114) | 127-162 | 146-250 |
-| hard | 85, 140, 255 | 98-127 (mean 112) | 108-171 | 180-252 |
+| easy | 80, 140, 275 | places 2nd: Meadow 163-175, Harbor 192-214 | - | Meadow 226-253, Harbor 248-271 |
+| standard | 90, 155, 270 | 4th-5th: Meadow 138-147, cup 110-196 (mean 138) | Meadow 179-181, cup 177-218 | Meadow 224-257, cup 200-277 |
+| hard | 100, 165, 300 | 5th-7th: Meadow 104-121, Harbor 169-182 | - | Meadow 205-246, Harbor 255-282 |
 
   A mid-pack ride earns one star and a podium two; three take podiums plus effort (up to 1.5×):
-  a win at 1.0× stays under the third star unless the rider is far above the field.
-  Provisional until the bike.
+  a win at 1.0× stays under the third star unless the rider is far above the field. The tracks
+  still differ (Harbor's short, technical lap pays most a minute). Provisional until the bike.
 
 ## Kotlin, options and the result
 

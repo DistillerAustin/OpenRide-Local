@@ -3,22 +3,29 @@ extends KartDress
 ## mountains with grey rock faces all round, an ice-blue frozen lake in the valley, log cabins
 ## with warm lit windows and smoking chimneys, snowmen by the road and lanterns on posts.
 
-var _lake := {}
+var _lakes: Array[Dictionary] = []
+var _lakes_read := false
 
 
 func base_height(x: float, z: float, _r_road: float) -> float:
 	var g := road_level(x, z)
 	var h := g + 1.5 * noise.get_noise_2d(x * 3.0, z * 3.0) + hills(x, z, 30.0, 120.0, 110.0)
-	if _lake.is_empty():
-		_lake = world.landmark("lake")
-		if _lake.is_empty():
-			_lake = {"none": true}
-	if not _lake.has("none"):
-		var p: Vector3 = _lake.p
+	if not _lakes_read:
+		_lakes_read = true
+		_lakes = world.landmarks("lake")
+		for lm in _lakes:
+			var lp: Vector3 = lm.p
+			lm.floor = road_level(lp.x, lp.z) - 3.4
+	for lm in _lakes:
+		var p: Vector3 = lm.p
 		var d := Vector2(x - p.x, z - p.z).length()
-		var r: float = _lake.r
-		h = lerpf(h, world.centre.y - 4.0, 1.0 - smoothstep(r * 0.7, r * 1.1, d))
+		var r: float = lm.r
+		h = lerpf(h, lm.floor, 1.0 - smoothstep(r * 0.7, r * 1.1, d))
 	return h
+
+
+func dress_hero(scenery: Node3D, _props: Dictionary) -> void:
+	_ice(scenery)
 
 
 func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array) -> void:
@@ -29,7 +36,6 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	var rocks := [_snowy_rock(4), _snowy_rock(5), _snowy_rock(6)]
 	scatter(props, rocks, 60, 2.0, 40.0, Vector2(0.7, 2.2), func(r: RandomNumberGenerator) -> int: return r.randi() % 3, 1.5, true, 0.4)
 	scatter(props, [_snowman()], 10, 2.5, 9.0, Vector2(0.9, 1.1), func(_r: RandomNumberGenerator) -> int: return 0, 2.0, true, 0.1)
-	_ice(scenery)
 	_cabins(props)
 	_lanterns(props)
 
@@ -57,25 +63,28 @@ static func _snowman() -> ArrayMesh:
 	return kit.commit()
 
 
-## The frozen lake: a disc of ice in the basin.
+## The frozen lakes: discs of ice in their basins. The one marked `hero` is the title shot's.
 func _ice(parent: Node3D) -> void:
-	var lm := world.landmark("lake")
-	if lm.is_empty():
+	var lakes := world.landmarks("lake")
+	if lakes.is_empty():
 		return
 	world.water_mat.set_shader_parameter("ice", 1.0)
 	KartLook.apply(world.water_mat, {"deep": Color(0.22, 0.56, 0.86), "shallow": Color(0.42, 0.76, 0.98),
 		"reflect_color": Color(0.62, 0.82, 1.0), "snow": Color(0.92, 0.96, 1.0)})
-	var disc := CylinderMesh.new()
-	var r: float = lm.r * 1.15
-	disc.top_radius = r
-	disc.bottom_radius = r
-	disc.height = 0.02
-	disc.radial_segments = 40
-	disc.rings = 1
-	var node := KartMeshKit.mesh_node(disc, world.water_mat, "Ice")
-	var p: Vector3 = lm.p
-	node.position = Vector3(p.x, road_level(p.x, p.z) - 0.55, p.z)
-	parent.add_child(node)
+	for lm in lakes:
+		var disc := CylinderMesh.new()
+		var r: float = lm.r * 1.15
+		disc.top_radius = r
+		disc.bottom_radius = r
+		disc.height = 0.02
+		disc.radial_segments = 40
+		disc.rings = 1
+		var node := KartMeshKit.mesh_node(disc, world.water_mat, "Ice")
+		var p: Vector3 = lm.p
+		node.position = Vector3(p.x, road_level(p.x, p.z) - 0.55, p.z)
+		parent.add_child(node)
+		if lm.get("hero", false) or hero.is_empty():
+			hero = {"p": node.position + Vector3.UP * 0.5, "size": r * 1.4, "flat": true}
 
 
 ## Log cabins with snowy roofs, lit windows and chimneys, a little back from the road.

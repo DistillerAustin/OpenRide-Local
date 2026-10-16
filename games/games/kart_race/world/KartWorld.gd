@@ -18,6 +18,7 @@ extends Node3D
 
 const ROAD_DEFAULTS := {"cobbles": 0.0, "verge_grain": 0.3, "verge_gain": 1.0}
 const GROUND_DEFAULTS := {"snow": 0.0, "grain": 0.24}
+const SKY_DEFAULTS := {"glare": 0.55, "halo": 0.18}
 const ROAD_STEP := 2.0  ## metres between mesh rows along the track
 const SKIRT := 8.0  ## the skirt from the barrier's foot out and down under the land
 const WALL_HEIGHT := 0.95
@@ -29,6 +30,17 @@ const CELL_RANGE := 230.0
 ## this share of the crowd.
 const CELL_RANGE_TRIMMED := 150.0
 const CROWD_TRIMMED := 0.5
+
+## The grid shot's frame (the HUD's pixels) and what covers it during the title: karts stay clear
+## of the title band; the landmark of the band and the framework's clock and buttons (top right).
+const SHOT_SIZE := Vector2(1920.0, 1080.0)
+## KartHud's title card band (bottom left, in the HUD's 1920×1080 pixels).
+const TITLE_BAND := Rect2(-40.0, 790.0, 1180.0, 240.0)
+const SHOT_CORNER := Rect2(1240.0, 0.0, 680.0, 310.0)
+const SHOT_KART := Vector3(0.85, 1.4, 1.15)  ## a kart and driver's half-width, height, half-length
+const GRID_KARTS := 8
+const STAND_LENGTH := 84.0
+const STAND_ROWS := 8
 
 const FLAG_COLORS := [Color(0.95, 0.25, 0.2), Color(1.0, 0.8, 0.15), Color(0.2, 0.6, 1.0),
 	Color(0.35, 0.85, 0.35), Color(0.75, 0.35, 0.95), Color(1.0, 0.5, 0.15), Color(0.98, 0.98, 0.98)]
@@ -60,6 +72,12 @@ var pads_mat: ShaderMaterial
 
 ## Quality trims in force (set_quality); kept across tracks.
 var foliage_range := CELL_RANGE
+## The title shot over the grid (KartChaseCamera.flyover opens on it), solved once per build so
+## the shot frames the theme's hero set piece (KartDress.hero): {eye, look, fov, focus, score}.
+## Empty when the theme has none (the camera falls back to its generic shot).
+var grid_shot := {}
+## The grandstand's frame (local -z along the track, +x away from it), once built.
+var stand_xf := Transform3D.IDENTITY
 var crowd_share := 1.0
 
 var _built: Node3D
@@ -70,6 +88,7 @@ var _env: WorldEnvironment
 var _halos: MultiMeshInstance3D
 var _spinners: Array[Node3D] = []  ## spin(): nodes turning every frame
 var _spin_rates: Array[Vector3] = []  ## their axes × rad/s
+var _stand_lamps: Array[Vector3] = []
 
 
 func _ready() -> void:
@@ -114,6 +133,7 @@ func build(model: KartTrackModel) -> void:
 	add_child(_built)
 	_spinners.clear()
 	_spin_rates.clear()
+	_stand_lamps.clear()
 	_foliage_cells.clear()
 	_crowd = null
 	_measure()
@@ -150,6 +170,12 @@ func build(model: KartTrackModel) -> void:
 	var props := {}
 	var woods := sector_kits()
 	_build_track_furniture(props)
+	# The hero set piece and the grandstand first: the title shot is solved round them, and the
+	# scattered scenery then keeps out of its sight line (KartDress.in_hero_sight).
+	dress.dress_hero(scenery, props)
+	if tuning.get("stand", true):
+		_build_grandstand(scenery)
+	grid_shot = solve_grid_shot()
 	dress.dress(scenery, foliage, props, woods)
 	if tuning.get("foliage", true):
 		commit_cells(scenery, foliage, "Foliage", foliage_mat)
@@ -157,8 +183,6 @@ func build(model: KartTrackModel) -> void:
 		commit_cells(scenery, props, "Props", props_mat)
 	if tuning.get("woods", true):
 		commit_sectors(scenery, woods, "Woods", foliage_mat)
-	if tuning.get("stand", true):
-		_build_grandstand(scenery)
 	_build_gate(scenery)
 	_build_flags(scenery)
 	if tuning.get("clouds", true):
@@ -244,6 +268,177 @@ static func _tris(mesh: Mesh) -> int:
 	return t
 
 
+# --- The title shot ---
+
+## Searches camera spots round the grid for the one that frames the dresser's hero piece
+## (KartDress.hero) over the karts on the grid: the piece clear of the HUD, on a third; no kart
+## under the title band or half off the frame; as many karts in shot as possible. Runs once per
+## build (a few hundred candidates, pure maths): nothing per frame.
+func solve_grid_shot() -> Dictionary:
+	if dress == null or dress.hero.is_empty():
+		return {}
+	var focus: Vector3 = dress.hero.p
+	var size: float = dress.hero.get("size", 10.0)
+	var g := track.position_at(track.wrap(-22.0), 0.0)
+	var eyes: Array[Vector3] = []
+	for b in 16:
+		var a := TAU * b / 16.0
+		for dist: float in [11.0, 15.0, 20.0]:
+			for h: float in [2.6, 4.5, 7.5, 12.0]:
+				eyes.append(g + Vector3(cos(a), 0.0, sin(a)) * dist + Vector3.UP * h)
+	if dress.hero.get("flat", false):
+		# A lake: also from beyond its far shore, looking back across the ice to the grid.
+		var across := Vector3(focus.x - g.x, 0.0, focus.z - g.z).normalized()
+		for turn: float in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+			for k: float in [0.6, 0.9, 1.2]:
+				for h: float in [6.0, 10.0, 14.0]:
+					var at := focus + across.rotated(Vector3.UP, turn) * size * k
+					eyes.append(Vector3(at.x, terrain.height_at(at.x, at.z) + h, at.z))
+	var best := {}
+	var best_score := -INF
+	for eye in eyes:
+		if not _shot_eye_ok(eye):
+			continue
+		for w: float in [0.3, 0.45, 0.6, 0.75]:
+			var dir := (g + Vector3.UP * 0.6 - eye).normalized() * (1.0 - w) + (focus - eye).normalized() * w
+			var look_at := eye + dir.normalized() * 10.0
+			for fov: float in [46.0, 54.0, 62.0]:
+				var score := shot_score(eye, look_at, fov, focus, size)
+				if score > best_score:
+					best_score = score
+					best = {"eye": eye, "look": look_at, "fov": fov, "focus": focus, "score": score}
+	return best if best_score > -INF else {}
+
+
+## Where a world point lands in the 1920×1080 frame of a camera at `eye` looking at `look_at`
+## with vertical `fov` (degrees): (x, y, depth); depth < 0 when behind the lens.
+static func shot_project(eye: Vector3, look_at: Vector3, fov: float, p: Vector3) -> Vector3:
+	var basis := Basis.looking_at(look_at - eye, Vector3.UP)
+	var local := basis.transposed() * (p - eye)
+	if local.z > -0.1:
+		return Vector3(0.0, 0.0, -1.0)
+	var t := tan(deg_to_rad(fov) * 0.5)
+	var x := local.x / -local.z / (t * SHOT_SIZE.x / SHOT_SIZE.y)
+	var y := local.y / -local.z / t
+	return Vector3((x * 0.5 + 0.5) * SHOT_SIZE.x, (0.5 - y * 0.5) * SHOT_SIZE.y, -local.z)
+
+
+## The screen rects of the karts on the grid in that shot; an empty Rect2 for a kart wholly
+## behind the lens, and a zero-size one at (-1, -1) for a kart the lens is inside or too near.
+func shot_kart_rects(eye: Vector3, look_at: Vector3, fov: float) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for i in GRID_KARTS:
+		var s := track.wrap(-(KartRaceLogic.GRID_FIRST + KartRaceLogic.GRID_GAP * i))
+		var d := -KartRaceLogic.GRID_D if i % 2 == 0 else KartRaceLogic.GRID_D
+		var pt := track.sample(s)
+		var at := track.position_at(s, d)
+		var fwd := Vector3(pt.tangent.x, 0.0, pt.tangent.z).normalized()
+		var right := Vector3(pt.right.x, 0.0, pt.right.z).normalized()
+		if at.distance_to(eye) < 6.0:
+			out.append(Rect2(-1.0, -1.0, 0.0, 0.0))
+			continue
+		var lo := Vector2(INF, INF)
+		var hi := Vector2(-INF, -INF)
+		var behind := 0
+		for corner in 8:
+			var p := at + right * SHOT_KART.x * (1.0 if corner & 1 else -1.0) \
+				+ fwd * SHOT_KART.z * (1.0 if corner & 2 else -1.0) + Vector3.UP * (SHOT_KART.y if corner & 4 else 0.0)
+			var q := shot_project(eye, look_at, fov, p)
+			if q.z < 0.0:
+				behind += 1
+				continue
+			lo = Vector2(minf(lo.x, q.x), minf(lo.y, q.y))
+			hi = Vector2(maxf(hi.x, q.x), maxf(hi.y, q.y))
+		if behind == 8:
+			out.append(Rect2())
+		elif behind > 0:
+			out.append(Rect2(-1.0, -1.0, 0.0, 0.0))
+		else:
+			out.append(Rect2(lo, hi - lo))
+	return out
+
+
+## How good a title shot is (-INF: unusable). Unusable: the hero piece off its framing area,
+## under the HUD or hidden by the land; a kart under the title band or the lens inside one;
+## fewer than four karts in shot. Better: more karts wholly in shot, the piece on a third and
+## big enough to read.
+func shot_score(eye: Vector3, look_at: Vector3, fov: float, focus: Vector3, size: float) -> float:
+	var band := TITLE_BAND.grow(16.0)
+	var screen := Rect2(Vector2.ZERO, SHOT_SIZE)
+	var fp := shot_project(eye, look_at, fov, focus)
+	# A flat piece (a lake) is seen from above, and may fill the foreground: aim lower.
+	var flat: bool = dress.hero.get("flat", false) if dress else false
+	if flat and (eye.y - focus.y) < 0.15 * Vector2(eye.x - focus.x, eye.z - focus.z).length():
+		return -INF
+	var aim_y := 0.62 if flat else 0.32
+	if fp.z < 0.0 or fp.x < SHOT_SIZE.x * 0.08 or fp.x > SHOT_SIZE.x * 0.92 or fp.y < SHOT_SIZE.y * 0.08 \
+			or fp.y > SHOT_SIZE.y * (0.85 if flat else 0.66):
+		return -INF
+	if SHOT_CORNER.grow(40.0).has_point(Vector2(fp.x, fp.y)) or band.has_point(Vector2(fp.x, fp.y)):
+		return -INF
+	if not _line_of_sight(eye, focus):
+		return -INF
+	var whole := 0
+	var cut := 0
+	var tall := 0.0
+	for r in shot_kart_rects(eye, look_at, fov):
+		if r.position.x == -1.0 and r.size == Vector2.ZERO:
+			return -INF
+		if r.size == Vector2.ZERO or not r.intersects(screen):
+			continue
+		if r.intersects(band):
+			return -INF
+		if screen.encloses(r):
+			whole += 1
+			tall += r.size.y / SHOT_SIZE.y
+		else:
+			cut += 1
+	if whole < 4:
+		return -INF
+	var thirds := minf(absf(fp.x / SHOT_SIZE.x - 0.66), absf(fp.x / SHOT_SIZE.x - 0.34))
+	var px := size / maxf(fp.z, 1.0) / tan(deg_to_rad(fov) * 0.5) * 0.5
+	# The karts big enough to read (a tenth of the frame's height, on average, is plenty).
+	var kart_size := 30.0 * minf(tall / maxf(whole, 1.0), 0.1)
+	return whole + kart_size - 0.6 * cut - 3.0 * thirds - 2.0 * absf(fp.y / SHOT_SIZE.y - aim_y) + 4.0 * minf(px, 0.25) \
+		- 0.04 * eye.distance_to(track.position_at(track.wrap(-22.0), 0.0)) \
+		+ float(dress.hero.get("lift", 0.0) if dress else 0.0) * (eye.y - track.position_at(track.wrap(-22.0), 0.0).y) / 12.0
+
+
+## A camera spot for the title: above the land, on the road side of the barriers (low), clear of
+## the grandstand and the gate.
+func _shot_eye_ok(eye: Vector3) -> bool:
+	if eye.y < terrain.height_at(eye.x, eye.z) + 1.5:
+		return false
+	var near := track.project(eye)
+	var edge := track.half_width(near.s) + track.verge
+	var height := eye.y - near.position.y
+	if absf(near.d) > edge - 0.5 and height < 10.0:
+		return false
+	if near.d > edge - 0.5 and in_stand(near.s):
+		return false
+	var ss := near.s - track.length if near.s > track.length * 0.5 else near.s
+	# Not beside a flag pole (they line the start: _build_flags) or in the gate.
+	if ss > -72.0 and ss < 42.0 and absf(absf(near.d) - (edge + 1.2)) < 3.0:
+		return false
+	return absf(ss - 1.0) > 3.0 or height > 9.0
+
+
+## Whether the land leaves the line from `a` to `b` clear (sampled; the far end's last 10% is
+## the piece itself, so it isn't tested).
+func _line_of_sight(a: Vector3, b: Vector3) -> bool:
+	var stand := stand_xf.affine_inverse()
+	var has_stand := _built.get_node_or_null("Scenery/Grandstand") != null
+	for i in range(1, 22):
+		var p := a.lerp(b, i / 23.0)
+		if terrain.height_at(p.x, p.z) > p.y + 0.5:
+			return false
+		if has_stand:
+			var q := stand * p
+			if q.x > -3.0 and q.x < 10.0 and q.y < 10.5 and absf(q.z) < STAND_LENGTH * 0.5 + 1.0:
+				return false
+	return true
+
+
 # --- Placement helpers (for the dressers) ---
 
 ## A spot `out` metres beyond the barrier at s on `side`, at least `clearance` beyond every
@@ -277,6 +472,13 @@ func ground_at(x: float, z: float) -> float:
 ## direction's), dir (the road's horizontal direction there), out (horizontal, from the road
 ## toward p), r}; empty when the track has none.
 func landmark(type: String) -> Dictionary:
+	var all := landmarks(type)
+	return all[0] if not all.is_empty() else {}
+
+
+## Every landmark of `type`, each as `landmark` gives it (plus the def's own keys).
+func landmarks(type: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	for lm in track.def.landmarks:
 		if lm.type != type:
 			continue
@@ -286,12 +488,14 @@ func landmark(type: String) -> Dictionary:
 		var on := track.position_at(s, 0.0)
 		var p := track.position_at(s, d)
 		var pt := track.sample(s)
-		var out := Vector3(p.x - on.x, 0.0, p.z - on.z)
-		out = out.normalized() if out.length() > 0.01 else pt.right
+		var out_dir := Vector3(p.x - on.x, 0.0, p.z - on.z)
+		out_dir = out_dir.normalized() if out_dir.length() > 0.01 else pt.right
 		p.y = terrain.height_at(p.x, p.z) if terrain else p.y
-		return {"p": p, "s": s, "d": d, "dir": Vector3(pt.tangent.x, 0.0, pt.tangent.z).normalized(),
-			"out": out, "r": float(lm.get("r", 0.0))}
-	return {}
+		var info: Dictionary = lm.duplicate()
+		info.merge({"p": p, "s": s, "d": d, "dir": Vector3(pt.tangent.x, 0.0, pt.tangent.z).normalized(),
+			"out": out_dir, "r": float(lm.get("r", 0.0))}, true)
+		out.append(info)
+	return out
 
 
 ## Whether s is along the grandstand (outside the start straight).
@@ -351,8 +555,8 @@ func commit_cells(parent: Node3D, cells: Dictionary, node_name: String, mat: Mat
 			_foliage_cells.append(node)
 
 
-func mm(mesh: Mesh, xfs: Array, node_name: String, mat: Material, custom: Array = []) -> MultiMeshInstance3D:
-	var node := KartMeshKit.multimesh_node(mesh, xfs, node_name, custom)
+func mm(mesh: Mesh, xfs: Array, node_name: String, mat: Material, custom: Array = [], colors: Array = []) -> MultiMeshInstance3D:
+	var node := KartMeshKit.multimesh_node(mesh, xfs, node_name, custom, colors)
 	node.material_override = mat
 	return node
 
@@ -381,7 +585,7 @@ func _build_environment() -> void:
 
 ## Sets the current theme's colours on the sky, road, ground and water.
 func _apply_theme() -> void:
-	KartLook.apply(_sky_mat, look.sky)
+	KartLook.apply(_sky_mat, SKY_DEFAULTS.merged(look.sky, true))
 	_sky_mat.set_shader_parameter("sun_dir", KartLook.sun_dir())
 	# The materials outlive a track: a theme's optional keys fall back to their defaults.
 	KartLook.apply(road_mat, ROAD_DEFAULTS.merged(look.road, true))
@@ -694,7 +898,9 @@ func _climb_sign_mesh() -> ArrayMesh:
 
 # --- The start: grandstand, gate, flags ---
 
-## The grandstand on the outside of the start straight, full of fans.
+## The grandstand on the outside of the start straight, full of fans, dressed in its theme:
+## Meadow's striped canopy, Canyon's awning over red rock, Harbor's lamps, Frost's snow-laden
+## roof over wooden benches. Accent banners hang from the roof; flags fly along its back.
 func _build_grandstand(parent: Node3D) -> void:
 	var s_mid := track.wrap(-22.0)
 	var hw := track.half_width(s_mid)
@@ -706,9 +912,11 @@ func _build_grandstand(parent: Node3D) -> void:
 	stand.name = "Grandstand"
 	# Local frame: -z along the track (forward), +x away from the road.
 	stand.transform = Transform3D(Basis(Vector3.UP, yaw), origin)
+	stand_xf = stand.transform
 	parent.add_child(stand)
-	var length := 84.0
-	var rows := 8
+	var theme := KartLook.theme
+	var length := STAND_LENGTH
+	var rows := STAND_ROWS
 	var depth := 0.95
 	var rise := 0.6
 	var kit := KartMeshKit.new()
@@ -719,6 +927,11 @@ func _build_grandstand(parent: Node3D) -> void:
 	var seat_a: Color = look.stand_a
 	var seat_b: Color = look.stand_b
 	var roof: Color = look.stand_roof
+	var white := Color(0.97, 0.97, 0.97, 0.0)
+	var snow := Color(0.95, 0.97, 1.0, 0.0)
+	var wood := Color(0.56, 0.38, 0.24, 0.0)
+	if theme == "canyon":
+		concrete = Color(0.82, 0.66, 0.5, 0.0)  # adobe
 	# Footings down to the land, so the stand never floats over a dip.
 	kit.add(KartMeshKit.box(Vector3(back_x(rows, depth) + 0.6, 6.0, length)), KartMeshKit.xf(Vector3(back_x(rows, depth) * 0.5, -3.0, 0)), concrete.darkened(0.2))
 	# Front wall with a coloured fascia.
@@ -728,55 +941,169 @@ func _build_grandstand(parent: Node3D) -> void:
 		var x := 0.6 + r * depth
 		var y := 1.2 + r * rise
 		kit.add(KartMeshKit.box(Vector3(depth, y, length)), KartMeshKit.xf(Vector3(x + depth * 0.5, y * 0.5, 0)), concrete)
-		var seat: Color = seat_a if r % 2 == 0 else seat_b
-		kit.add(KartMeshKit.box(Vector3(0.35, 0.22, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.11, 0)), Color(seat.r, seat.g, seat.b, 0.0))
+		if theme == "frost":
+			# Wooden benches, a dusting of snow on each.
+			var plank: Color = wood if r % 2 == 0 else wood.darkened(0.12)
+			kit.add(KartMeshKit.box(Vector3(0.42, 0.12, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.3, 0)), plank)
+			kit.add(KartMeshKit.box(Vector3(0.44, 0.04, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.38, 0)), snow)
+			for z in range(-int(length * 0.5) + 2, int(length * 0.5), 6):
+				kit.add(KartMeshKit.box(Vector3(0.08, 0.26, 0.08)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.13, z)), wood.darkened(0.3))
+		else:
+			var seat: Color = seat_a if r % 2 == 0 else seat_b
+			kit.add(KartMeshKit.box(Vector3(0.35, 0.22, length)), KartMeshKit.xf(Vector3(x + 0.55, y + 0.11, 0)), Color(seat.r, seat.g, seat.b, 0.0))
 	var bx := back_x(rows, depth)
 	var top_y := 1.2 + rows * rise
 	kit.add(KartMeshKit.box(Vector3(0.4, top_y + 2.6, length)), KartMeshKit.xf(Vector3(bx + 0.2, (top_y + 2.6) * 0.5, 0)), Color(seat_a.r * 0.5, seat_a.g * 0.5, seat_a.b * 0.6, 0.0))
 	kit.add(KartMeshKit.box(Vector3(0.1, 0.5, length)), KartMeshKit.xf(Vector3(bx - 0.02, top_y + 0.9, 0)), Color(seat_b.r, seat_b.g, seat_b.b, 0.0))
-	# Roof on posts, striped.
+	# Roof on posts.
 	for i in 8:
 		var z := -length * 0.5 + 2.0 + i * (length - 4.0) / 7.0
-		kit.add(KartMeshKit.cylinder(0.12, 0.12, 4.6, 6), KartMeshKit.xf(Vector3(0.3, top_y + 0.6 - 1.6, z)), Color(0.9, 0.9, 0.92, 0.0))
+		kit.add(KartMeshKit.cylinder(0.12, 0.12, 4.6, 6), KartMeshKit.xf(Vector3(0.3, top_y + 0.6 - 1.6, z)),
+			wood if theme == "frost" else Color(0.9, 0.9, 0.92, 0.0))
+	var roof_y := top_y + 2.75
 	for i in 12:
 		var z0 := -length * 0.5 + i * length / 12.0
-		var stripe := Color(0.97, 0.97, 0.97, 0.0) if i % 2 == 0 else Color(roof.r, roof.g, roof.b, 0.0)
+		var stripe := white if i % 2 == 0 else Color(roof.r, roof.g, roof.b, 0.0)
+		if theme == "frost":
+			stripe = Color(roof.r, roof.g, roof.b, 0.0)  # dark timber under the snow
 		kit.add(KartMeshKit.box(Vector3(bx + 1.4, 0.25, length / 12.0)),
-			KartMeshKit.xf(Vector3(bx * 0.5 + 0.1, top_y + 2.75, z0 + length / 24.0), Vector3(0, 0, -7)), stripe)
-	stand.add_child(KartMeshKit.mesh_node(kit.commit(), scenery_mat, "Stand"))
-	# The crowd.
+			KartMeshKit.xf(Vector3(bx * 0.5 + 0.1, roof_y, z0 + length / 24.0), Vector3(0, 0, -7)), stripe)
+	match theme:
+		"frost":
+			# A thick blanket of snow on the roof, rounded at the eave, and icicles under it.
+			kit.add(KartMeshKit.box(Vector3(bx + 1.5, 0.45, length + 0.3)), KartMeshKit.xf(Vector3(bx * 0.5 + 0.1, roof_y + 0.3, 0), Vector3(0, 0, -7)), snow)
+			kit.add(KartMeshKit.cylinder(0.32, 0.32, length + 0.3, 6), KartMeshKit.xf(Vector3(-0.6, roof_y + 0.08 + 0.1, 0), Vector3(90, 0, 0)), snow)
+			var r2 := RandomNumberGenerator.new()
+			r2.seed = 17
+			var z := -length * 0.5 + 0.5
+			while z < length * 0.5:
+				var l := r2.randf_range(0.3, 0.8)
+				kit.add(KartMeshKit.cylinder(0.06, 0.0, l, 4), KartMeshKit.xf(Vector3(-0.62, roof_y - 0.12 - l * 0.5, z), Vector3(180, 0, 0)), Color(0.8, 0.9, 1.0, 0.3))
+				z += r2.randf_range(0.5, 1.4)
+		"canyon":
+			# The striped awning runs out over the front rows on poles; red rock piles at the ends.
+			for i in 12:
+				var z0 := -length * 0.5 + i * length / 12.0
+				var c := white if i % 2 == 0 else Color(look.gate_band.r, look.gate_band.g, look.gate_band.b, 0.0)
+				kit.add(KartMeshKit.box(Vector3(2.6, 0.12, length / 12.0)), KartMeshKit.xf(Vector3(-1.3, roof_y - 0.75, z0 + length / 24.0), Vector3(0, 0, 18)), c)
+				var flap := KartMeshKit.prism(Vector3(length / 12.0, 0.5, 0.06))
+				kit.add(flap, KartMeshKit.xf(Vector3(-2.55, roof_y - 1.4, z0 + length / 24.0), Vector3(180, 90, 0)), c)
+			for z: float in [-length * 0.5 - 4.0, length * 0.5 + 4.0]:
+				for k in 3:
+					kit.add(KartDress.rock_mesh(Color(0.74, 0.34, 0.2), 40 + k), KartMeshKit.xf(Vector3(1.5 + k * 3.0, -0.5, z + (k - 1) * 1.5), Vector3(0, k * 50, 0), Vector3(3.2, 4.0 + k * 1.6, 3.2) * (1.2 - k * 0.15)), Color(0.74, 0.34, 0.2, 0.0))
+		"harbor":
+			# Iron lamp posts along the front, lanterns lit (props_mat: alpha is glow).
+			var iron := Color(0.14, 0.16, 0.2, 0.0)
+			var z := -length * 0.5 + 6.0
+			while z < length * 0.5:
+				kit.add(KartMeshKit.cylinder(0.08, 0.12, 4.6, 6), KartMeshKit.xf(Vector3(-0.5, 2.3, z)), iron)
+				kit.add(KartMeshKit.box(Vector3(0.36, 0.5, 0.36)), KartMeshKit.xf(Vector3(-0.5, 4.75, z)), Color(1.0, 0.86, 0.55, 1.0))
+				kit.add(KartMeshKit.prism(Vector3(0.55, 0.3, 0.55)), KartMeshKit.xf(Vector3(-0.5, 5.15, z)), iron)
+				_stand_lamps.append(stand.transform * Vector3(-0.5, 4.75, z))
+				z += 12.0
+	stand.add_child(KartMeshKit.mesh_node(kit.commit(), props_mat, "Stand"))
+	if not _stand_lamps.is_empty():
+		var halos := []
+		var colors := []
+		for p: Vector3 in _stand_lamps:
+			halos.append(Transform3D(Basis().scaled(Vector3.ONE * 2.6), p))
+			colors.append(Color(1.0, 0.75, 0.4, 0.55))
+		var lamp_halos := KartMeshKit.multimesh_node(halo_quad(), halos, "StandHalos", [], colors)
+		parent.add_child(lamp_halos)
+	_build_stand_banners(stand, roof_y, length)
+	_build_crowd(stand, rows, depth, rise, length)
+
+
+## Accent banners hanging from the stand's roof edge (the banner cloth sways).
+func _build_stand_banners(stand: Node3D, roof_y: float, length: float) -> void:
+	var accents: Array = [look.gate_band, look.stand_roof, look.stand_b, look.stand_a]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var count := 7
+	for b in count:
+		var z0 := -length * 0.5 + (b + 0.5) * length / count - 0.8
+		var c: Color = accents[b % accents.size()]
+		var w := 1.6
+		var h := 2.3
+		var nx := 2
+		var ny := 5
+		for i in nx:
+			for j in ny:
+				var u0 := float(i) / nx
+				var u1 := float(i + 1) / nx
+				var v0 := float(j) / ny
+				var v1 := float(j + 1) / ny
+				# A white band near the foot, and a pointed tail.
+				var col := Color(0.97, 0.97, 0.97) if j == ny - 2 else Color(c.r, c.g, c.b)
+				for uv in [[u0, v0], [u1, v0], [u1, v1], [u0, v0], [u1, v1], [u0, v1]]:
+					var v: float = uv[1]
+					var u: float = uv[0]
+					var tail := 0.0
+					if j == ny - 1 and v > v0:
+						tail = 0.45 * (1.0 - absf(u - 0.5) * 2.0)
+					st.set_color(col)
+					st.set_uv(Vector2(u, v))
+					st.set_normal(Vector3.LEFT)
+					st.add_vertex(Vector3(-0.75, roof_y - 0.2 - (v + tail * 0.25) * h, z0 + u * w))
+	var node := KartMeshKit.mesh_node(st.commit(), banner_mat, "StandBanners")
+	stand.add_child(node)
+
+
+## The crowd: one MultiMesh of fans (crowd.gdshader). Each row has its own mix of shirts (the
+## home colours toward the front, a supporters' block in the theme's accent) and heights; some
+## fans wave their arms, and a stadium wave runs along the stand.
+## The crowd's instances: {transforms, custom (crowd.gdshader's INSTANCE_CUSTOM), colors (the
+## shirts)}, for theme `theme_look` (KartLook's values) named `theme`.
+static func crowd_data(theme_look: Dictionary, theme: String, rows: int, depth: float, rise: float, length: float) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
-	var quad := QuadMesh.new()
-	quad.size = Vector2(0.7, 1.0)
-	quad.center_offset = Vector3(0, 0.5, 0)
 	var xfs := []
 	var custom := []
+	var colors := []
 	var shirts := [Color(0.95, 0.25, 0.2), Color(1.0, 0.8, 0.2), Color(0.25, 0.55, 1.0), Color(0.3, 0.8, 0.4),
 		Color(0.95, 0.5, 0.8), Color(0.98, 0.98, 0.98), Color(0.6, 0.35, 0.9), Color(1.0, 0.55, 0.15), Color(0.2, 0.75, 0.8)]
+	var row_tints: Array = [theme_look.stand_a, theme_look.gate_band, theme_look.stand_b, Color(0.98, 0.98, 0.98)]
+	if theme == "frost":
+		# Winter coats: deeper colours.
+		shirts = [Color(0.85, 0.15, 0.2), Color(0.15, 0.35, 0.75), Color(0.2, 0.55, 0.35), Color(0.95, 0.75, 0.2),
+			Color(0.45, 0.25, 0.6), Color(0.9, 0.45, 0.15), Color(0.2, 0.2, 0.25)]
 	for r in rows:
 		var x := 0.6 + r * depth + 0.45
 		var y := 1.2 + r * rise - 0.15
 		var z := -length * 0.5 + 0.6
+		var tint: Color = row_tints[r % row_tints.size()]
+		var tint_share := 0.55 if r % 3 == 1 else 0.2
+		var row_height := 0.94 + 0.05 * float((r * 7) % 3)
 		while z < length * 0.5 - 0.5:
 			# Not every seat is taken: the alpha-tested fans are the start's costliest pixels.
 			if rng.randf() < 0.7:
-				var sc := rng.randf_range(0.9, 1.15)
+				var sc := rng.randf_range(0.92, 1.1)
 				xfs.append(Transform3D(Basis().scaled(Vector3.ONE * sc), Vector3(x + rng.randf_range(-0.1, 0.1), y, z)))
 				var c: Color = shirts[rng.randi() % shirts.size()]
-				c.a = rng.randf()
-				custom.append(c)
+				colors.append(c.lerp(tint, tint_share))
+				var tall := row_height * (0.78 if rng.randf() < 0.08 else rng.randf_range(0.92, 1.12))
+				var waver := 2.0 if rng.randf() < 0.3 else 0.0
+				custom.append(Color(tall, rng.randf(), rng.randf(), clampf((z + length * 0.5) / length, 0.0, 0.999) + waver))
 			z += rng.randf_range(0.6, 0.8)
 	# Shuffled, so the quality governor's share of the crowd thins every row evenly.
 	for i in range(xfs.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
-		var t: Variant = xfs[i]
-		xfs[i] = xfs[j]
-		xfs[j] = t
-		t = custom[i]
-		custom[i] = custom[j]
-		custom[j] = t
-	var crowd := mm(quad, xfs, "Crowd", crowd_mat, custom)
+		for arr: Array in [xfs, custom, colors]:
+			var t: Variant = arr[i]
+			arr[i] = arr[j]
+			arr[j] = t
+	return {"transforms": xfs, "custom": custom, "colors": colors}
+
+
+func _build_crowd(stand: Node3D, rows: int, depth: float, rise: float, length: float) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.7, 1.0)
+	quad.center_offset = Vector3(0, 0.5, 0)
+	var data := crowd_data(look, KartLook.theme, rows, depth, rise, length)
+	var xfs: Array = data.transforms
+	var custom: Array = data.custom
+	var colors: Array = data.colors
+	var crowd := mm(quad, xfs, "Crowd", crowd_mat, custom, colors)
 	_crowd = crowd.multimesh
 	stand.add_child(crowd)
 
@@ -916,6 +1243,21 @@ func _build_flags(parent: Node3D) -> void:
 			custom.append(FLAG_COLORS[n % FLAG_COLORS.size()])
 			n += 1
 		s += 7.0
+	if _built.get_node_or_null("Scenery/Grandstand"):
+		# Flags along the back of the stand's roof, in the theme's accents.
+		var accents: Array = [look.gate_band, look.stand_roof, look.stand_b, Color(0.98, 0.98, 0.98)]
+		var bx := back_x(STAND_ROWS, 0.95)
+		var roof_top := 1.2 + STAND_ROWS * 0.6 + 2.75 + bx * 0.5 * tan(deg_to_rad(7.0))
+		var k := 0
+		var z := -STAND_LENGTH * 0.5 + 4.0
+		while z < STAND_LENGTH * 0.5:
+			var foot := stand_xf * Vector3(bx + 0.3, roof_top - 0.6, z)
+			poles.add(KartMeshKit.cylinder(0.05, 0.07, 3.6, 5), KartMeshKit.xf(foot + Vector3.UP * 1.8), Color(0.92, 0.92, 0.94, 0.0))
+			flag_xfs.append(Transform3D(Basis(Vector3.UP, track.yaw_at(track.wrap(-22.0)) + PI * 0.5).scaled(Vector3.ONE * 0.8), foot + Vector3.UP * 3.5))
+			var c: Color = accents[k % accents.size()]
+			custom.append(Color(c.r, c.g, c.b, 1.0))
+			k += 1
+			z += 10.5
 	parent.add_child(KartMeshKit.mesh_node(poles.commit(), scenery_mat, "FlagPoles"))
 	parent.add_child(mm(flag_cloth(), flag_xfs, "Flags", flag_mat, custom))
 
@@ -1017,24 +1359,32 @@ static func _cloud_texture() -> ImageTexture:
 	return _cloud_tex
 
 
-## The crowd sprite: a fan in a T-shirt (R), the head (G) and raised arms (B), 32x48.
+## The crowd sprite, two 32x48 frames side by side: a fan in a T-shirt (R), the head (G) and the
+## arms (B): raised in the left frame, out to the sides in the right (crowd.gdshader flips them).
 static func _crowd_sprite() -> ImageTexture:
 	var w := 32
 	var h := 48
-	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
-	for y in h:
-		for x in w:
-			var p := Vector2(x + 0.5, y + 0.5)
-			var head := p.distance_to(Vector2(16, 12)) < 7.0
-			var body := Rect2(7, 19, 18, 29).has_point(p) and p.distance_to(Vector2(16, 26)) < 13.5
-			var arms := (absf(p.x - 5.0) < 2.2 or absf(p.x - 27.0) < 2.2) and p.y > 6.0 and p.y < 24.0
-			var c := Color(0, 0, 0, 0)
-			if head:
-				c = Color(0, 1, 0, 1)
-			elif body:
-				c = Color(1, 0, 0, 1)
-			elif arms:
-				c = Color(0, 0, 1, 1)
-			img.set_pixel(x, y, c)
+	var img := Image.create(w * 2, h, true, Image.FORMAT_RGBA8)
+	for frame in 2:
+		for y in h:
+			for x in w:
+				var p := Vector2(x + 0.5, y + 0.5)
+				var head := p.distance_to(Vector2(16, 12)) < 7.0
+				var body := Rect2(7, 19, 18, 29).has_point(p) and p.distance_to(Vector2(16, 26)) < 13.5
+				var arms := false
+				if frame == 0:
+					arms = (absf(p.x - 5.0) < 2.2 or absf(p.x - 27.0) < 2.2) and p.y > 6.0 and p.y < 24.0
+				else:
+					# Out and a little down, hands at the frame's edges.
+					var ax := absf(p.x - 16.0)
+					arms = ax > 8.0 and ax < 15.0 and absf(p.y - (21.0 + (ax - 8.0) * 0.45)) < 2.3
+				var c := Color(0, 0, 0, 0)
+				if head:
+					c = Color(0, 1, 0, 1)
+				elif body:
+					c = Color(1, 0, 0, 1)
+				elif arms:
+					c = Color(0, 0, 1, 1)
+				img.set_pixel(frame * w + x, y, c)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)

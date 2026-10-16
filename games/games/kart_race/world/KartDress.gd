@@ -17,6 +17,10 @@ var world: KartWorld
 var rng := RandomNumberGenerator.new()
 var noise := FastNoiseLite.new()
 
+## The theme's hero set piece for the title shot over the grid (KartWorld.grid_shot): {p (the
+## point to frame), size (metres across)}; the dresser sets it where it builds the piece.
+var hero := {}
+
 var _level_pts := PackedVector3Array()
 
 
@@ -76,9 +80,29 @@ static func terrace(h: float, step: float) -> float:
 	return (i + smoothstep(0.72, 1.0, f - i)) * step
 
 
+## Whether `p` stands in the sight line from the grid to the hero piece (or on the piece), where
+## scattered scenery would hide it from the title shot. Dressers set `hero` before scattering.
+func in_hero_sight(p: Vector3) -> bool:
+	if hero.is_empty():
+		return false
+	var g: Vector3 = world.grid_shot.get("eye", world.track.position_at(world.track.wrap(-22.0), 0.0))
+	var a := Vector2(g.x, g.z)
+	var b := Vector2(hero.p.x, hero.p.z)
+	var q := Vector2(p.x, p.z)
+	var ab := b - a
+	var t := clampf((q - a).dot(ab) / maxf(ab.length_squared(), 1.0), 0.0, 1.2)
+	return q.distance_to(a + ab * t) < 6.0 + float(hero.get("size", 10.0)) * 0.6 * t
+
+
 ## A colour multiplied into the land at (x, z) (Color.WHITE: none).
 func ground_tint(_x: float, _z: float, _h: float) -> Color:
 	return Color.WHITE
+
+
+## Places the theme's hero set piece (the one the title shot frames) and sets `hero`. Runs before
+## `dress`, so the shot is solved first and the scatter keeps out of its sight line.
+func dress_hero(_scenery: Node3D, _props: Dictionary) -> void:
+	pass
 
 
 ## Adds the theme's scenery. `foliage` and `props` are trackside cell kits (KartWorld.cell);
@@ -104,7 +128,7 @@ func scatter(cells: Dictionary, meshes: Array, count: int, near: float, far: flo
 		if skip_stand and side > 0.0 and out < 22.0 and world.in_stand(s):
 			continue
 		var spot = world.beyond(s, side, out, clearance)
-		if spot == null:
+		if spot == null or in_hero_sight(spot):
 			continue
 		var sc := rng.randf_range(size.x, size.y)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc * rng.randf_range(0.9, 1.2), sc))
@@ -122,7 +146,7 @@ func scatter_far(woods: Array, meshes: Array, count: int, r0: float, r1: float, 
 		var r := world.reach + rng.randf_range(r0, r1)
 		var x := world.centre.x + cos(a) * r
 		var z := world.centre.z + sin(a) * r
-		if not world.clear_of_road(Vector3(x, 0.0, z), 20.0):
+		if not world.clear_of_road(Vector3(x, 0.0, z), 20.0) or in_hero_sight(Vector3(x, 0.0, z)):
 			continue
 		var sc := rng.randf_range(size.x, size.y)
 		var at := Vector3(x, world.ground_at(x, z) - 0.3, z)

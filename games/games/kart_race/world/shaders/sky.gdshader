@@ -12,6 +12,10 @@ uniform vec3 sun_dir = vec3(0.55, 0.42, 0.72);
 uniform vec3 cloud_lit : source_color = vec3(1.0, 0.97, 0.92);
 uniform vec3 cloud_shade : source_color = vec3(0.72, 0.74, 0.86);
 uniform float clouds = 0.6;
+// The sun's glow: the tight glare and the wide halo (a theme can pull them in so the sun never
+// washes out the HUD's top-right panel: Meadow, whose climb heads almost into it).
+uniform float glare = 0.55;
+uniform float halo = 0.18;
 uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;
 
 float vnoise(vec2 p) {
@@ -27,7 +31,7 @@ void sky() {
 	float s = max(dot(dir, L), 0.0);
 	// Warmer towards the sun, along the horizon.
 	col = mix(col, horizon_color * 1.05, pow(s, 3.0) * smoothstep(0.5, 0.0, h) * 0.6);
-	col += sun_color * pow(s, 24.0) * 0.55 + sun_color * pow(s, 6.0) * 0.18;
+	col += sun_color * pow(s, 24.0) * glare + sun_color * pow(s, 6.0) * halo;
 	col = mix(col, vec3(1.0, 0.98, 0.9), smoothstep(0.9985, 0.9993, s));
 	if (h > 0.0 && clouds > 1.0) {
 		vec2 uv = dir.xz / (h + 0.12) * 1.1;
