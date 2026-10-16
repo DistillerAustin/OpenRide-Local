@@ -37,6 +37,7 @@ const PHRASE_BARS := 4
 const DEFAULT_BARS := 16  ## a style request's `bars` when it has none (MusicGen's default)
 const STEM_FADE_SEC := 1.5
 const DUCK_DB := -10.0  ## music under a cue
+const MASTER_BUS := "Master"
 const DUCK_ATTACK_SEC := 0.08
 const DUCK_RELEASE_SEC := 0.6
 const SILENT_DB := -80.0
@@ -95,6 +96,8 @@ var _cue_players: Array[AudioStreamPlayer] = []
 var _next_sfx := 0
 var _next_cue := 0
 var _cue_left := 0.0  # seconds of cue still sounding: the duck holds meanwhile
+var _game_duck_db := 0.0  # a game's own duck (duck_music), held for _game_duck_left seconds
+var _game_duck_left := 0.0
 var _paused := false
 
 
@@ -159,6 +162,14 @@ func play_cue(sound: String) -> bool:
 	if played:
 		_cue_left = maxf(_cue_left, player.stream.get_length() if player.stream.get_length() > 0.0 else 0.5)
 	return played
+
+
+## Ducks the music by `db` (negative) for `seconds`, for a game's own moments that must read
+## over it (a banner, a countdown) without playing a cue. The deepest of this and a cue's duck
+## applies; asking again while it holds extends it.
+func duck_music(db: float, seconds: float) -> void:
+	_game_duck_db = minf(db, 0.0) if _game_duck_left <= 0.0 else minf(_game_duck_db, db)
+	_game_duck_left = maxf(_game_duck_left, seconds)
 
 
 ## Asks for music: `style` is the game's (passed to the generator as is; `stem_gates` maps a
@@ -233,19 +244,23 @@ func begin_segment(segment: Dictionary) -> void:
 	music_volume = clampf(float(audio.get("music_volume", 0.8)), 0.0, 1.0)
 	sfx_volume = clampf(float(audio.get("sfx_volume", 1.0)), 0.0, 1.0)
 	intensity = 1.0
+	_game_duck_left = 0.0
+	_game_duck_db = 0.0
 	_apply_bus_volumes()
 	set_bus_effects(MUSIC_BUS, [])
 	set_bus_effects(SFX_BUS, [])
+	set_bus_effects(MASTER_BUS, [])
 	if not music_enabled:
 		stop_music()
 
 
-## A game's own effects chain on the `Music` or `SFX` bus (e.g. reverb and a glue compressor),
-## replacing any earlier chain there. Native `AudioEffect`s cost little next to doing the same
-## offline in GDScript. Every segment starts with both buses clean (`begin_segment`).
+## A game's own effects chain on the `Music`, `SFX` or `Master` bus (e.g. reverb and a glue
+## compressor, or a limiter on the whole mix), replacing any earlier chain there. Native
+## `AudioEffect`s cost little next to doing the same offline in GDScript. Every segment starts
+## with all three clean (`begin_segment`).
 func set_bus_effects(bus: String, effects: Array[AudioEffect]) -> void:
-	if bus not in [MUSIC_BUS, SFX_BUS]:
-		push_warning("AudioDirector: set_bus_effects only takes %s or %s" % [MUSIC_BUS, SFX_BUS])
+	if bus not in [MUSIC_BUS, SFX_BUS, MASTER_BUS]:
+		push_warning("AudioDirector: set_bus_effects only takes %s, %s or %s" % [MUSIC_BUS, SFX_BUS, MASTER_BUS])
 		return
 	var index := AudioServer.get_bus_index(bus)
 	if index == -1:
@@ -293,7 +308,8 @@ func _process(delta: float) -> void:
 		_deck_keys[old] = ""
 	_update_stems(delta)
 	_cue_left = maxf(0.0, _cue_left - delta)
-	var target := DUCK_DB if _cue_left > 0.0 else 0.0
+	_game_duck_left = maxf(0.0, _game_duck_left - delta)
+	var target := minf(DUCK_DB if _cue_left > 0.0 else 0.0, _game_duck_db if _game_duck_left > 0.0 else 0.0)
 	var rate := absf(DUCK_DB) / (DUCK_ATTACK_SEC if target < duck_db else DUCK_RELEASE_SEC)
 	duck_db = move_toward(duck_db, target, rate * delta)
 	_apply_bus_volumes()

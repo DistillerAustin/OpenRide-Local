@@ -29,6 +29,7 @@ func before_test() -> void:
 	AudioDirector._music_cache.clear()
 	AudioDirector.stop_music(0.0)
 	AudioDirector._cue_left = 0.0
+	AudioDirector._game_duck_left = 0.0
 	AudioDirector.duck_db = 0.0
 
 
@@ -180,6 +181,36 @@ func test_cues_duck_the_music_then_release() -> void:
 	AudioDirector._process(0.2)  # the cue is over
 	AudioDirector._process(AudioDirector.DUCK_RELEASE_SEC)
 	assert_float(AudioDirector.duck_db).is_equal(0.0)
+
+
+func test_a_game_duck_holds_then_releases_and_the_deeper_duck_wins() -> void:
+	AudioDirector.duck_music(-3.0, 0.5)
+	AudioDirector._process(0.1)
+	assert_float(AudioDirector.duck_db).is_equal(-3.0)
+	AudioDirector.duck_music(-2.0, 1.0)  # extends the hold, keeps the deeper duck
+	AudioDirector._process(0.6)
+	assert_float(AudioDirector.duck_db).is_equal(-3.0)
+	# A cue's duck is deeper: it wins while the cue sounds.
+	AudioDirector.register_sound("go", _tone(0.25))
+	AudioDirector.play_cue("go")
+	AudioDirector._process(0.1)
+	assert_float(AudioDirector.duck_db).is_equal(AudioDirector.DUCK_DB)
+	AudioDirector._process(0.6)
+	AudioDirector._process(AudioDirector.DUCK_RELEASE_SEC)
+	assert_float(AudioDirector.duck_db).is_equal(0.0)
+	# A new segment drops any duck still held.
+	AudioDirector.duck_music(-3.0, 10.0)
+	AudioDirector.begin_segment(SEGMENT_AUDIO)
+	AudioDirector._process(AudioDirector.DUCK_RELEASE_SEC)
+	assert_float(AudioDirector.duck_db).is_equal(0.0)
+
+
+func test_a_game_can_put_a_limiter_on_master_and_each_segment_clears_it() -> void:
+	var limiter := AudioEffectHardLimiter.new()
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, [limiter])
+	assert_array(AudioDirector.bus_effects(AudioDirector.MASTER_BUS)).contains_exactly([limiter])
+	AudioDirector.begin_segment(SEGMENT_AUDIO)
+	assert_array(AudioDirector.bus_effects(AudioDirector.MASTER_BUS)).is_empty()
 
 
 func test_pause_pauses_music_and_effects_not_cues() -> void:
