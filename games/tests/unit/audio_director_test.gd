@@ -184,7 +184,7 @@ func test_cues_duck_the_music_then_release() -> void:
 
 
 func test_pre_rendered_stem_files_play_without_a_generator_and_loop_past_the_intro() -> void:
-	var path := "res://games/kart_race/music/results.ogg"
+	var path := "res://games/demo/music/warm_up_bed.ogg"
 	AudioDirector.play_music({"name": "files", "stem_files": {"mix": path}, "loop_from": 1.5}, 150.0)
 	await _until(func(): return AudioDirector.is_music_playing())
 	assert_bool(AudioDirector.is_music_playing()).is_true()

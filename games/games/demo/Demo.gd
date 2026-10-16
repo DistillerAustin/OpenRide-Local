@@ -6,9 +6,14 @@ extends Game
 ##   - a TargetBand on the HUD, music and effects from AudioDirector
 ##   - points only through award(), which applies the effort multiplier and the freezes
 
+const DemoMusic := preload("res://games/demo/DemoMusic.gd")
+
+## "Warm Up" (DemoMusic, rendered by games/tools/music, docs/GAMES.md "Rendered music"): the
+## bed (drums, bass) always; the harmony and lead come in as cadence nears the target.
 const MUSIC_STYLE := {
-	"name": "demo_drive",
-	# Drums and bass always; harmony and lead come in as cadence nears the target.
+	"name": "warm_up",
+	"stem_files": DemoMusic.STEM_FILES,
+	"loop_from": DemoMusic.LOOP_FROM,
 	"stem_gates": {"harmony": 0.5, "lead": 0.85},
 }
 ## Logs lean and ball outcomes every frame, for steering checks on the bike (docs/GAMES.md).
@@ -101,8 +106,13 @@ func _on_prepare(seg: Dictionary) -> void:
 	_cadence_band = TargetBand.new("cadence", 0, 130, logic.cadence_floor, INF, "rpm")
 	_cadence_band.source = func(): return InputBus.cadence
 	hud.add_widget(_cadence_band)
-	# One beat per pedal stroke at a comfortable cadence above the floor.
-	AudioDirector.play_music(MUSIC_STYLE, logic.cadence_floor + 20.0, int(seg.get("seed", 0)))
+	# A rendered track at its own tempo; the same request every segment, so it plays on.
+	for sound in DemoMusic.SOUNDS:
+		var rendered := load(DemoMusic.SOUNDS[sound]) as AudioStream
+		if rendered:
+			AudioDirector.register_sound(sound, rendered)
+	AudioDirector.play_music(MUSIC_STYLE, DemoMusic.BPM)
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, GameMix.master_effects())
 
 
 func _on_frame(delta: float) -> void:
