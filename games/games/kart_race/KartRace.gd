@@ -423,18 +423,16 @@ func _build_hud() -> void:
 				_kart_hud.banner("LAP %d/%d" % [lap + 1, r.laps], 1.1)))
 
 
-## Presentation agent: music and effects (KartAudio: the kart_circuit style with stems and a
-## final-lap variation, engine and tyre loops, every effect through AudioDirector).
+## Presentation agent: music and effects (KartAudio: each track's rendered theme and its final-lap
+## version, engine and tyre loops, every effect through AudioDirector).
 func _build_audio() -> void:
 	if _audio:
 		_audio.queue_free()
 	_audio = KartAudio.new()
 	_audio.game = self
-	_audio.music_seed = int(segment.get("seed", 0))
 	add_child(_audio)
 	if _kart_hud:  # the place cue lands on the badge's pop
 		_kart_hud.place_popped.connect(_audio.on_place_popped)
-	_audio.start_music()
 	race_began.connect(func(r: KartRaceLogic): _audio.listen(r))
 
 

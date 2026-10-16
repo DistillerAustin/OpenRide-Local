@@ -1,15 +1,15 @@
 class_name KartAudio
 extends Node
-## Kart Race's sound (#43): the music, its stems and tempo, and every effect, all through the
-## framework's AudioDirector (SFX bus, MusicGen, SfxSynth). It only listens and reads: the race's
-## events, the rider's KartState and the HUD's place pops.
+## Kart Race's sound (#43): the music and every effect, all through the framework's
+## AudioDirector. It only listens and reads: the race's events, the rider's KartState and the
+## HUD's place pops.
 ##
-## - **Music**: the `kart_circuit` style (racing electronica), one and a half beats per pedal
-##   stroke. Its tempo follows the rider's cadence on phrase boundaries (a request a few seconds
-##   ahead, once a new cadence has held). Stems come in with `set_intensity`: drums and bass on
-##   the grid, the arpeggio in the race, the lead near the front, in a boost and on the final
-##   lap, which also swaps to a lifted variation (up a tone, an off-beat bass, a busier lead,
-##   louder), pre-rendered off the main thread when the race starts so it's ready.
+## - **Music**: produced tracks rendered offline (games/tools/kart_music, KartMusicIndex), one
+##   theme per track, played as pre-rendered stems (AudioDirector `stem_files`): an intro over
+##   the grid, then a verse-chorus-verse-bridge-chorus loop. The final lap crossfades to its own
+##   version (a key change up, double-time hats, an extra lead), loaded ahead when the race
+##   starts. The results board loops a laid-back groove; the podium plays a fanfare sting (a
+##   cue, so the music ducks under it).
 ## - **Loops** on this node's own players (SFX bus, so the rider's effects volume applies):
 ##   - the rider's engine, two synth layers (KartSfx.ENGINES) crossfaded and pitched by speed,
 ##     louder on the pedals, brighter in a boost (`engine_mix`);
@@ -25,13 +25,8 @@ extends Node
 ##   under the countdown and the lap and final-lap banners (AudioDirector.duck_music). Levels
 ##   are this file's constants, checked by tests/render_kart_audio.gd.
 
-const STYLE := {"name": "kart_circuit", "stem_gates": {"harmony": 0.45, "lead": 0.7}}
-## The final lap's variation (MusicStyle overrides).
-const FINAL_LAP := {"transpose": 2, "energy": 1.0, "lead_density": 0.8, "bass": "offbeat", "loudness": 1.25}
-const CADENCE_RANGE := Vector2(70.0, 100.0)  ## the tempo follows cadence within this
-const TEMPO_STEP := 5.0
-const TEMPO_HOLD_SEC := 6.0  ## a new cadence must hold this long before the tempo follows
-const DEFAULT_CADENCE := 85.0
+const DEFAULT_THEME := "meadow_ring"  ## for a track without a theme of its own
+const FANFARE_ROOT := 11  ## kart_fanfare is in B; it's pitched to the final lap's key
 const SILENT_DB := -60.0
 
 ## The engine. Pitch (playback rate of the 100 Hz layers) from idle to ENGINE_TOP_SPEED, on an
@@ -70,13 +65,11 @@ const PRIORITY := ["kart_count", "kart_go", "kart_tier1", "kart_tier2", "kart_ti
 const ENGINE_DUCK_DB := -5.0
 const ENGINE_DUCK_SEC := 0.35
 
-var music_seed := 0
 ## The game, for its pause state.
 var game: Game
 
-var tempo_cadence := DEFAULT_CADENCE  ## the cadence the music plays at (× the style's 1.5)
+var theme := DEFAULT_THEME  ## the race's music theme (KartMusicIndex.THEMES)
 var final_lap := false
-var intensity := 0.0
 
 var _engine_lo: AudioStreamPlayer
 var _engine_hi: AudioStreamPlayer
@@ -88,11 +81,9 @@ var _crowd: AudioStreamPlayer
 var _loops: Array[AudioStreamPlayer] = []
 var _count_shown := -1
 var _roulette_tick := 0.0
-var _want_cadence := DEFAULT_CADENCE
-var _want_for := 0.0
 var _crowd_at := Vector3.ZERO
 var _race: KartRaceLogic
-var _prewarmed := ""
+var _flow := ""
 var _racing := false
 var _clock := 0.0  # seconds of step()s, for the place cue's gap
 var _place_at := -100.0  # _clock at the last place cue
@@ -115,6 +106,9 @@ func _ready() -> void:
 	_sizzle = _loop(KartSfx.SIZZLE, "Sizzle")
 	_crowd = _loop("kart_crowd", "Crowd")
 	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, master_effects())
+	var podium := KartMusicIndex.DIR + "/" + KartMusicIndex.PODIUM
+	if ResourceLoader.exists(podium):
+		AudioDirector.register_sound("kart_podium", load(podium))
 
 
 ## The whole mix's limiter: nothing the game plays can clip.
@@ -137,26 +131,20 @@ func _loop(sound: String, player_name: String) -> AudioStreamPlayer:
 	return p
 
 
-## The first music of the segment.
-func start_music(cadence := DEFAULT_CADENCE) -> void:
-	tempo_cadence = tempo_cadence_for(cadence)
-	_want_cadence = tempo_cadence
-	final_lap = false
-	_request()
-	set_intensity(0.3)
-
-
-## A new race: hook its events, back to the normal music, and pre-render the final lap's.
+## A new race: its theme from the intro, the final lap's version loading in the background,
+## and its events hooked.
 func listen(race: KartRaceLogic) -> void:
 	_race = race
 	_count_shown = -1
 	_crowd_at = race.track.position_at(0.0, 0.0)
 	for i in _rival_ids.size():
 		_rival_ids[i] = -1
-	if final_lap:
-		final_lap = false
-		_request()
-	_prewarm_final()
+	theme = theme_for(race.track.def.id if race.track.def else "")
+	final_lap = false
+	_request()
+	var final_path := music_path(theme, true)
+	if ResourceLoader.exists(final_path):
+		ResourceLoader.load_threaded_request(final_path)  # cached for the final lap's swap
 	var e := race.events
 	var rider := KartRaceLogic.RIDER
 	e.race_started.connect(func():
@@ -168,8 +156,9 @@ func listen(race: KartRaceLogic) -> void:
 			AudioDirector.duck_music(DUCK_DB, DUCK_SEC.lap))
 	e.final_lap.connect(func(id: int):
 		if id == rider:
-			if race.laps > 1:
-				_sfx("kart_fanfare")  # with the "FINAL LAP!" banner
+			if race.laps > 1:  # with the "FINAL LAP!" banner, in the new key
+				AudioDirector.play_sfx("kart_fanfare", SFX_DB.kart_fanfare, fanfare_pitch(theme))
+				_engine_duck = ENGINE_DUCK_SEC
 				AudioDirector.duck_music(DUCK_DB, DUCK_SEC.final)
 			final_lap = true
 			_request())
@@ -220,7 +209,7 @@ func _sfx(sound: String, pitch := 1.0) -> void:
 		_engine_duck = ENGINE_DUCK_SEC
 
 
-## Every frame, from the game: the loops, the countdown, the roulette, intensity and tempo.
+## Every frame, from the game: the loops, the countdown, the roulette, the results music.
 ## `flow` is the game's Flow name ("COUNTDOWN", "RACING", "RESULTS", "PODIUM", …).
 func step(race: KartRaceLogic, flow: String, delta: float) -> void:
 	if race == null:
@@ -255,10 +244,13 @@ func step(race: KartRaceLogic, flow: String, delta: float) -> void:
 		_step_rivals(race, k, on_track)
 	else:
 		_step_drift_and_crowd(k, flow, racing)
-	# Stems and tempo.
-	set_intensity(intensity_for(flow, k.place, k.boost_time > 0.0, final_lap))
-	if racing:
-		_follow_cadence(InputBus.cadence, delta)
+	# The results groove and the podium sting.
+	if flow != _flow:
+		_flow = flow
+		if flow == "RESULTS":
+			AudioDirector.play_music(results_request(), 150.0)
+		elif flow == "PODIUM":
+			AudioDirector.play_cue("kart_podium")
 
 
 ## The nearest bots' engines: each voice keeps its bot while that bot stays among the nearest.
@@ -304,31 +296,10 @@ func _process(_delta: float) -> void:
 		p.stream_paused = paused
 
 
-func set_intensity(value: float) -> void:
-	if absf(value - intensity) > 0.001:
-		intensity = value
-		AudioDirector.set_intensity(value)
-
-
 ## Silences the loops (the segment is over).
 func stop() -> void:
 	for p: AudioStreamPlayer in _loops:
 		p.stop()
-
-
-## 0-1 for the stems: drums and bass on the grid (0.3), the arpeggio while racing (0.5), the lead
-## in the top three or a boost (0.8), everything on the final lap and the podium (1.0).
-static func intensity_for(flow: String, place: int, boosting: bool, final: bool) -> float:
-	match flow:
-		"RACING":
-			if final:
-				return 1.0
-			return 0.8 if (place >= 1 and place <= 3) or boosting else 0.55
-		"RESULTS":
-			return 0.55
-		"PODIUM":
-			return 1.0
-	return 0.3
 
 
 ## The engine layers' playback rate for a kart speed (m/s): a low idle climbing exponentially
@@ -390,54 +361,42 @@ static func closing_speed(k: KartState, o: KartState) -> float:
 	return (vk - vo).dot(to / d)
 
 
-## The cadence the music follows: the rider's, clamped and stepped (so small wobbles don't
-## re-render the music).
-static func tempo_cadence_for(cadence: float) -> float:
-	return snappedf(clampf(cadence, CADENCE_RANGE.x, CADENCE_RANGE.y), TEMPO_STEP)
+## The theme for a track id: its own, else DEFAULT_THEME.
+static func theme_for(track_id: String) -> String:
+	return track_id if KartMusicIndex.THEMES.has(track_id) else DEFAULT_THEME
 
 
-## Asks for a tempo change once a new cadence has held for TEMPO_HOLD_SEC (AudioDirector swaps it
-## in on the next phrase boundary).
-func _follow_cadence(cadence: float, delta: float) -> void:
-	if cadence < 30.0:
-		return  # coasting: keep the tempo
-	var want := tempo_cadence_for(cadence)
-	if want != _want_cadence:
-		_want_cadence = want
-		_want_for = 0.0
-	if want == tempo_cadence:
-		return
-	_want_for += delta
-	if _want_for >= TEMPO_HOLD_SEC:
-		tempo_cadence = want
-		_request()
-		_prewarm_final()
+static func music_path(theme_id: String, final: bool) -> String:
+	var e: Dictionary = KartMusicIndex.THEMES[theme_for(theme_id)]
+	return KartMusicIndex.DIR + "/" + str(e.final if final else e.main)
+
+
+## The AudioDirector music request for a theme (`final`: the final lap's version).
+static func music_style(theme_id: String, final: bool) -> Dictionary:
+	var e: Dictionary = KartMusicIndex.THEMES[theme_for(theme_id)]
+	return {"name": "kart_%s%s" % [theme_for(theme_id), "_final" if final else ""],
+		"stem_files": {"mix": music_path(theme_id, final)},
+		"loop_from": float(e.final_loop if final else e.main_loop)}
+
+
+static func results_request() -> Dictionary:
+	return {"name": "kart_results", "stem_files": {"mix": KartMusicIndex.DIR + "/" + KartMusicIndex.RESULTS}, "loop_from": 0.0}
+
+
+## The final-lap fanfare's pitch: its B moved to the final lap's key (the nearest way).
+static func fanfare_pitch(theme_id: String) -> float:
+	var key := int(KartMusicIndex.THEMES[theme_for(theme_id)].final_key)
+	var d := posmod(key - FANFARE_ROOT + 6, 12) - 6
+	return pow(2.0, d / 12.0)
 
 
 func music_request() -> Dictionary:
-	var style := STYLE.duplicate(true)
-	if final_lap:
-		style.merge(FINAL_LAP, true)
-	return style
+	return music_style(theme, final_lap)
 
 
 func _request() -> void:
-	AudioDirector.play_music(music_request(), tempo_cadence, music_seed)
-
-
-## Renders the final lap's variation into MusicGen's disk cache on a worker thread, so the swap
-## on the final lap only loads it.
-func _prewarm_final() -> void:
-	if not AudioDirector.music_enabled or not AudioDirector.has_music_generator() or DisplayServer.get_name() == "headless":
-		return
-	var style := STYLE.duplicate(true)
-	style.merge(FINAL_LAP, true)
-	var request := {"style": style, "tempo_bpm": tempo_cadence, "seed": music_seed}
-	var key := JSON.stringify(request)
-	if key == _prewarmed:
-		return
-	_prewarmed = key
-	WorkerThreadPool.add_task(func(): MusicGen.generate(request), false, "kart final-lap music")
+	var e: Dictionary = KartMusicIndex.THEMES[theme]
+	AudioDirector.play_music(music_request(), float(e.bpm))
 
 
 func _set_loop(p: AudioStreamPlayer, on: bool, pitch: float, db: float) -> void:

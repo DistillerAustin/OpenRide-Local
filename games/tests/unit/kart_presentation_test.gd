@@ -3,9 +3,9 @@ extends GdUnitTestSuite
 ## in its Kart Race skin and every kart widget at its longest text, with nothing overlapping or
 ## off screen; the skin's layout keys are opt-in and clear; a real touch on the item button uses
 ## the item and a touch elsewhere doesn't; the results board and the podium run with no input
-## and advance on time; every effect renders cleanly at a level that never clips; the music
-## style renders; the audio's rules (stems, tempo, the engine model, the bot-engine voice cap,
-## the duck and the place cue) hold.
+## and advance on time; every effect renders cleanly at a level that never clips; every track
+## has its music; the audio's rules (the engine model, the bot-engine voice cap, the duck and
+## the place cue) hold.
 
 const Fixtures := preload("res://tests/kart_fixtures.gd")
 const Dsp := preload("res://audio/Dsp.gd")
@@ -757,6 +757,8 @@ func test_the_audio_ducks_under_banners_and_cues_the_place_pop() -> void:
 	var on_sound := func(sound: String, _bus: String): played.append(sound)
 	AudioDirector.sound_played.connect(on_sound)
 	AudioDirector._game_duck_left = 0.0
+	AudioDirector._cue_left = 0.0  # no cue (an earlier scene's podium sting) holding its deeper duck
+	AudioDirector.duck_db = 0.0
 	race.events.lap_completed.emit(KartRaceLogic.RIDER, 1, 30.0)
 	assert_array(played).contains(["kart_lap"])
 	assert_float(AudioDirector._game_duck_left).is_equal(KartAudio.DUCK_SEC.lap)
@@ -779,43 +781,46 @@ func test_the_audio_ducks_under_banners_and_cues_the_place_pop() -> void:
 	audio.stop()
 
 
-func test_the_kart_music_style_renders_its_stems_and_final_lap_variation() -> void:
-	var was := MusicGen.cache_enabled
-	MusicGen.cache_enabled = false
-	assert_object(MusicGen.style("kart_circuit")).is_not_null()
-	var normal := MusicGen.generate({"style": KartAudio.STYLE, "tempo_bpm": 85.0, "seed": 3})
-	var final_style := KartAudio.STYLE.duplicate(true)
-	final_style.merge(KartAudio.FINAL_LAP, true)
-	final_style["bars"] = 4
-	var final := MusicGen.generate({"style": final_style, "tempo_bpm": 85.0, "seed": 3})
-	MusicGen.cache_enabled = was
-	assert_array(normal.keys()).contains_exactly_in_any_order(MusicGen.STEMS)
-	var n := Dsp.frames(normal.drums)
-	for stem in MusicGen.STEMS:
-		assert_int(Dsp.frames(normal[stem])).is_equal(n)
-	# One and a half beats per pedal stroke: 85 rpm plays at 127.5 bpm.
-	assert_int(n).is_equal(MusicGen.loop_samples(127.5))
-	assert_array(final.keys()).contains_exactly_in_any_order(MusicGen.STEMS)
-	# The variation is lifted: another tune from the same seed.
-	var base_tune := MusicGen.compose(MusicGen.resolve_style(KartAudio.STYLE), 3)
-	var final_tune := MusicGen.compose(MusicGen.resolve_style(final_style), 3)
-	assert_bool(base_tune.lead == final_tune.lead).is_false()
-	# Every stem has a gate the intensity crosses.
-	for stem in ["harmony", "lead"]:
-		assert_bool(KartAudio.STYLE.stem_gates.has(stem)).is_true()
+## The music: every cup track has its rendered theme and final-lap version (a key change up),
+## upbeat, looping past its intro, inside the APK budget; they play as AudioDirector stem files.
+func test_every_track_has_its_music_and_final_lap_version() -> void:
+	var total := 0
+	for track_id in KartTracks.CUP:
+		assert_bool(KartMusicIndex.THEMES.has(track_id)).override_failure_message("no music for " + track_id).is_true()
+		var e: Dictionary = KartMusicIndex.THEMES[track_id]
+		assert_float(float(e.bpm)).is_between(140.0, 160.0)
+		assert_int(int(e.final_key)).is_equal(posmod(int(e.key) + 2, 12))
+		for final in [false, true]:
+			var path := KartAudio.music_path(track_id, final)
+			var stream := load(path) as AudioStreamOggVorbis
+			assert_object(stream).override_failure_message("can't load " + path).is_not_null()
+			var loop_from := float(e.final_loop if final else e.main_loop)
+			assert_float(loop_from).is_between(1.0, stream.get_length() / 3.0)
+			assert_float(stream.get_length()).is_greater(20.0 if final else 60.0)  # never a 30 s loop
+			total += FileAccess.get_file_as_bytes(path).size()
+		var pitch := KartAudio.fanfare_pitch(track_id)
+		assert_float(pitch).is_between(0.7, 1.42)
+	for f in [KartMusicIndex.RESULTS, KartMusicIndex.PODIUM]:
+		total += FileAccess.get_file_as_bytes(KartMusicIndex.DIR + "/" + f).size()
+	assert_int(total).override_failure_message("music is %d bytes" % total).is_less(4 * 1024 * 1024)
+	# Unknown tracks (test fixtures) fall back to the default theme.
+	assert_str(KartAudio.theme_for("no_such_track")).is_equal(KartAudio.DEFAULT_THEME)
+
+
+func test_the_music_plays_as_looping_stem_files() -> void:
+	var style := KartAudio.music_style("canyon_dash", true)
+	assert_bool(style.has("stem_files")).is_true()
+	var stems := AudioDirector.stems_from_files(style)
+	assert_array(stems.keys()).contains_exactly(["mix"])
+	var s := stems.mix as AudioStreamOggVorbis
+	assert_bool(s.loop).is_true()
+	assert_float(s.loop_offset).is_equal_approx(float(KartMusicIndex.THEMES.canyon_dash.final_loop), 0.001)
+	# A copy: the imported resource itself is left alone.
+	assert_bool(s == load(KartAudio.music_path("canyon_dash", true))).is_false()
+	assert_str(KartAudio.results_request().name).is_equal("kart_results")
 
 
 func test_the_audio_rules() -> void:
-	# Stems: drums and bass on the grid, more in the race, everything on the final lap.
-	assert_float(KartAudio.intensity_for("COUNTDOWN", 8, false, false)).is_less(KartAudio.STYLE.stem_gates.harmony)
-	assert_float(KartAudio.intensity_for("RACING", 6, false, false)).is_between(KartAudio.STYLE.stem_gates.harmony, KartAudio.STYLE.stem_gates.lead - 0.01)
-	assert_float(KartAudio.intensity_for("RACING", 2, false, false)).is_greater_equal(KartAudio.STYLE.stem_gates.lead)
-	assert_float(KartAudio.intensity_for("RACING", 7, true, false)).is_greater_equal(KartAudio.STYLE.stem_gates.lead)
-	assert_float(KartAudio.intensity_for("RACING", 8, false, true)).is_equal(1.0)
-	# Tempo follows cadence in steps, within the range.
-	assert_float(KartAudio.tempo_cadence_for(87.0)).is_equal(85.0)
-	assert_float(KartAudio.tempo_cadence_for(40.0)).is_equal(KartAudio.CADENCE_RANGE.x)
-	assert_float(KartAudio.tempo_cadence_for(140.0)).is_equal(KartAudio.CADENCE_RANGE.y)
 	# The engine climbs with speed.
 	var last := 0.0
 	for v in [0.0, 5.0, 10.0, 20.0, 25.0]:

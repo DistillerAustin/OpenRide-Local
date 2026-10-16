@@ -4,19 +4,19 @@ extends SceneTree
 ## the way the AudioServer would: each AudioStreamPlayer's stream read at its pitch_scale and
 ## volume_db, through its bus's volume (the music duck included), frame by frame.
 ##   $GODOT_BIN --headless --path games -s res://tests/render_kart_audio.gd -- --out=/abs/dir
-##       [--only=sfx,engine,bots,music,race] [--seconds=0]
+##       [--only=sfx,engine,bots,race] [--seconds=0]
 ## Writes 22.05 kHz mono 32-bit float WAVs (floats keep any overs visible), plus JSON timelines:
 ## - `sfx/<name>.wav`: every kart effect and racer horn, as AudioDirector would play it.
 ## - `engine_sweep.wav` (+ `.json`): KartAudio driven by a scripted kart: idle, full throttle to
 ##   cruise, a drift through its three tiers, the boost, a coast down and idle again.
 ## - `bots_pass.wav` (+ `.json`): the rider cruising while seven bots close in, pass and drop
 ##   back, with the bot-engine voices KartAudio keeps.
-## - `music_<state>.wav`: one loop of the kart_circuit stems at each state's intensity (intro,
-##   race, front, final lap, results), and `music_lift.wav`: the race music crossfading into
-##   the final lap's.
-## - `race_mix.wav` (+ `race_music.wav`, `race_sfx.wav`, `race.json`): a headless race (a bot
-##   drives the rider) from the flyover to the results, every sound mixed as played; the JSON
-##   has each sound with its frame, the HUD's pops with theirs, and the duck. `--seconds=N`
+## - `race_mix.wav` (+ `race_sfx.wav`, `race.json`): a headless race (a bot drives the rider)
+##   from the flyover to the results, every sound mixed as played; the JSON has each sound with
+##   its frame, the HUD's pops with theirs, the duck, and the music: compressed music files
+##   (Kart Race's OGG tracks) can't be decoded here, so `race.json` logs each one's position
+##   and gain per frame for an offline mix (`music` frames: [t, path, loop_from, seconds, gain]),
+##   and `race_mix.wav` holds only the sounds Godot can hand over as PCM. `--seconds=N`
 ##   stops after N seconds of racing (0: the whole race).
 ## Mono throughout: every game sound is mono and non-positional.
 
@@ -36,7 +36,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	await process_frame
-	var only := "sfx,engine,bots,music,race"
+	var only := "sfx,engine,bots,race"
 	var seconds := 0.0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
@@ -65,8 +65,6 @@ func _run() -> void:
 		await _render_engine(director)
 	if "bots" in only:
 		await _render_bots(director)
-	if "music" in only:
-		_render_music()
 	if "race" in only:
 		await _render_race(director, seconds)
 	print("RENDER done in %.1f s -> %s" % [(Time.get_ticks_msec() - t0) / 1000.0, out_dir])
@@ -209,65 +207,6 @@ func _render_bots(director: Node) -> void:
 	print("RENDER bots_pass %.1f s" % t)
 
 
-# --- Music ---
-
-func _render_music() -> void:
-	var cadence: float = KA.DEFAULT_CADENCE
-	var seed := 7
-	var base: Dictionary = KA.STYLE.duplicate(true)
-	var final: Dictionary = KA.STYLE.duplicate(true)
-	final.merge(KA.FINAL_LAP, true)
-	var gates: Dictionary = base.stem_gates
-	for a in OS.get_cmdline_user_args():  # --final=<json>: try other final-lap overrides
-		if a.begins_with("--final="):
-			final.merge(JSON.parse_string(a.substr(8)), true)
-	var bpm := MusicGen.music_tempo(MusicGen.resolve_style(base), cadence)
-	var normal := MusicGen.render_samples(MusicGen.resolve_style(base), bpm, seed)
-	var lifted := MusicGen.render_samples(MusicGen.resolve_style(final), bpm, seed)
-	var states := {
-		"intro": [normal, KA.intensity_for("COUNTDOWN", 8, false, false)],
-		"race": [normal, KA.intensity_for("RACING", 6, false, false)],
-		"front": [normal, KA.intensity_for("RACING", 2, false, false)],
-		"final": [lifted, KA.intensity_for("RACING", 4, false, true)],
-		"results": [normal, KA.intensity_for("RESULTS", 4, false, false)],
-	}
-	var gain := db_to_linear(linear_to_db(0.8))  # the Music bus at the default music_volume
-	for state in states:
-		var stems: Dictionary = states[state][0]
-		var level: float = states[state][1]
-		var out := PackedFloat32Array()
-		out.resize((stems.drums as PackedFloat32Array).size())
-		for stem in stems:
-			if level >= float(gates.get(stem, 0.0)):
-				Dsp.mix_into(out, stems[stem], 0, gain)
-		write_wav("%s/music_%s.wav" % [out_dir, state], out)
-	# The lift: 16 s of the race music (intensity 0.55), then the final lap's crossfading in
-	# over AudioDirector's 2 s, as the final-lap banner shows.
-	var n := int(30.0 * SR)
-	var lift := PackedFloat32Array()
-	lift.resize(n)
-	var at := int(16.0 * SR)
-	var fade := int(2.0 * SR)  # AudioDirector.CROSSFADE_SEC
-	var race_level: float = KA.intensity_for("RACING", 6, false, false)
-	for stem in normal:
-		var a: PackedFloat32Array = normal[stem]
-		var b: PackedFloat32Array = lifted[stem]
-		var on_a: bool = race_level >= float(gates.get(stem, 0.0))
-		for i in n:
-			var w := clampf(float(i - at) / fade, 0.0, 1.0)
-			var y := 0.0
-			if on_a:
-				y += a[i % a.size()] * cos(w * PI / 2)
-			if i >= at:
-				y += b[(i - at) % b.size()] * sin(w * PI / 2)
-			lift[i] += y * gain
-	write_wav(out_dir + "/music_lift.wav", lift)
-	_write_json(out_dir + "/music.json", {"tempo_bpm": bpm, "final": final,
-		"loop_sec": float((normal.drums as PackedFloat32Array).size()) / SR, "gates": gates,
-		"levels": states.keys().map(func(s): return [s, states[s][1]])})
-	print("RENDER music")
-
-
 # --- A race ---
 
 func _render_race(director: Node, seconds: float) -> void:
@@ -322,12 +261,11 @@ func _render_race(director: Node, seconds: float) -> void:
 	for v in mix.master:
 		pre_peak = maxf(pre_peak, absf(v))
 	write_wav(out_dir + "/race_mix.wav", limited(mix.master))
-	write_wav(out_dir + "/race_music.wav", mix.groups.get("music", PackedFloat32Array()))
 	write_wav(out_dir + "/race_sfx.wav", mix.minus("music"))
 	for g in mix.groups:
 		if g != "music":
 			write_wav("%s/race_%s.wav" % [out_dir, g], mix.groups[g])
-	_write_json(out_dir + "/race.json", {"events": mix.events, "hud": pops, "duck_db": duck,
+	_write_json(out_dir + "/race.json", {"events": mix.events, "hud": pops, "duck_db": duck, "music": mix.music,
 		"race_start": mix.race_start, "finished_at": finished_at, "laps": game.race.laps,
 		"groups": mix.groups.keys(), "pre_limiter_peak_db": linear_to_db(pre_peak),
 		"master_limiter": _master_limiter() != null})
@@ -436,6 +374,7 @@ class Mixer:
 	var master := PackedFloat32Array()
 	var groups := {}  # group name -> PackedFloat32Array
 	var events := []  # [{t, sound, bus, db, pitch}]
+	var music := []  # per frame: [[t, path, loop_from, seconds into the file, gain], ...] (compressed music)
 	var t := 0.0
 	var race_start := -1.0
 	var _voices := {}  # key -> Voice
@@ -457,7 +396,7 @@ class Mixer:
 		if sound == "kart_go" and race_start < 0.0:
 			race_start = t
 		var v := Voice.new()
-		v.data = tool.pcm(p.stream)
+		v.data = tool.pcm(p.stream) if p.stream is AudioStreamWAV else PackedFloat32Array()  # an OGG sting: mixed offline
 		v.loop = false
 		v.player = p
 		v.group = "oneshot"
@@ -471,7 +410,7 @@ class Mixer:
 		for i in sync.stream_count:
 			var v := Voice.new()
 			v.stream = sync.get_sync_stream(i)
-			v.data = tool.pcm(v.stream)
+			v.data = tool.pcm(v.stream) if v.stream is AudioStreamWAV else PackedFloat32Array()
 			v.loop = true
 			v.player = deck
 			v.stem = i
@@ -527,6 +466,7 @@ class Mixer:
 			elif v:
 				v.active = false
 		var dead := []
+		var frame_music := []
 		for key in _voices:
 			var v: Voice = _voices[key]
 			if not v.active:
@@ -546,6 +486,16 @@ class Mixer:
 					g1 = _gain(v.player)
 				else:
 					g1 = _gain(v.player) if v.player.playing else 0.0
+			if v.data.is_empty() and v.group == "music":  # compressed: log it for an offline mix
+				var path := str(v.stream.get_meta("source_path", v.stream.resource_path))
+				var length := v.stream.get_length()
+				var loop_from := float(v.stream.get("loop_offset")) if "loop_offset" in v.stream else 0.0
+				var sec := v.pos / SR
+				if length > 0.0 and sec >= length:
+					sec = loop_from + fmod(sec - loop_from, maxf(0.01, length - loop_from))
+				frame_music.append([snappedf(t - DT, 0.0001), path, loop_from, snappedf(sec, 0.0001), snappedf(g1, 0.00001)])
+				v.pos += pitch * n
+				continue
 			if not groups.has(v.group):
 				var buf := PackedFloat32Array()
 				buf.resize(end)
@@ -555,6 +505,8 @@ class Mixer:
 			groups[v.group] = buf
 		for key in dead:
 			_voices.erase(key)
+		if not frame_music.is_empty():
+			music.append(frame_music)
 		_n = end
 
 	func _group_of(p: AudioStreamPlayer) -> String:

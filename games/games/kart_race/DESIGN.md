@@ -626,15 +626,18 @@ The HUD follows the web slice's layout.
   tier bursts, tier-coloured drift-boost flames, hit stars, shield and bump sparks;
   `draft_screen()` feeds the HUD's draft streaks. The views take their drift slide from
   `KartState.slide`; KartFx only sets `boost_glow`.
-- `audio/`: `KartAudio` (music `kart_circuit` with stem intensity and a final-lap variation, tempo
-  from cadence on phrase boundaries; the rider's engine as two synth layers pitched by speed
+- `audio/`: `KartAudio` (music: each track's produced theme, rendered offline by
+  `tools/kart_music/render_kart_music.py` to `music/*.ogg` and indexed in `KartMusicIndex`, played
+  as AudioDirector `stem_files` with the intro once and the rest looping; the final lap crossfades
+  to a version a tone up with double-time hats and an extra lead; a results loop and a podium
+  sting; the rider's engine as two synth layers pitched by speed
   (`engine_mix`), the nearest two bots' engines (`nearest_rivals`, `rival_db`, a pass-by bend),
   tyres, a spark sizzle per drift tier, the crowd; one-shots from the events and the HUD's
   `place_popped`, each on the frame its pop shows; a -1 dB limiter on Master, the music ducked
   3 dB under the countdown and banners, the engine dipped under priority cues) and `KartSfx`
   (single-voice SfxSynth presets, layered one-shots and the synth loops, all rendered once on a
   worker thread at load; plus each racer's horn as `horn_<racer id>`, the rider's at their
-  finish). The style is `res://audio/styles/kart_circuit.tres` (MusicGen only reads that folder).
+  finish).
   `tests/render_kart_audio.gd` renders all of it offline to WAVs with a timeline, for analysis.
 - HUD draw calls: see "Desktop draw calls after the Phase 2 merge" under the tablet budget.
 - Tests: `tests/unit/kart_presentation_test.gd`; screenshots: `tests/capture_kart_hud.gd`.
