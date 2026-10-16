@@ -627,9 +627,14 @@ The HUD follows the web slice's layout.
   `draft_screen()` feeds the HUD's draft streaks. The views take their drift slide from
   `KartState.slide`; KartFx only sets `boost_glow`.
 - `audio/`: `KartAudio` (music `kart_circuit` with stem intensity and a final-lap variation, tempo
-  from cadence on phrase boundaries; engine, rival, screech and crowd loops; one-shots from the
-  events) and `KartSfx` (18 presets, `kart_*`, plus each racer's horn as `horn_<racer id>`; the
-  rider's plays at their finish). The style is `res://audio/styles/kart_circuit.tres` (MusicGen
-  only reads that folder).
+  from cadence on phrase boundaries; the rider's engine as two synth layers pitched by speed
+  (`engine_mix`), the nearest two bots' engines (`nearest_rivals`, `rival_db`, a pass-by bend),
+  tyres, a spark sizzle per drift tier, the crowd; one-shots from the events and the HUD's
+  `place_popped`, each on the frame its pop shows; a -1 dB limiter on Master, the music ducked
+  3 dB under the countdown and banners, the engine dipped under priority cues) and `KartSfx`
+  (single-voice SfxSynth presets, layered one-shots and the synth loops, all rendered once on a
+  worker thread at load; plus each racer's horn as `horn_<racer id>`, the rider's at their
+  finish). The style is `res://audio/styles/kart_circuit.tres` (MusicGen only reads that folder).
+  `tests/render_kart_audio.gd` renders all of it offline to WAVs with a timeline, for analysis.
 - HUD draw calls: see "Desktop draw calls after the Phase 2 merge" under the tablet budget.
 - Tests: `tests/unit/kart_presentation_test.gd`; screenshots: `tests/capture_kart_hud.gd`.

@@ -39,7 +39,7 @@ const SILENT_DB := -60.0
 const ENGINE_PITCH := Vector2(0.85, 2.2)
 const ENGINE_TOP_SPEED := 22.0  ## m/s: a kart's cruise is ~20
 const ENGINE_BOOST_PITCH := 1.12
-const ENGINE_DB := -7.0  ## the layers' level at cruise on the pedals
+const ENGINE_DB := -8.5  ## the layers' level at cruise on the pedals
 const ENGINE_COAST_DB := -6.0  ## off the pedals
 ## Bot engines: the nearest few within RIVAL_RANGE m, RIVAL_DB at RIVAL_NEAR m, -6 dB per
 ## doubling beyond, faded out toward the edge of the range.
@@ -55,7 +55,7 @@ const SIZZLE_PITCH := [1.0, 1.0, 1.2, 1.45]
 ## One-shot levels (player volume_db), so the cues read over the engine and music.
 const SFX_DB := {
 	"kart_count": -2.0, "kart_go": 0.0, "kart_tier1": -1.0, "kart_tier2": 0.0, "kart_tier3": 0.0,
-	"kart_whoosh": -3.0, "kart_pickup": -1.0, "kart_roulette": -3.0, "kart_fire": -1.0,
+	"kart_whoosh": -3.0, "kart_pickup": -1.0, "kart_roulette": -3.0, "kart_fire": 0.0,
 	"kart_hit": -1.5, "kart_shield": -2.0, "kart_lap": -1.0, "kart_fanfare": 0.0, "kart_bump": -2.0,
 	"kart_place_up": -2.0, "kart_place_down": -5.0, "kart_cheer": -3.0,
 }
