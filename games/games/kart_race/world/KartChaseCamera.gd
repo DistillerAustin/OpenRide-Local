@@ -19,9 +19,11 @@ extends Camera3D
 ## Modes (the rider's Camera option): "chase" and "close". `hold` (with `held`) pins the camera
 ## for screenshots and cut-scenes.
 
+## "chase" sits high and back in a three-quarter view (the art bible, section 9): the kart's top
+## and the road ahead show over the driver's helmet. "close" is the same angle, nearer.
 const MODES := {
-	"chase": {"distance": 5.0, "height": 1.95, "look_ahead": 9.0, "look_height": 1.15, "fov": 0.0},
-	"close": {"distance": 3.5, "height": 1.45, "look_ahead": 7.0, "look_height": 0.95, "fov": 4.0},
+	"chase": {"distance": 5.6, "height": 2.6, "look_ahead": 10.0, "look_height": 0.9, "fov": 0.0},
+	"close": {"distance": 4.0, "height": 1.95, "look_ahead": 8.0, "look_height": 0.85, "fov": 4.0},
 }
 const YAW_SPRING := 5.0  ## 1/s: how quickly the camera swings round behind the kart
 const DIST_OMEGA := 7.0  ## the distance spring's natural frequency (critically damped)
