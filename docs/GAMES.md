@@ -1386,6 +1386,16 @@ back-to-back runs the A72s sat at 507 MHz and the tracker-on rate fell to 28-31 
 tier. The target (50 with the tracker on) isn't met: the remaining cost is the tracker's 1.2
 cores on a 4-core, throttling SoC, the render's CPU side, and the GDScript left in the tick.
 
+**After the UX polish pass (2026-10-15, Meadow Ring, 60 s of racing each, 1 s frame lines).**
+Tracker load on: 13 / 44.9 / 59 fps, tier 0 → 1, render CPU 5.1-7.8 ms counting only the
+viewports that rendered (2.0-2.3 renders a frame: the screen and the 3D view; the HUD's bakes
+almost never), 6 viewports. The A72s throttled to 1.1 GHz near the end. Camera off straight
+after, still throttled: 22 / 49.5 / 61, render CPU 4.2-7.1 ms. Camera off on the final build
+after a cool-down (CPU0 at 1.57 GHz): 31 / 51.3 / 61. The earlier 8.3-9.0 ms summed 17
+viewports, idle bakes' stale times included; on the desktop the bakes' real per-frame render
+cost was already about zero before this pass (`capture_kart_hud.gd`), so the render's CPU side is
+the 3D view and the screen's canvas.
+
 For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
 `OPENRIDE_GAMES kart_race perf game_ms=… ticks=… tick_ms=… sync_ms=… hud_ms=… process_ms=…
 frame_ms=… frame_max_ms=… game_max_ms=… render_cpu_ms=… render_gpu_ms=… viewports=… vp_renders=… fps=…
