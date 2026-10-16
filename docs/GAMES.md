@@ -572,7 +572,7 @@ generators can register without an autoload of their own.
 
 | Method | Behaviour |
 | --- | --- |
-| `play_music(style: Dictionary, tempo_bpm: float, seed := 0)` | `style` belongs to the game and is passed to the generator as is. The one key `AudioDirector` reads is `stem_gates`: `{stem_name: intensity}`, the intensity at which a stem plays (0 by default). The music renders off the main thread, which the intro card covers, then **crossfades in over 2 s**. The old music plays until then. Asking again for the same request changes nothing. Tempo = the segment's target cadence (one beat per pedal stroke). The same style and seed at a new tempo is a **tempo change**: it swaps in on the next phrase boundary instead (see "Tempo changes on a phrase boundary"). |
+| `play_music(style: Dictionary, tempo_bpm: float, seed := 0)` | `style` belongs to the game and is passed to the generator as is. The one key `AudioDirector` reads is `stem_gates`: `{stem_name: intensity}`, the intensity at which a stem plays (0 by default). The music renders off the main thread, which the intro card covers, then **crossfades in over 2 s**. The old music plays until then. Asking again for the same request changes nothing. Tempo = the segment's target cadence (one beat per pedal stroke). The same style and seed at a new tempo is a **tempo change**: it swaps in on the next phrase boundary instead (see "Tempo changes on a phrase boundary"). **Pre-rendered music:** a style with `stem_files: {stem: path}` plays those files (OGG Vorbis, say) instead of asking the generator, loaded off the main thread and looping from `loop_from` seconds, so an intro plays once (`AudioDirector.stems_from_files`; Kart Race's tracks). |
 | `set_intensity(value: float)` | 0-1. Stems fade in or out over 1.5 s as `value` crosses their gate. |
 | `stop_music(fade_sec := 2.0)` | Fades the music out |
 | `play_sfx(name, volume_db := 0.0, pitch := 1.0) -> bool` | An effect on `SFX`, from 8 voices. `false` means silence. |
@@ -688,7 +688,7 @@ exactly the same length: `drums`, `bass`, `harmony` and `lead`.
 | `heave` | Tug of War | Phrygian, heavy half-time drums, a bass that builds phrase by phrase |
 | `noir` | Safe Cracker | Harmonic minor sevenths, brushes and ride, walking bass, swung comping, sparse vibes |
 | `bright` | Cadence Karaoke | Major sevenths, backbeat, root-fifth bass, sixteenth-note arpeggio |
-| `racer` | Kart Race | Mixolydian, busy breakbeat, off-beat bass, stabs, detuned saw lead |
+| `racer` | (gallery; Kart Race now plays rendered tracks) | Mixolydian, busy breakbeat, off-beat bass, stabs, detuned saw lead |
 | `demo_drive` | the demo | Dorian four-on-the-floor with a pad |
 
 Each style's `suggested_gates` is a starting point for the game's `stem_gates`.
