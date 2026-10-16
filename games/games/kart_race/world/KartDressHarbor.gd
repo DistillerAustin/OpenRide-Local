@@ -55,6 +55,7 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	_sea(scenery)
 	_quay(props)
 	_piers(props)
+	_clocktower(props)
 	_houses(props)
 	_lights(props)
 	_lamp_posts(props)
@@ -210,6 +211,38 @@ func _lighthouse(parent: Node3D, props: Dictionary) -> void:
 	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis().scaled(Vector3.ONE * 1.3), at))
 	_bulbs.append(Transform3D(Basis().scaled(Vector3.ONE * 9.0), at + Vector3.UP * 17.9 * 1.3))
 	_bulb_colors.append(Color(1.0, 0.85, 0.5, 0.9))
+
+
+## The old town's clock tower: a stone shaft, a lit clock face on each side, an open belfry
+## and a copper spire.
+func _clocktower(props: Dictionary) -> void:
+	var lm := world.landmark("clocktower")
+	if lm.is_empty() or not world.clear_of_road(lm.p, 3.0):
+		return
+	var kit := KartMeshKit.new()
+	kit.ao_y0 = 0.0
+	kit.ao_y1 = 8.0
+	kit.ao_min = 0.7
+	var stone := Color(0.86, 0.8, 0.7, 0.1)
+	var trim := Color(0.96, 0.95, 0.92, 0.1)
+	kit.add(KartMeshKit.box(Vector3(5.0, 22.0, 5.0)), KartMeshKit.xf(Vector3(0, 9.0, 0)), stone)
+	for y: float in [6.0, 13.0, 20.2]:
+		kit.add(KartMeshKit.box(Vector3(5.4, 0.4, 5.4)), KartMeshKit.xf(Vector3(0, y, 0)), trim)
+	for k in 4:
+		var rot := Basis(Vector3.UP, k * PI * 0.5)
+		# The clock: a glowing face, a dark rim, two hands.
+		kit.add(KartMeshKit.cylinder(1.5, 1.5, 0.12, 14), Transform3D(rot * Basis(Vector3.RIGHT, PI * 0.5), rot * Vector3(0, 16.5, 2.52)), Color(1.0, 0.94, 0.78, 1.0))
+		kit.add(KartMeshKit.torus(1.45, 1.7, 14, 4), Transform3D(rot * Basis(Vector3.RIGHT, PI * 0.5), rot * Vector3(0, 16.5, 2.55)), Color(0.2, 0.18, 0.2, 0.0))
+		kit.add(KartMeshKit.box(Vector3(0.12, 1.0, 0.06)), Transform3D(rot, rot * Vector3(0, 16.9, 2.62)), Color(0.12, 0.1, 0.12, 0.0))
+		kit.add(KartMeshKit.box(Vector3(0.7, 0.12, 0.06)), Transform3D(rot, rot * Vector3(0.3, 16.5, 2.62)), Color(0.12, 0.1, 0.12, 0.0))
+		# The belfry's arch: a dark opening.
+		kit.add(KartMeshKit.box(Vector3(2.0, 2.4, 0.1)), Transform3D(rot, rot * Vector3(0, 21.8, 2.52)), Color(0.12, 0.1, 0.14, 0.0))
+	kit.add(KartMeshKit.box(Vector3(5.2, 3.2, 5.2)), KartMeshKit.xf(Vector3(0, 21.8, 0)), Color(0.8, 0.74, 0.64, 0.1))
+	kit.add(KartMeshKit.cylinder(0.0, 3.9, 6.0, 4), KartMeshKit.xf(Vector3(0, 26.4, 0), Vector3(0, 45, 0)), Color(0.36, 0.62, 0.55, 0.0))
+	kit.add(KartMeshKit.sphere(0.3, 6, 3), KartMeshKit.xf(Vector3(0, 29.6, 0)), Color(1.0, 0.82, 0.3, 0.3))
+	var at: Vector3 = lm.p - Vector3.UP * 0.3
+	var face: Vector3 = -(lm.out as Vector3)
+	world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, atan2(face.x, face.z)), at))
 
 
 ## Pastel houses with lit windows along the streets (not on the quay side).

@@ -18,6 +18,32 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	_fences(props)
 	_hay(props)
 	_barn(props)
+	_balloon(props)
+
+
+## A hot-air balloon tethered high over the fields: striped gores, a wicker basket on ropes.
+func _balloon(cells: Dictionary) -> void:
+	var lm := world.landmark("balloon")
+	if lm.is_empty():
+		return
+	var kit := KartMeshKit.new()
+	var stripes := [Color(0.95, 0.25, 0.2, 0.0), Color(1.0, 0.82, 0.2, 0.0), Color(0.2, 0.55, 0.95, 0.0), Color(0.98, 0.97, 0.94, 0.0)]
+	kit.paint = func(p: Vector3, _n: Vector3, _c: Color) -> Color:
+		var gore := posmod(int(floor((atan2(p.z, p.x) + PI) / TAU * 12.0)), 12)
+		var c: Color = stripes[gore % stripes.size()]
+		var shade := lerpf(0.7, 1.05, clampf(p.y * 0.5 + 0.5, 0.0, 1.0))
+		return Color(c.r * shade, c.g * shade, c.b * shade, 0.0)
+	kit.add(KartMeshKit.sphere(1.0, 12, 7), KartMeshKit.xf(Vector3(0, 9.0, 0), Vector3.ZERO, Vector3(6.0, 7.0, 6.0)), Color.WHITE)
+	kit.add(KartMeshKit.cylinder(3.4, 1.4, 3.0, 12), KartMeshKit.xf(Vector3(0, 2.2, 0)), Color.WHITE)
+	kit.paint = Callable()
+	for a in 4:
+		var u := TAU * (a + 0.5) / 4.0
+		var top := Vector3(cos(u) * 1.3, 0.7, sin(u) * 1.3)
+		var foot := Vector3(cos(u) * 0.6, -2.4, sin(u) * 0.6)
+		kit.add(KartMeshKit.box(Vector3(0.06, (top - foot).length(), 0.06)), Transform3D(along(top - foot), (top + foot) * 0.5), Color(0.3, 0.24, 0.18, 0.0))
+	kit.add(KartMeshKit.box(Vector3(1.4, 1.0, 1.4)), KartMeshKit.xf(Vector3(0, -2.9, 0)), Color(0.62, 0.42, 0.22, 0.0))
+	var at: Vector3 = lm.p + Vector3.UP * 26.0
+	world.cell(cells, lm.p).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, 0.4), at))
 
 
 ## Clumps of wildflowers on the embankments.

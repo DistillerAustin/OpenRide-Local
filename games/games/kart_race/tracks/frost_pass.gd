@@ -73,5 +73,7 @@ static func build() -> KartTrackDef:
 	def.landmarks = [
 		{"type": "lake", "s": lap - 20.0, "d": -46.0, "r": 28.0, "hero": true},
 		{"type": "lake", "s": m.lake + 50.0, "d": -88.0, "r": 70.0},
+		# Ice-fishing huts out on the big lake, seen all along the shore straight.
+		{"type": "huts", "s": m.lake + 50.0, "d": -88.0},
 	]
 	return def

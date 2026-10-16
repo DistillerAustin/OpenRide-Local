@@ -38,6 +38,48 @@ func dress(scenery: Node3D, foliage: Dictionary, props: Dictionary, woods: Array
 	scatter(props, [_snowman()], 10, 2.5, 9.0, Vector2(0.9, 1.1), func(_r: RandomNumberGenerator) -> int: return 0, 2.0, true, 0.1)
 	_cabins(props)
 	_lanterns(props)
+	_huts(props)
+
+
+## Ice-fishing huts out on the big lake, each a bright colour under a snow roof, and a jetty on
+## the start's tarn.
+func _huts(props: Dictionary) -> void:
+	var lm := world.landmark("huts")
+	if not lm.is_empty():
+		var colors := [Color(0.85, 0.2, 0.2, 0.0), Color(0.2, 0.45, 0.85, 0.0), Color(0.95, 0.75, 0.2, 0.0), Color(0.3, 0.65, 0.4, 0.0)]
+		var p0: Vector3 = lm.p
+		var ice_y := road_level(p0.x, p0.z) - 0.55
+		for k in 5:
+			var kit := KartMeshKit.new()
+			kit.ao_y0 = 0.0
+			kit.ao_y1 = 2.0
+			kit.ao_min = 0.7
+			kit.add(KartMeshKit.box(Vector3(2.2, 2.0, 2.6)), KartMeshKit.xf(Vector3(0, 1.0, 0)), colors[k % colors.size()])
+			kit.add(KartMeshKit.prism(Vector3(2.8, 1.0, 3.0)), KartMeshKit.xf(Vector3(0, 2.5, 0)), Color(0.95, 0.97, 1.0, 0.1))
+			kit.add(KartMeshKit.box(Vector3(0.7, 1.3, 0.06)), KartMeshKit.xf(Vector3(0, 0.65, 1.32)), Color(0.3, 0.2, 0.14, 0.0))
+			kit.add(KartMeshKit.box(Vector3(0.5, 0.4, 0.06)), KartMeshKit.xf(Vector3(0.6, 1.35, 1.32)), Color(1.0, 0.8, 0.45, 1.0))
+			var a := TAU * k / 5.0 + rng.randf_range(-0.3, 0.3)
+			var r := rng.randf_range(12.0, 38.0)
+			var at := Vector3(p0.x + cos(a) * r, ice_y, p0.z + sin(a) * r)
+			world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis(Vector3.UP, rng.randf() * TAU), at))
+	# The tarn's jetty: planks on posts from the near shore out over the ice.
+	for lake in world.landmarks("lake"):
+		if not lake.get("hero", false):
+			continue
+		var c: Vector3 = lake.p
+		var toward := Vector3(world.track.position_at(lake.s, 0.0) - c)
+		toward.y = 0.0
+		toward = toward.normalized()
+		var r2: float = lake.r
+		var kit := KartMeshKit.new()
+		var wood := Color(0.5, 0.34, 0.22, 0.0)
+		for k in 6:
+			kit.add(KartMeshKit.box(Vector3(2.0, 0.15, 1.3)), KartMeshKit.xf(Vector3(0, 0.6, -k * 1.4)), wood if k % 2 == 0 else wood.darkened(0.1))
+			kit.add(KartMeshKit.box(Vector3(0.2, 1.2, 0.2)), KartMeshKit.xf(Vector3(0.9, 0.1, -k * 1.4)), wood.darkened(0.3))
+			kit.add(KartMeshKit.box(Vector3(0.2, 1.2, 0.2)), KartMeshKit.xf(Vector3(-0.9, 0.1, -k * 1.4)), wood.darkened(0.3))
+		var at := c + toward * r2 * 0.95
+		at.y = road_level(c.x, c.z) - 0.55
+		world.cell(props, at).add_baked(kit.commit(), Transform3D(Basis.looking_at(-toward, Vector3.UP), at))
 
 
 ## A grey boulder with a cap of snow.

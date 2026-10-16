@@ -70,9 +70,11 @@ static func build() -> KartTrackDef:
 		{"type": "boost", "s0": m.boost + 30.0, "s1": m.boost + 36.0, "d": 2.8, "w": 1.4},
 	]
 	# The windmill turns on a rise in the infield by the start (the title shot frames it over
-	# the grid); the barn stands on the barn bend's outside, facing the karts as they exit.
+	# the grid); the barn stands on the barn bend's outside, facing the karts as they exit; a
+	# striped balloon hangs over the fields ahead as the karts slide out of the Carousel.
 	def.landmarks = [
 		{"type": "windmill", "s": 85.0, "d": -36.0},
 		{"type": "barn", "s": m.barn + 50.0, "d": 30.0},
+		{"type": "balloon", "s": m.items1 + 110.0, "d": 55.0},
 	]
 	return def

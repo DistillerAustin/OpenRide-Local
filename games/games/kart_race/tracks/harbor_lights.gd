@@ -66,5 +66,7 @@ static func build() -> KartTrackDef:
 	def.landmarks = [
 		{"type": "shore", "s": 20.0, "d": -(WIDE + def.verge + 7.0)},
 		{"type": "lighthouse", "s": m.point + 38.0, "d": -24.0},
+		# The old town's clock tower, on the old-town turn's outside: the karts drift round it.
+		{"type": "clocktower", "s": m.oldtown + 34.0, "d": -24.0},
 	]
 	return def
