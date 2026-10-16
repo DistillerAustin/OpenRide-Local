@@ -59,6 +59,9 @@ const FLYOVER_SEC := 3.5
 const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
 const PODIUM_S := 12.0  ## the 3D podium stands this far past the start line (the gate behind it)
+## Speed lines start at this share of the rider's steady 0.6 FTP speed and are full SPAN later.
+const SPEED_LINES_FROM := 1.15
+const SPEED_LINES_SPAN := 0.12
 ## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
 const CAMERA_CLEAR := 4.2
 ## Karts farther than this from the camera (metres) pose at a third of the frame rate, and
@@ -910,7 +913,10 @@ func _sync_screen_fx() -> void:
 	if not _kart_hud:
 		return
 	var k: KartState = race.karts[RIDER]
-	var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
+	# Only at a real sprint (top_speed is the rider's steady speed at 0.6 FTP, so cruising sits
+	# near 1.0), or on a boost: never streaking across a still sky at cruise.
+	var top := maxf(race.physics.top_speed, 1.0)
+	var lines := clampf((k.speed / top - SPEED_LINES_FROM) / SPEED_LINES_SPAN, 0.0, 1.0) if flow == Flow.RACING else 0.0
 	_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))
 	_kart_hud.draft = _fx.draft_screen(race, camera, _kart_hud) if _fx and flow == Flow.RACING else 0.0
 

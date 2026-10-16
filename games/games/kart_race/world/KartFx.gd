@@ -2,8 +2,8 @@ class_name KartFx
 extends Node3D
 ## Kart Race's effects (#43): exhaust puffs, dust off the kerbs and grass, drift sparks in three
 ## tiers, boost flames, hit stars, contact sparks and the draft streaks' screen point. Three
-## pooled MultiMeshes drawn as camera-facing sprites (alpha-blended puffs, additive sparks and
-## flames, alpha-blended stars), simulated here and written to the MultiMesh buffers: 3 draw
+## pooled MultiMeshes drawn facing the camera (alpha-blended puffs, additive sparks and flames as
+## velocity-stretched streaks with hot cores (spark.gdshader), alpha-blended stars), simulated here and written to the MultiMesh buffers: 3 draw
 ## calls for every effect on every kart, nothing allocated per frame.
 ##
 ## The pools simulate every SIM_EVERY frames (30 Hz: the main thread is the tablet's limit).
@@ -79,7 +79,7 @@ static var _star_tex: ImageTexture
 func _ready() -> void:
 	_rng.seed = 77
 	_puff_mm = _pool("Puffs", PUFFS, false, KartMeshKit.soft_disc(32, 0.0))
-	_spark_mm = _pool("Sparks", SPARKS, true, KartMeshKit.soft_disc(32, 0.3))
+	_spark_mm = _pool("Sparks", SPARKS, true, null)
 	_star_mm = _pool("Stars", STARS, false, star_texture())
 	_pp.resize(PUFFS); _pv.resize(PUFFS); _pa.resize(PUFFS); _pl.resize(PUFFS); _ps.resize(PUFFS); _pc.resize(PUFFS)
 	_sp.resize(SPARKS); _sv.resize(SPARKS); _sa.resize(SPARKS); _sl.resize(SPARKS); _ss.resize(SPARKS); _sc.resize(SPARKS)
@@ -128,15 +128,24 @@ func boost(id: int, seconds := BOOST_SEC, color := FLAME) -> void:
 			camera.kick(1.0)
 
 
+## A tier reached: a ring of streaks bursting flat round the kart's tail in the tier's colour
+## (more and faster by tier), and a spray off each rear wheel.
 func _on_drift_tier(id: int, tier: int) -> void:
 	if id >= views.size() or tier <= 0:
 		return
 	var v: KartView = views[id]
 	var c: Color = TIER_COLORS[clampi(tier - 1, 0, 2)]
+	var b := v.global_transform.basis
+	var centre := (v.anchor("wheel_rl").global_position + v.anchor("wheel_rr").global_position) * 0.5
+	var n := 10 + 4 * tier
+	for i in n:
+		var a := TAU * i / n
+		var out := b * Vector3(cos(a), 0.0, sin(a))
+		_spark(centre + out * 0.3, out * (6.0 + 1.5 * tier) + b.y * 1.5, 0.32, Vector2(0.2, 0.06), c)
 	for a in ["wheel_rl", "wheel_rr"]:
 		var p := v.anchor(a).global_position
-		for i in 8:
-			_spark(p, _jitter(3.5) + Vector3.UP * 2.5, 0.35, Vector2(0.22, 0.04), c)
+		for i in 4:
+			_spark(p, _jitter(3.5) + Vector3.UP * 2.5, 0.35, Vector2(0.18, 0.04), c)
 
 
 func _on_boost_started(id: int, kind: String, tier: int) -> void:
@@ -244,7 +253,7 @@ func _drift_sparks(v: KartView, back: Vector3, dir: float, tier: int, dt: float)
 		var rate := 50.0 + 30.0 * tier
 		for a in [outer, inner]:
 			var w := v.anchor(a).global_position - Vector3.UP * 0.18
-			_spark(w, Vector3.ZERO, 0.05, Vector2(0.65 + 0.15 * tier + 0.25 * _rng.randf(), 0.6), Color(c.r, c.g, c.b, 0.9))
+			_spark(w, Vector3.ZERO, 0.05, Vector2(0.42 + 0.12 * tier + 0.2 * _rng.randf(), 0.4), Color(c.r, c.g, c.b, 0.9))
 		for a in [outer, inner]:
 			if _rng.randf() < dt * rate:
 				var p := v.anchor(a).global_position - Vector3.UP * 0.22
@@ -349,7 +358,7 @@ func _simulate(dt: float) -> void:
 		_sp[i] += _sv[i] * dt
 		var t := _sa[i] / _sl[i]
 		var c := _sc[i]
-		_write(_spark_buf, i, _sp[i], lerpf(_ss[i].x, _ss[i].y, t), Color(c.r, c.g, c.b, 1.0 - t * t))
+		_write_streak(_spark_buf, i, _sp[i], _sv[i], lerpf(_ss[i].x, _ss[i].y, t), Color(c.r, c.g, c.b, 1.0 - t * t))
 		i += 1
 	_puff_mm.visible_instance_count = _pn
 	_spark_mm.visible_instance_count = _sn
@@ -366,7 +375,7 @@ func _draw_new_sparks() -> void:
 		return
 	for i in range(_sn_drawn, _sn):
 		var c := _sc[i]
-		_write(_spark_buf, i, _sp[i], _ss[i].x, Color(c.r, c.g, c.b, 1.0))
+		_write_streak(_spark_buf, i, _sp[i], _sv[i], _ss[i].x, Color(c.r, c.g, c.b, 1.0))
 	_sn_drawn = _sn
 	_spark_mm.visible_instance_count = _sn
 	_spark_mm.buffer = _spark_buf
@@ -378,6 +387,16 @@ static func _write(buf: PackedFloat32Array, i: int, p: Vector3, s: float, c: Col
 	buf[o] = s; buf[o + 1] = 0.0; buf[o + 2] = 0.0; buf[o + 3] = p.x
 	buf[o + 4] = 0.0; buf[o + 5] = s; buf[o + 6] = 0.0; buf[o + 7] = p.y
 	buf[o + 8] = 0.0; buf[o + 9] = 0.0; buf[o + 10] = s; buf[o + 11] = p.z
+	buf[o + 12] = c.r; buf[o + 13] = c.g; buf[o + 14] = c.b; buf[o + 15] = c.a
+
+
+## One spark: as `_write`, but the velocity goes in the basis's first column (where a uniform
+## scale has its zeros, so it's the same writes) for spark.gdshader's streaks.
+static func _write_streak(buf: PackedFloat32Array, i: int, p: Vector3, v: Vector3, s: float, c: Color) -> void:
+	var o := i * 16
+	buf[o] = v.x; buf[o + 1] = 0.0; buf[o + 2] = 0.0; buf[o + 3] = p.x
+	buf[o + 4] = v.y; buf[o + 5] = s; buf[o + 6] = 0.0; buf[o + 7] = p.y
+	buf[o + 8] = v.z; buf[o + 9] = 0.0; buf[o + 10] = s; buf[o + 11] = p.z
 	buf[o + 12] = c.r; buf[o + 13] = c.g; buf[o + 14] = c.b; buf[o + 15] = c.a
 
 
@@ -417,20 +436,15 @@ static func star_texture(size := 64) -> ImageTexture:
 
 
 func _pool(node_name: String, count: int, additive: bool, texture: Texture2D) -> MultiMesh:
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	if additive:
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	mat.billboard_keep_scale = true
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_texture = texture
-	mat.disable_fog = true
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.0, 1.0)
-	quad.material = mat
+	if additive:
+		# The sparks: velocity-stretched streaks (spark.gdshader), no texture.
+		var streaks := ShaderMaterial.new()
+		streaks.shader = KartLook.shader("spark.gdshader")
+		quad.material = streaks
+	else:
+		quad.material = _sprite_material(texture)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
@@ -445,3 +459,17 @@ func _pool(node_name: String, count: int, additive: bool, texture: Texture2D) ->
 	node.custom_aabb = AABB(Vector3(-2000, -200, -2000), Vector3(4000, 400, 4000))
 	add_child(node)
 	return mm
+
+
+## The puffs' and stars' material: camera-facing alpha sprites tinted per instance.
+static func _sprite_material(texture: Texture2D) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.billboard_keep_scale = true
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_texture = texture
+	mat.disable_fog = true
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	return mat
