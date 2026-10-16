@@ -135,6 +135,11 @@ func _init() -> void:
 		KartBaked.new(ride_strip, _gameplay), KartBaked.new(_badge, _gameplay, BADGE_RECT.size + Vector2(0, 40))]
 	_badge_view = _bakes[3]
 	_bakes[2].min_interval = 0.2  # the ride strip's readouts: 5 Hz is plenty
+	# At most two re-render a frame (a place change redrew all four at once: ~130 draw calls).
+	var queue := KartBakeQueue.new()
+	queue.per_frame = 2
+	for b in _bakes:
+		b.queue = queue
 	item_button = KartItemButton.new()
 	item_button.position = ITEM_POS
 	item_button.used.connect(func(): item_pressed.emit())

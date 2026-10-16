@@ -1263,36 +1263,85 @@ HUD, with the face tracker running. Here is what holding the frame rate took on 
   list, ride strip and place badge are baked (the HUD went from 74 to 15 draw calls), and so
   are the results board's and the podium's title, rows, blocks and pill (122 to 13, and 102 to
   16). Portraits share one atlas and one material.
-- **The camera's cost.** The face tracker runs on the CPU at 30 fps beside the game. Measure
-  with someone on the bike: with nobody there, calibration ends unavailable and the tracker is
-  off.
+- **Staggered bakes.** Bakes that share a `KartBakeQueue` take turns: the results board and
+  the podium render one bake a frame, the HUD two. When a board appeared, all eleven of its
+  bakes rendered in one frame (about 205 draw calls on the tablet; 186 for the board alone on
+  the desktop). Now the board alone peaks at 20 on the desktop, and a board frame on the tablet
+  peaks at 94-117 with the race behind it.
+- **Serial music renders.** Kart Race sets `MusicGen.parallel` off while it runs, so a tempo
+  change renders on one worker thread. The parallel render took every core for 1-2.5 s, twice
+  per tempo change, and the frame rate fell to 16-30 meanwhile.
+- **Far karts pose at 20 Hz.** A kart more than 35 m from the camera re-poses (and re-uploads
+  its bones) every third frame; its position still moves every frame.
+- **Adaptive quality.** `KartQualityGovernor` averages the frame rate over each 4 s of racing.
+  Below 56 fps it steps down one tier, at least 4 s apart, down to the floor, and never back up
+  during a session. The tiers, in order: half the effects' particle caps, trackside foliage
+  drawn to 150 m instead of 230, half the grandstand crowd, then render scale 0.58. Each step
+  is printed (`OPENRIDE_GAMES kart_race quality tier=… (…) after … fps on …`), and the dev perf
+  line carries `tier=`.
 
-Measured on 2026-10-14 with the mock build and `DEV_TUNING` on, during a 20-minute standard
-Just Ride (a full five-race Grand Prix) with the HUD on. Each perf line is the fps over 1 s,
-taken every 5 s.
+**Where the time goes (2026-10-15, mock build, `DEV_TUNING` on).** The tablet is
+**CPU-bound on Godot's main thread, not fill-rate bound.**
 
-| Track (racing) | fps min / avg / max | draw calls avg (max) | primitives avg |
-| --- | --- | --- | --- |
-| Meadow Ring | 7 / 53.0 / 62 (55 without the first lap's two hitches) | 77 (112) | 106k |
-| Canyon Dash | 42 / 56.0 / 62 | 76 (125) | 101k |
-| Harbor Lights | 44 / 57.5 / 62 | 81 (121) | 94k |
-| Frost Pass | 45 / 57.4 / 62 | 72 (99) | 80k |
-| Meadow Ring reversed | 45 / 57.4 / 62 | 74 (103) | 103k |
-| Results boards | 41-54 | 64-74 settled (about 205 while the bakes first render) | about 100k |
+- simpleperf on the GL thread (camera on): it is 92% busy. 59% of its samples are in Godot
+  (unsymbolised, but the hottest block looks like the GDScript VM), 17% in the GL driver,
+  9% in libc and 8% in the kernel.
+- `tests/measure_kart_cpu.gd` splits the GDScript per frame on the desktop. Physics is 24%,
+  the bots 22%, kart views 17%, effects 14%, item views 7%. The tablet runs it about 5× slower:
+  6 ms per 60 Hz tick.
+- Fill-rate trims don't move it. Render scale 0.40, no scenery, no HUD, and every tier at once
+  each landed within the run-to-run spread (±3 fps).
 
-**Nobody was on the bike**, so calibration found no face and the camera stopped ("Camera
-steering is off"; tracker state 0). These numbers are therefore **without the tracker's
-cost**, and still need a re-measure with a rider. A second Meadow run with the crowd thinned
-(seats 70% → 55% filled) averaged 50.5, which is within the run-to-run spread, so the trim was
-reverted. Expect to trim for the camera, in this order: the crowd in view, the trackside
-foliage, then the render scale (no lower than 0.58).
+**The camera's cost.** With the tracker running, the tablet throttles within a few minutes:
+CPU0 drops from 1.57 to 1.1 GHz, and cores go offline. Kart Race then falls to about 25-30 fps
+whatever is drawn. With the camera off, on the same hot tablet, it holds 53-57 fps, and CPU0
+stays at 1.57 GHz.
+
+Analysing only every other frame (15 Hz) didn't help (26 fps). Asking the camera for 15 fps
+was ignored (the HAL still delivered 30). The camera stack itself (the legacy HAL, its GL
+thread, the RGBA conversion), not the face model, looks like the cost. That's the next thing
+to cut; nothing in the game's content will make up 25 fps.
+
+**Measuring the tracker without a rider.** In the mock debug build, the file
+`files/tracker_load` keeps the camera and face detection running after a calibration fails for
+no face:
+
+```sh
+adb shell run-as dev.digitalducktape.openride touch files/tracker_load
+adb shell run-as dev.digitalducktape.openride rm files/tracker_load
+```
+
+The game still sees the tracker as off ("Camera steering is off", tracker state 0), so it plays
+as it does with nobody there, but with the tracker's real load. It's read on each tracker
+command, not per frame. Release and `debugReal` builds ignore it
+(`DefaultHeadTracker.keepCameraOnNoFace`, `DefaultHeadTrackerTest`).
+
+Measured on 2026-10-15 with the mock build and `DEV_TUNING` on: a 10-minute standard Just Ride,
+with `[world] laps=1` so the Grand Prix covers all four tracks (about 60 s each), the boards
+and the podium. The HUD was on and the governor on. fps is from the 1 s frame lines; draw
+calls are averages, with the most seen in any one frame.
+
+| Track (racing) | Tracker load on: fps min / avg / max | tier | draw calls avg (max in a frame) | Camera off: fps min / avg / max | tier |
+| --- | --- | --- | --- | --- | --- |
+| Meadow Ring | 12 / 39.5 / 58 | 0 → 4 in 16 s | 92 (131) | 22 / 52.8 / 62 | 0 → 4 in 16 s |
+| Canyon Dash | 11 / 25.4 / 55 | 4 | 72 (133) | 14 / 53.0 / 61 | 4 |
+| Harbor Lights | 7 / 24.7 / 39 | 4 | 89 (130) | 40 / 57.0 / 62 | 4 |
+| Frost Pass | 17 / 26.1 / 44 | 4 | 82 (129) | 39 / 57.4 / 62 | 4 |
+| Boards and podium | 16-49 | 4 | 60-86 (94-117) | 23-61 | 4 |
+
+The tracker-on run started on a cool tablet and was throttled from the second race on. A
+fixed-tier comparison on Meadow with the camera off (45 s each, the governor off) gave tier 0
+51.7 and 48.3, tier 1 50.5, tier 2 54.2, tier 3 54.5, tier 4 49.3 and 54.6. That's a few fps
+at most, inside the spread.
 
 For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
-`OPENRIDE_GAMES kart_race perf game_ms=… process_ms=… fps=… draw_calls=… primitives=…` every 5 s.
-`user://kart_tuning.cfg` overrides the render settings (`[render] scale=0.62 msaa=0
-outlines=true`) and switches parts off (`[world] road=false walls=false ground=false
-scenery=false foliage=false props=false woods=false stand=false clouds=false hud=false
-fx=false`).
+`OPENRIDE_GAMES kart_race perf game_ms=… process_ms=… fps=… draw_calls=… draw_calls_max=…
+primitives=… track=… flow=… tracker=… tier=…` every 5 s. `user://kart_tuning.cfg` (strings
+quoted) overrides the render settings (`[render] scale=0.62 msaa=0 outlines=true`), switches
+parts off (`[world] road=false walls=false ground=false scenery=false foliage=false
+props=false woods=false stand=false clouds=false hud=false fx=false`), forces a track or a lap
+count (`[world] track="meadow_ring" laps=1`), and fixes a tier with the governor off
+(`[governor] enabled=false tier=2`).
 
 **Tests and captures.**
 
@@ -1307,7 +1356,10 @@ fx=false`).
   - `capture_kart_hud.gd`: the HUD and the flow screens, with draw-call counts.
   - `capture_kart_items.gd` and `capture_racers.gd`.
 - Measurements: `measure_kart_hud.gd` and `measure_kart_board.gd` count the HUD's and the
-  boards' draw calls.
+  boards' draw calls (the board's also frame by frame as it opens). `measure_kart_cpu.gd`
+  times each part of a frame's GDScript, headless.
+- `kart_quality_governor_test` covers the governor (windows, spacing, floor, no step back up,
+  racing frames only) and each tier applied to the world, the effects and the view.
 
 **Provisional, to tune on the bike:**
 

@@ -80,6 +80,11 @@ static var _shadow_material: StandardMaterial3D
 static var _models := {}
 
 
+## Pose this kart every this many syncs (KartRace sets 3 for far karts); 1 = every frame.
+var pose_every := 1
+var _pose_skip := 0
+var _pose_dt := 0.0
+
 func setup(racer_info: Dictionary) -> void:
 	racer = racer_info
 	var id := str(racer.get("id", "racer"))
@@ -184,7 +189,14 @@ func sync(k: KartState, dt: float) -> void:
 		_turn_r = fmod(_turn_r + k.speed / float(_radii[2]) * dt, TAU)
 		_cheer = move_toward(_cheer, 1.0 if k.finished else 0.0, CHEER_RATE * dt)
 	_lean = lerpf(_lean, k.steer, 1.0 - exp(-8.0 * dt))
-	_pose(k, dt)
+	# The pose (and its bone upload to both materials) every `pose_every` frames: a far kart's
+	# driver needn't breathe at 60 Hz (the main thread is the tablet's bottleneck).
+	_pose_dt += dt
+	_pose_skip += 1
+	if _pose_skip >= pose_every:
+		_pose_skip = 0
+		_pose(k, _pose_dt)
+		_pose_dt = 0.0
 	# The low-sun shadow: on the road, stretched away from the sun (its texture is darkest at the
 	# kart's end), widest across the kart; smaller and fainter-looking as the kart hops.
 	var away := Vector3(-KartLook.SUN_DIR.x, 0.0, -KartLook.SUN_DIR.z).normalized()

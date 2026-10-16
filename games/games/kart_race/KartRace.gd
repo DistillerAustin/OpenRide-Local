@@ -33,7 +33,7 @@ const RENDER_SCALE_TRIMMED := 0.58
 const FX_CAP_TRIMMED := 0.5
 const MSAA := Viewport.MSAA_DISABLED  ## 2x halved the frame rate on the tablet (Dodge Ball)
 ## Developer aid, off in every build: set true to read `user://kart_tuning.cfg` ([render]
-## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx; [governor]
+## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx, track, laps; [governor]
 ## enabled, tier: a fixed tier with the governor off) and log the frame cost every 5 s.
 const DEV_TUNING := false
 const TUNING_PATH := "user://kart_tuning.cfg"
@@ -51,6 +51,8 @@ const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
 ## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
 const CAMERA_CLEAR := 4.2
+## Karts farther than this from the camera (metres) pose at a third of the frame rate.
+const POSE_NEAR := 35.0
 const GO_SEC := 0.8
 const DEFAULT_FTP := 150.0
 ## The bots' shares of the rider's FTP, weakest to strongest, by difficulty (forgiving: rider
@@ -104,10 +106,12 @@ var _lineup_dirty := false
 var quality: KartQualityGovernor
 var _render_scale := RENDER_SCALE
 var _applied_tier := 0
+var _music_parallel := true
 var _tuning := ConfigFile.new()
 var _tuned := false
 var _perf_usec := 0
 var _perf_frames := 0
+var _perf_dc_max := 0  ## the most draw calls in one frame since the last perf line
 var _perf_left := PERF_LOG_SEC
 
 
@@ -171,6 +175,11 @@ static func _ftp_of(p: Dictionary) -> float:
 
 
 func _ready() -> void:
+	# Music renders on one worker thread while Kart Race runs: the parallel render took every
+	# core for 1-2.5 s at each tempo change, and the frame rate fell to 16-30 meanwhile (the
+	# tablet, 2026-10-15). A render now takes longer and the tempo changes a phrase later.
+	_music_parallel = MusicGen.parallel
+	MusicGen.parallel = false
 	_tuned = DEV_TUNING and _tuning.load(TUNING_PATH) == OK
 	var scale := RENDER_SCALE
 	if _tuned:
@@ -197,6 +206,10 @@ func _ready() -> void:
 	add_child(shown)
 	if _tuned:
 		print("OPENRIDE_GAMES kart_race render scale=%.2f size=%s msaa=%d" % [scale, _view.size, _view.msaa_3d])
+
+
+func _exit_tree() -> void:
+	MusicGen.parallel = _music_parallel
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -261,6 +274,8 @@ func _build_world() -> void:
 	world.name = "World"
 	if _tuned and _tuning.has_section("world"):
 		for key in _tuning.get_section_keys("world"):
+			if key == "laps":  # measuring: every race this many laps ([world] laps=1)
+				continue
 			if key == "track":  # world: measure one track ([world] track=canyon_dash)
 				KartTracks.dev_track = str(_tuning.get_value("world", key))
 			else:
@@ -382,6 +397,8 @@ func _begin_race() -> void:
 		lineup = KartRoster.lineup(option("driver"), RACERS)
 		_build_racers()
 	current = gp.next_race(_time_left(), _est_lap)
+	if _tuned and int(_tuning.get_value("world", "laps", 0)) > 0:  # measuring: short races
+		current.laps = int(_tuning.get_value("world", "laps", 0))
 	var key := "%s:%s" % [current.track_id, current.reversed]
 	if key != _built_track:
 		track = KartTrackModel.new(KartTracks.build(current.track_id), current.reversed)
@@ -522,13 +539,15 @@ func _on_frame(delta: float) -> void:
 	_frame(delta)
 	_perf_usec += Time.get_ticks_usec() - started
 	_perf_frames += 1
+	_perf_dc_max = maxi(_perf_dc_max, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
 	_perf_left -= delta
 	if _perf_left <= 0.0:
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
 			_perf_usec / 1000.0 / maxi(_perf_frames, 1),
 			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 			Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			_perf_dc_max,
 			Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
 			race.karts.size() if race else 0,
@@ -536,6 +555,7 @@ func _on_frame(delta: float) -> void:
 			Flow.keys()[flow], InputBus.tracker_state, _applied_tier])
 		_perf_usec = 0
 		_perf_frames = 0
+		_perf_dc_max = 0
 		_perf_left = PERF_LOG_SEC
 
 
@@ -646,8 +666,11 @@ func _sync_views(delta: float) -> void:
 	# A bot right at the lens would fill the screen: hide it until it's clear (integration).
 	var eye := camera.global_position
 	for i in range(1, views.size()):
-		var v: Node3D = views[i]
-		v.visible = camera.hold or v.global_position.distance_squared_to(eye) > CAMERA_CLEAR * CAMERA_CLEAR
+		var v: KartView = views[i]
+		var d2 := v.global_position.distance_squared_to(eye)
+		v.visible = camera.hold or d2 > CAMERA_CLEAR * CAMERA_CLEAR
+		# Far karts pose at 20 Hz (their position still moves every frame).
+		v.pose_every = 3 if d2 > POSE_NEAR * POSE_NEAR else 1
 	if _item_views:  # race-systems
 		_item_views.sync(delta)
 	if _fx:

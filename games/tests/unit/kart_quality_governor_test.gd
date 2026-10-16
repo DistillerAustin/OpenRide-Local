@@ -28,7 +28,7 @@ func test_a_slow_window_steps_one_tier_after_4_s() -> void:
 	assert_int(_run(g, 3.9, DT50)).is_equal(0)
 	assert_int(_run(g, 0.2, DT50)).is_equal(1)
 	assert_int(g.tier).is_equal(1)
-	assert_str(String(g.tier_name())).is_equal("foliage")
+	assert_str(String(g.tier_name())).is_equal("fx")
 	assert_float(g.steps[0].fps).is_equal_approx(50.0, 0.01)
 
 
@@ -81,9 +81,9 @@ func test_trims_accumulate_by_tier() -> void:
 	var g := KartQualityGovernor.new()
 	assert_bool(g.trims(&"foliage")).is_false()
 	g.tier = 2
+	assert_bool(g.trims(&"fx")).is_true()
 	assert_bool(g.trims(&"foliage")).is_true()
-	assert_bool(g.trims(&"crowd")).is_true()
-	assert_bool(g.trims(&"fx")).is_false()
+	assert_bool(g.trims(&"crowd")).is_false()
 	assert_bool(g.trims(&"full")).is_false()
 
 

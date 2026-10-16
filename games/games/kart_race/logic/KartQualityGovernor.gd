@@ -8,10 +8,12 @@ extends RefCounted
 ##
 ## Plain logic: KartRace feeds it frame times and applies `tier` to the world (`TIERS`).
 
-## Cheapest-looking trims first, by what each saved on the tablet (docs/GAMES.md, Kart Race):
-## 0 everything on; 1 trackside foliage drawn to 150 m instead of 230; 2 half the grandstand
-## crowd; 3 half the effects' particle caps; 4 render scale 0.58 instead of 0.62.
-const TIERS: Array[StringName] = [&"full", &"foliage", &"crowd", &"fx", &"scale"]
+## The tablet is CPU-bound (the main thread), so the trims that save main-thread work come
+## first, the GPU-side ones last (docs/GAMES.md, Kart Race → On the tablet): 0 everything on;
+## 1 half the effects' particle caps (their simulation runs in GDScript); 2 trackside foliage
+## drawn to 150 m instead of 230 (fewer objects to cull and draw); 3 half the grandstand crowd;
+## 4 render scale 0.58 instead of 0.62.
+const TIERS: Array[StringName] = [&"full", &"fx", &"foliage", &"crowd", &"scale"]
 const WINDOW_SEC := 4.0
 const TARGET_FPS := 56.0
 
