@@ -554,7 +554,7 @@ at startup.
 - `sfx_volume` sets `SFX` and `Cues`.
 - `audio.music: false` fades the music out for that segment. A game's `play_music` is then kept
   but not played.
-- `Music` ducks by 10 dB under every cue.
+- `Music` ducks by 10 dB under every cue, and by a game's own `duck_music(db, seconds)`; the deeper duck applies.
 
 ### Registration (for generators)
 
@@ -577,7 +577,8 @@ generators can register without an autoload of their own.
 | `stop_music(fade_sec := 2.0)` | Fades the music out |
 | `play_sfx(name, volume_db := 0.0, pitch := 1.0) -> bool` | An effect on `SFX`, from 8 voices. `false` means silence. |
 | `play_cue(name) -> bool` | A cue on `Cues`, which ducks the music |
-| `set_bus_effects(bus, effects: Array[AudioEffect])` | The game's own effect chain on `Music` or `SFX` (for example a room reverb and a glue compressor), replacing any earlier one. Every segment starts with both buses clean. Native effects cost little, unlike offline reverb in GDScript. |
+| `set_bus_effects(bus, effects: Array[AudioEffect])` | The game's own effect chain on `Music`, `SFX` or `Master` (for example a room reverb and a glue compressor, or a limiter on the whole mix), replacing any earlier one. Every segment starts with all three clean. Native effects cost little, unlike offline reverb in GDScript. |
+| `duck_music(db: float, seconds: float)` | Ducks `Music` by `db` for `seconds` (Kart Race: -3 dB under its countdown and banners), without a cue. Asking again while it holds extends it. |
 
 **Cue names the framework plays** (#36 provides them; see "Generated audio"):
 
