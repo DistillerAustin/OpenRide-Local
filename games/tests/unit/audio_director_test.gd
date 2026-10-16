@@ -183,6 +183,20 @@ func test_cues_duck_the_music_then_release() -> void:
 	assert_float(AudioDirector.duck_db).is_equal(0.0)
 
 
+func test_pre_rendered_stem_files_play_without_a_generator_and_loop_past_the_intro() -> void:
+	var path := "res://games/kart_race/music/results.ogg"
+	AudioDirector.play_music({"name": "files", "stem_files": {"mix": path}, "loop_from": 1.5}, 150.0)
+	await _until(func(): return AudioDirector.is_music_playing())
+	assert_bool(AudioDirector.is_music_playing()).is_true()
+	var sync := AudioDirector._decks[AudioDirector._deck].stream as AudioStreamSynchronized
+	var s := sync.get_sync_stream(0) as AudioStreamOggVorbis
+	assert_bool(s.loop).is_true()
+	assert_float(s.loop_offset).is_equal(1.5)
+	assert_str(str(s.get_meta("source_path"))).is_equal(path)
+	# A missing file plays nothing (and doesn't crash).
+	assert_dict(AudioDirector.stems_from_files({"stem_files": {"mix": "res://no/such.ogg"}})).is_empty()
+
+
 func test_a_game_duck_holds_then_releases_and_the_deeper_duck_wins() -> void:
 	AudioDirector.duck_music(-3.0, 0.5)
 	AudioDirector._process(0.1)

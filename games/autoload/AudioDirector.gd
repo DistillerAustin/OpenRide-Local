@@ -179,6 +179,8 @@ func duck_music(db: float, seconds: float) -> void:
 ## is already playing changes nothing. With music off, the request is kept but not played.
 ## The same style and seed at another tempo is a tempo change: it swaps in on the playing
 ## loop's next phrase boundary instead (ask a few seconds ahead; a newer request replaces it).
+## A style with `stem_files` ({stem: path}) plays those pre-rendered files instead of asking the
+## generator (loaded off the main thread, looping from `loop_from` seconds; see stems_from_files).
 func play_music(style: Dictionary, tempo_bpm: float, music_seed := 0) -> void:
 	_requested = {"style": style, "tempo_bpm": tempo_bpm, "seed": music_seed}
 	_requested_key = music_key(_requested)
@@ -326,7 +328,7 @@ func _want(key: String) -> void:
 		else:
 			_start(key, _music_cache[key])
 		return
-	if not _music_generator.is_valid():
+	if not _music_generator.is_valid() and not _requested.get("style", {}).has("stem_files"):
 		_note_silent("music")
 		return
 	if _render_task != -1:
@@ -334,6 +336,28 @@ func _want(key: String) -> void:
 	_render_key = key
 	var request := _requested.duplicate(true)
 	_render_task = WorkerThreadPool.add_task(_render.bind(request), false, "AudioDirector music")
+
+
+## Pre-rendered music: `style.stem_files` maps each stem to an audio file (an OGG Vorbis, say).
+## Each is loaded and set to loop from `style.loop_from` seconds (the intro plays once). Safe on
+## a worker thread. A missing file is left out (and warned about).
+static func stems_from_files(style: Dictionary) -> Dictionary:
+	var out := {}
+	var files: Dictionary = style.get("stem_files", {})
+	for stem in files:
+		var path := str(files[stem])
+		var res: Resource = load(path) if ResourceLoader.exists(path) else null
+		if not res is AudioStream:
+			push_warning("AudioDirector: no music file %s" % path)
+			continue
+		var stream := (res as AudioStream).duplicate() as AudioStream
+		if "loop" in stream:
+			stream.set("loop", true)
+		if "loop_offset" in stream:
+			stream.set("loop_offset", float(style.get("loop_from", 0.0)))
+		stream.set_meta("source_path", path)
+		out[stem] = stream
+	return out
 
 
 ## When the engine quits mid-render, let the worker finish before this node (and its mutex) is
@@ -345,7 +369,8 @@ func _exit_tree() -> void:
 
 
 func _render(request: Dictionary) -> void:
-	var stems = _music_generator.call(request)
+	var style: Dictionary = request.get("style", {})
+	var stems = stems_from_files(style) if style.has("stem_files") else _music_generator.call(request)
 	_render_mutex.lock()
 	_render_result = stems if stems is Dictionary else {}
 	_render_mutex.unlock()
