@@ -13,9 +13,14 @@ const DodgeAudioScript := preload("res://games/dodge_ball/DodgeAudio.gd")
 const DodgeWorldScript := preload("res://games/dodge_ball/DodgeWorld.gd")
 const ModeBadgeScript := preload("res://games/dodge_ball/ModeBadge.gd")
 
+const DodgeMusic := preload("res://games/dodge_ball/DodgeMusic.gd")
+
+## "Incoming!" (DodgeMusic, rendered by games/tools/music): the bed (drums, bass) always; the
+## harmony (chugs, stabs, pads) once riding briskly; the lead over the power target.
 const MUSIC_STYLE := {
-	"name": "drive",
-	# Drums and bass always; stabs once riding briskly; the lead over the power target.
+	"name": "incoming",
+	"stem_files": DodgeMusic.STEM_FILES,
+	"loop_from": DodgeMusic.LOOP_FROM,
 	"stem_gates": {"harmony": 0.5, "lead": 0.85},
 }
 const SCREEN_FX_LAYER := 5  ## under the HUD (10)
@@ -137,7 +142,7 @@ func _ready() -> void:
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
-	world.ball_bounced.connect(func(loud: float): AudioDirector.play_sfx("ball_bounce", linear_to_db(loud) - 6.0, randf_range(0.9, 1.1)))
+	world.ball_bounced.connect(func(loud: float): AudioDirector.play_sfx("ball_bounce", linear_to_db(loud) - 10.0, randf_range(0.9, 1.1)))
 	_fx_layer = CanvasLayer.new()
 	_fx_layer.layer = SCREEN_FX_LAYER
 	add_child(_fx_layer)
@@ -178,10 +183,12 @@ func _on_prepare(seg: Dictionary) -> void:
 	if logic.target_watts > 0.0:
 		hud.metrics.set_power_band(logic.target_watts)
 
-	AudioDirector.play_music(MUSIC_STYLE, logic.cadence_floor, int(seg.get("seed", 0)))
+	# A rendered track at its own tempo: the same request every segment, so it plays on.
+	AudioDirector.play_music(MUSIC_STYLE, DodgeMusic.BPM)
 	AudioDirector.set_intensity(0.6)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, DodgeAudioScript.music_effects())
 	AudioDirector.set_bus_effects(AudioDirector.SFX_BUS, DodgeAudioScript.sfx_effects())
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, GameMix.master_effects())
 	# Draw one frame of the road at rest behind the intro card, and warm up the effects there.
 	world.update_view(0.0, logic, 0.0, 0.0)
 	world.prewarm()
@@ -288,15 +295,15 @@ func _handle(event: Dictionary) -> void:
 	match event.type:
 		"spawn":
 			world.note_spawn(event.ball)
-			AudioDirector.play_sfx("launch_whoosh", -9.0, randf_range(0.85, 1.15))
+			AudioDirector.play_sfx("launch_whoosh", -10.0, randf_range(0.85, 1.15))
 		"dodge":
 			var got := _score(event.points)
 			world.dodge_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
-			AudioDirector.play_sfx("dodge_tick", -4.0, 1.0 + 0.04 * mini(logic.streak, 10))
+			AudioDirector.play_sfx("dodge_tick", 1.0, 1.0 + 0.04 * mini(logic.streak, 10))
 		"catch":
 			var got := _score(event.points)
 			world.catch_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
-			AudioDirector.play_sfx("catch_chime", -2.0, 1.0 + 0.05 * mini(logic.streak, 10))
+			AudioDirector.play_sfx("catch_chime", 1.0, 1.0 + 0.05 * mini(logic.streak, 10))
 		"miss":
 			world.miss_fx(event.ball)
 			AudioDirector.play_sfx("miss_whiff", -3.0)
@@ -313,24 +320,28 @@ func _handle(event: Dictionary) -> void:
 		"shield_break":
 			world.shield_fx(event.ball.x1, event.ball.kind)
 			_flash = 0.45
-			AudioDirector.play_sfx("shield_break")
-			AudioDirector.play_sfx("shield_zap")
+			AudioDirector.play_sfx("shield_break", -4.0)
+			AudioDirector.play_sfx("shield_zap", -3.0)
+			GameMix.duck_for_moment(0.5)
 		"shield_ready":
 			world.shield_ready_fx()
 			AudioDirector.play_sfx("shield_ready")
 		"hit":
 			world.hit_fx(event.ball.x1, event.ball.kind)
 			_flash = 0.8
-			AudioDirector.play_sfx("hit_thud")
-			AudioDirector.play_sfx("hit_body")
+			AudioDirector.play_sfx("hit_thud", -2.0)
+			AudioDirector.play_sfx("hit_body", -2.0)
+			GameMix.duck_for_moment(0.6)
 			if event.penalty > 0.0:
 				penalize(event.penalty)
 			_pop(_status)
 		"wave":
 			_show_message("Wave %d" % event.wave, 1.6)
 			AudioDirector.play_sfx("streak_chime", -3.0, 0.75)
+			GameMix.duck_for_moment(0.8)
 		"game_over":
 			AudioDirector.play_sfx("game_over")
+			GameMix.duck_for_sting(2.2)
 		"new_run":
 			_run_awarded = 0.0
 			_show_message("Run %d: go!" % event.run, 1.4)
