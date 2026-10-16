@@ -143,13 +143,12 @@ func setup(racer_info: Dictionary) -> void:
 	_number.font_size = 56
 	_number.outline_size = 14
 	_number.outline_modulate = Color(0.1, 0.06, 0.2)
-	_number.pixel_size = 0.0036
+	_number.pixel_size = 0.0033
 	# On the back of the helmet: the part of a racer the chase camera sees most.
-	var hr := KartModels.head_radii(racer)
-	var back := Vector3(0.0, 0.45, 0.89).normalized()
-	_number.position = KartModels.HEAD_C - KartModels.NECK + Vector3(0.0, 0.025, 0.035) \
-		+ back * Vector3(hr.x * 1.1, hr.y * 1.16, hr.z * 1.12) * 1.03
-	_number.rotation = Vector3(-0.47, 0.0, 0.0)
+	var back := Vector3(0.0, 0.62, 0.78).normalized()
+	_number.position = KartModels.HEAD_C - KartModels.NECK + KartModels.HELMET_AT * KartModels.HEAD_SCALE \
+		+ back * KartModels.helmet_radii(racer) * 1.03
+	_number.rotation = Vector3(-0.67, 0.0, 0.0)
 	_number.alpha_cut = Label3D.ALPHA_CUT_DISCARD
 	_number.double_sided = false
 	_number.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -368,7 +367,8 @@ static func head_mesh(r: Dictionary) -> ArrayMesh:
 static func _blob() -> StandardMaterial3D:
 	if _shadow_material:
 		return _shadow_material
-	# An egg: dense at the kart's end (v = 0.3), thinning out along the shadow's length.
+	# An egg: dense at the kart's end (v = 0.3), thinning out along the shadow's length, with a
+	# darker contact core.
 	var img := Image.create(64, 64, true, Image.FORMAT_RGBA8)
 	for y in 64:
 		for x in 64:
@@ -377,7 +377,11 @@ static func _blob() -> StandardMaterial3D:
 			var w := lerpf(0.55, 1.0, smoothstep(0.0, 0.35, v)) * lerpf(1.0, 0.75, smoothstep(0.5, 1.0, v))
 			var edge := clampf(1.0 - pow(absf(u) / w, 2.0) - pow((v - 0.45) / 0.55, 2.0), 0.0, 1.0)
 			var a := smoothstep(0.0, 0.55, edge) * lerpf(0.66, 0.3, smoothstep(0.3, 1.0, v))
-			img.set_pixel(x, y, Color(0.08, 0.05, 0.14, a))
+			# The contact core: a tight dark pool under the chassis (the kart sits at v = 0.25-0.3
+			# whatever the sun's angle), so the kart sits on the road instead of floating over it.
+			var core := 1.0 - smoothstep(0.35, 1.0, Vector2(u / 0.48, (v - 0.28) / 0.15).length())
+			a = lerpf(a, 0.8, core)
+			img.set_pixel(x, y, Color(0.08, 0.05, 0.14, 1.0).lerp(Color(0.03, 0.02, 0.06, 1.0), core) * Color(1, 1, 1, a))
 	img.generate_mipmaps()
 	var tex := ImageTexture.create_from_image(img)
 	var mat := StandardMaterial3D.new()

@@ -228,3 +228,15 @@ func test_portrait_framing_fits_the_tallest_ears() -> void:
 	var at: Vector3 = f.at
 	var half := tan(deg_to_rad(float(f.fov) * 0.5)) * eye.distance_to(at)
 	assert_float(at.y + half).is_greater(top)
+
+
+func test_from_behind_the_helmet_is_the_racer_s_colour() -> void:
+	# The chase camera sees the back of the helmet most: in the kart's colour (Juniper's white
+	# "egg" is gone), scaled down with the head, with the number above the visor band.
+	var fox: Dictionary = KartRoster.RACERS[0]
+	var c := KartModels.helmet_color(fox)
+	assert_bool(c.is_equal_approx(Color(fox.color.r, fox.color.g, fox.color.b, 1.0))).is_true()
+	assert_float(KartModels.HEAD_SCALE).is_less(1.0)
+	var hr := KartModels.helmet_radii(fox)
+	var axle: float = absf((KartModels.layout("medium").wheels[2] as Vector3).x) * 2.0
+	assert_float(hr.x * 2.0).is_less_equal(axle * 0.45)

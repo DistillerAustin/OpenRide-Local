@@ -20,6 +20,13 @@ const NECK := Vector3(0.0, 0.36, 0.0)
 const HEAD_C := Vector3(0.0, 0.66, -0.02)
 const HEAD_R := Vector3(0.34, 0.31, 0.31)
 const SHOULDER := Vector3(0.2, 0.3, -0.03)
+## The head on the kart against its portrait size: from the chase camera a full-size head and
+## helmet covered the kart like an egg. The ears stay full size (the species' silhouette).
+const HEAD_SCALE := 0.88
+## The helmet's radii against the head's, and its centre's offset from the head's (unscaled).
+const HELMET := Vector3(1.05, 1.1, 1.07)
+const HELMET_AT := Vector3(0.0, 0.025, 0.035)
+const TAIL_RED := Color(1.0, 0.16, 0.12)
 
 const BLACK := Color(0.06, 0.05, 0.07, 0.9)
 const WHITE := Color(0.98, 0.97, 0.95, 0.15)
@@ -72,8 +79,8 @@ static func bone_points(r: Dictionary) -> Array:
 	pts[BODY] = Vector3(0.0, 0.25, 0.0)
 	pts[DRIVER] = seat
 	pts[HEAD] = seat + NECK
-	pts[EYES] = hc + Vector3(0.0, eye.y, -hr.z * 0.9)
-	pts[EARS] = hc + Vector3(0.0, hr.y * 0.6, 0.0)
+	pts[EYES] = hc + Vector3(0.0, eye.y, -hr.z * 0.9) * HEAD_SCALE
+	pts[EARS] = hc + Vector3(0.0, hr.y * 0.6 * HEAD_SCALE, 0.0)
 	pts[ARM_L] = seat + Vector3(-SHOULDER.x, SHOULDER.y, SHOULDER.z)
 	pts[ARM_R] = seat + SHOULDER
 	pts[STEER] = l.steer
@@ -150,14 +157,16 @@ static func _kart_medium(kit: KartMeshKit, r: Dictionary, _l: Dictionary) -> voi
 		kit.add(K.blob(Vector3(0.17, 0.15, 0.46), 0.6, 0.8, 8, 5), K.xf(Vector3(side * 0.5, 0.32, 0.1)), deep)
 		kit.outline = 0.5
 		kit.add(K.lathe(_pipe_profile(0.06, 0.3), 6), K.xf(Vector3(side * 0.22, 0.47, 1.0), Vector3(75, 0, 0)), CHROME)
-		kit.add(K.blob(Vector3(0.03, 0.15, 0.2), 0.5, 0.5, 6, 4), K.xf(Vector3(side * 0.74, 1.0, 1.05)), paint)
-		kit.add(K.tube(PackedVector3Array([Vector3(side * 0.3, 0.6, 0.98), Vector3(side * 0.32, 0.98, 1.04)]),
-			PackedFloat32Array([0.03]), 4), Transform3D.IDENTITY, DARK)
-		_lamp(kit, Vector3(side * 0.3, 0.42, 1.0), Color(1.0, 0.25, 0.2), 0.045)
+		_hot_tip(kit, Vector3(side * 0.22, 0.47, 1.0) + Basis(Vector3.RIGHT, deg_to_rad(75)) * Vector3(0, 0.29, 0), 0.045)
+		kit.add(K.tube(PackedVector3Array([Vector3(side * 0.3, 0.6, 0.98), Vector3(side * 0.32, 0.96, 1.04)]),
+			PackedFloat32Array([0.035]), 4), Transform3D.IDENTITY, DARK)
+		_taillight(kit, Vector3(side * 0.34, 0.44, 1.07), 0.09)
 		kit.outline = 1.0
 	kit.add(K.blob(Vector3(0.27, 0.27, 0.09), 0.5, 0.6, 10, 5), K.xf(Vector3(0, 0.72, 0.52), Vector3(-10, 0, 0)), DARK)
 	kit.add(K.blob(Vector3(0.28, 0.17, 0.2), 0.4, 0.5, 8, 4), K.xf(Vector3(0, 0.46, 0.86)), Color(0.45, 0.45, 0.5, 0.8))
-	_wing(kit, Vector3(0, 1.0, 1.04), 0.74, 0.16, accent)
+	_diffuser(kit, Vector3(0, 0.24, 1.1), 0.46)
+	# A full-width wing with tall endplates: the medium kart's rear.
+	_wing(kit, Vector3(0, 1.0, 1.06), 0.74, 0.34, paint, accent, 0.17)
 
 
 static func _kart_light(kit: KartMeshKit, r: Dictionary, _l: Dictionary) -> void:
@@ -175,15 +184,17 @@ static func _kart_light(kit: KartMeshKit, r: Dictionary, _l: Dictionary) -> void
 		var pts := PackedVector3Array([Vector3(side * 0.3, 0.24, -0.62), Vector3(side * 0.5, 0.25, -0.4),
 			Vector3(side * 0.53, 0.26, 0.2), Vector3(side * 0.34, 0.28, 0.48)])
 		kit.add(K.tube(pts, PackedFloat32Array([0.045]), 5), Transform3D.IDENTITY, accent)
-		_lamp(kit, Vector3(side * 0.36, 0.24, 1.0), Color(1.0, 0.25, 0.2), 0.04)
+		_taillight(kit, Vector3(side * 0.3, 0.36, 1.1), 0.07)
 	kit.add(K.blob(Vector3(0.24, 0.24, 0.08), 0.5, 0.6, 10, 5), K.xf(Vector3(0, 0.66, 0.5), Vector3(-12, 0, 0)), DARK)
 	kit.add(K.blob(Vector3(0.22, 0.15, 0.2), 0.45, 0.5, 8, 4), K.xf(Vector3(0, 0.42, 0.84)), Color(0.45, 0.45, 0.5, 0.8))
+	_diffuser(kit, Vector3(0, 0.22, 1.08), 0.34)
 	kit.outline = 0.5
 	kit.add(K.lathe(_pipe_profile(0.065, 0.34), 6), K.xf(Vector3(0.14, 0.5, 0.9), Vector3(55, 0, -10)), CHROME)
+	_hot_tip(kit, Vector3(0.14, 0.5, 0.9) + Basis.from_euler(Vector3(deg_to_rad(55), 0, deg_to_rad(-10))) * Vector3(0, 0.33, 0), 0.05)
 	kit.outline = 1.0
-	# The shark fin and its little wing.
+	# The shark fin carries a narrow, high wing: the light kart's rear.
 	kit.add(K.blob(Vector3(0.035, 0.22, 0.24), 0.6, 0.6, 8, 5), K.xf(Vector3(0, 0.8, 0.86), Vector3(-14, 0, 0)), paint)
-	_wing(kit, Vector3(0, 1.0, 0.96), 0.56, 0.13, accent)
+	_wing(kit, Vector3(0, 1.0, 0.98), 0.5, 0.28, paint, accent, 0.0)
 
 
 static func _kart_heavy(kit: KartMeshKit, r: Dictionary, _l: Dictionary) -> void:
@@ -201,12 +212,16 @@ static func _kart_heavy(kit: KartMeshKit, r: Dictionary, _l: Dictionary) -> void
 		kit.add(K.blob(Vector3(0.27, 0.1, 0.42), 0.5, 0.6, 8, 5), K.xf(Vector3(side * 0.8, 0.76, 0.74), Vector3(0, 0, side * -8)), paint)
 		kit.outline = 0.5
 		kit.add(K.lathe(_pipe_profile(0.07, 0.5), 6), K.xf(Vector3(side * 0.3, 0.66, 0.86), Vector3(12, 0, 0)), CHROME)
+		_hot_tip(kit, Vector3(side * 0.3, 0.66, 0.86) + Basis(Vector3.RIGHT, deg_to_rad(12)) * Vector3(0, 0.49, 0), 0.055)
 		_lamp(kit, Vector3(side * 0.34, 0.5, -1.0), Color(1.0, 0.92, 0.6), 0.06)
-		_lamp(kit, Vector3(side * 0.42, 0.56, 1.0), Color(1.0, 0.25, 0.2), 0.05)
+		_taillight(kit, Vector3(side * 0.44, 0.52, 1.03), 0.11)
 		kit.outline = 1.0
 	kit.add(K.tube(PackedVector3Array([Vector3(-0.34, 0.66, 0.66), Vector3(-0.3, 1.08, 0.66), Vector3(0.3, 1.08, 0.66),
 		Vector3(0.34, 0.66, 0.66)]), PackedFloat32Array([0.05]), 6), Transform3D.IDENTITY, accent)
 	kit.add(K.blob(Vector3(0.3, 0.28, 0.1), 0.5, 0.6, 10, 5), K.xf(Vector3(0, 0.76, 0.55), Vector3(-10, 0, 0)), DARK)
+	_diffuser(kit, Vector3(0, 0.26, 1.04), 0.56)
+	# A wide ducktail across the fenders, low and flat: the heavy kart's rear.
+	kit.add(K.blob(Vector3(0.84, 0.05, 0.17), 0.3, 0.25, 10, 3), K.xf(Vector3(0, 0.84, 0.98), Vector3(14, 0, 0)), accent)
 
 
 ## A pipe (hollow end) along +Y.
@@ -220,10 +235,50 @@ static func _bar(kit: KartMeshKit, pts: Array, radius: float, color: Color) -> v
 	kit.add(KartMeshKit.tube(PackedVector3Array(pts), PackedFloat32Array([radius]), 6), Transform3D.IDENTITY, color)
 
 
-## A flat wing with rounded ends, spanning x, `chord` deep.
-static func _wing(kit: KartMeshKit, at: Vector3, half_span: float, chord: float, color: Color) -> void:
-	var t := KartMeshKit.tube(PackedVector3Array([Vector3(-half_span, 0, 0), Vector3(half_span, 0, 0)]), PackedFloat32Array([chord * 0.5]), 8)
-	kit.add(t, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-6)) * Basis.from_scale(Vector3(1.0, 0.45, 1.0)), at), color)
+## A solid rear wing spanning x, `chord` deep: a rounded blade in the body colour with an accent
+## trailing edge, endplates `plate` tall in the accent (none at 0), raked back 8 degrees.
+static func _wing(kit: KartMeshKit, at: Vector3, half_span: float, chord: float, color: Color, trim: Color, plate: float) -> void:
+	var K := KartMeshKit
+	var c := chord * 0.5
+	kit.paint = func(p: Vector3, _n: Vector3, col: Color) -> Color:
+		return col.lerp(trim, smoothstep(c * 0.55, c * 0.75, p.z))
+	kit.add(K.blob(Vector3(half_span, 0.045, c), 0.35, 0.3, 10, 4), K.xf(at, Vector3(8, 0, 0)), color)
+	kit.paint = Callable()
+	if plate > 0.0:
+		for side: float in [-1.0, 1.0]:
+			kit.add(K.blob(Vector3(0.03, plate * 0.5, c * 1.15), 0.4, 0.4, 6, 3), K.xf(at + Vector3(side * half_span, -plate * 0.2, 0.0)), trim)
+
+
+## Two taillight bars in one: a wide self-lit red lens `half_width` wide, facing back.
+static func _taillight(kit: KartMeshKit, at: Vector3, half_width: float) -> void:
+	var g := kit.glow
+	var o := kit.outline
+	kit.glow = 0.9
+	kit.outline = 0.5
+	kit.add(KartMeshKit.blob(Vector3(half_width, 0.04, 0.03), 0.4, 0.4, 6, 3), KartMeshKit.xf(at), Color(TAIL_RED.r, TAIL_RED.g, TAIL_RED.b, 1.0))
+	kit.glow = g
+	kit.outline = o
+
+
+## A glowing ember inside an exhaust tip at `at`.
+static func _hot_tip(kit: KartMeshKit, at: Vector3, radius: float) -> void:
+	var g := kit.glow
+	var o := kit.outline
+	kit.glow = 0.7
+	kit.outline = 0.0
+	kit.add(KartMeshKit.blob(Vector3.ONE * radius, 1.0, 1.0, 5, 3), KartMeshKit.xf(at), Color(1.0, 0.55, 0.2, 0.0))
+	kit.glow = g
+	kit.outline = o
+
+
+## The dark diffuser under the tail, with three fins.
+static func _diffuser(kit: KartMeshKit, at: Vector3, half_width: float) -> void:
+	var K := KartMeshKit
+	kit.add(K.blob(Vector3(half_width, 0.06, 0.12), 0.3, 0.3, 8, 3), K.xf(at, Vector3(-12, 0, 0)), DARK)
+	for i in 3:
+		var x := (i - 1) * half_width * 0.5
+		kit.quad(at + Vector3(x, -0.02, -0.08), at + Vector3(x, 0.07, 0.05), at + Vector3(x, -0.02, 0.15), at + Vector3(x, -0.06, 0.06),
+			Color(RUBBER.r, RUBBER.g, RUBBER.b, 0.3))
 
 
 ## A small self-lit lamp (a dome facing out of the kart's nearest face).
@@ -270,7 +325,7 @@ static func _wheel(kit: KartMeshKit, r: Dictionary, at: Vector3, radius: float, 
 	var tyre := PackedVector2Array([Vector2(ri, -hw * 0.95), Vector2(radius * 0.86, -hw), Vector2(radius, -hw * 0.55),
 		Vector2(radius, hw * 0.55), Vector2(radius * 0.86, hw), Vector2(ri, hw * 0.95)])
 	var axle := Basis(Vector3.BACK, PI * 0.5)  # lathe Y -> kart x
-	kit.add(K.lathe(tyre, 11), Transform3D(axle, at), RUBBER)
+	kit.add(K.lathe(tyre, 10), Transform3D(axle, at), RUBBER)
 	var hub_col := _accent(r)
 	if hub_col.get_luminance() < 0.3:
 		hub_col = Color(0.95, 0.85, 0.3, 0.9)
@@ -321,7 +376,7 @@ static func _driver(kit: KartMeshKit, r: Dictionary, seat: Vector3, steer: Vecto
 	var tail := str(r.get("species", "")) in ["fox", "raccoon"]
 	if tail:
 		_tail(kit, r, seat)
-	_head(kit, r, seat + HEAD_C)
+	_head(kit, r, seat + HEAD_C, HEAD_SCALE)
 
 
 static func _tail(kit: KartMeshKit, r: Dictionary, seat: Vector3) -> void:
@@ -356,9 +411,16 @@ static func fur_color(r: Dictionary) -> Color:
 
 
 ## The helmet's colour: the racer's `helmet` when set (a contrast to its fur), else the kart's.
+## From behind, the helmet is the racer's colour: only Pip (a green frog in a green kart) keeps
+## an override.
 static func helmet_color(r: Dictionary) -> Color:
 	var c: Color = r.get("helmet", r.get("color", Color(0.9, 0.3, 0.2)))
 	return Color(c.r, c.g, c.b, 1.0)
+
+
+## The helmet's radii on the kart (its centre is HELMET_AT × HEAD_SCALE from the head's).
+static func helmet_radii(r: Dictionary) -> Vector3:
+	return head_radii(r) * HELMET * HEAD_SCALE
 
 
 static func head_radii(r: Dictionary) -> Vector3:
@@ -379,8 +441,10 @@ static func eye_spot(r: Dictionary) -> Vector2:
 
 # --- The head: fur, face, ears, eyes, helmet and goggles ---
 
-static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3) -> void:
+static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3, scale := 1.0) -> void:
 	var K := KartMeshKit
+	# Built at portrait size, scaled about the head's centre.
+	kit.pre = Transform3D(Basis.from_scale(Vector3.ONE * scale), h * (1.0 - scale))
 	var sp := str(r.get("species", "fox"))
 	var fur := fur_color(r)
 	var hr := head_radii(r)
@@ -389,7 +453,7 @@ static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3) -> void:
 	kit.bone = HEAD
 	# The head, painted per species (cheeks, faces, bellies).
 	kit.paint = _fur_painter(sp, hr)
-	kit.add(K.blob(hr, 1.0, 1.0, 16, 10), Transform3D(Basis.IDENTITY, h), fur)
+	kit.add(K.blob(hr, 1.0, 1.0, 14, 9), Transform3D(Basis.IDENTITY, h), fur)
 	kit.paint = Callable()
 	var muzzle := WHITE
 	var nose := black
@@ -482,9 +546,13 @@ static func _head(kit: KartMeshKit, r: Dictionary, h: Vector3) -> void:
 			_eye(kit, Transform3D(t.basis, h + t.origin), iris, side, 1.0)
 	# Ears (and the penguin's tuft) on their own bone, for the speed sweep.
 	kit.bone = EARS
-	_ears(kit, sp, h, hr, fur)
+	var shrunk := kit.pre
+	kit.pre = Transform3D.IDENTITY
+	_ears(kit, sp, h, hr * scale, fur)
+	kit.pre = shrunk
 	kit.bone = HEAD
 	_helmet(kit, r, h, hr)
+	kit.pre = Transform3D.IDENTITY
 
 
 ## Paints fur: pale cheeks and chins, faces, bellies.
@@ -576,29 +644,35 @@ static func _ears(kit: KartMeshKit, sp: String, h: Vector3, hr: Vector3, fur: Co
 							Transform3D(b, h + Vector3(0, hr.y * 0.95, 0.04)), fur)
 
 
-## The open-face helmet in the kart's colour with an accent stripe and a goggle strap, the
-## goggles pushed up on its brow.
+## The open-face helmet in the racer's colour: an accent stripe over the crown, a darker rim, and
+## a wide dark goggle strap that wraps round the back (what the chase camera sees), the goggles
+## pushed up on its brow.
 static func _helmet(kit: KartMeshKit, r: Dictionary, h: Vector3, hr: Vector3) -> void:
 	var K := KartMeshKit
 	var paint := helmet_color(r)
 	var accent := _accent(r) if not r.has("helmet") else _paint(r)
-	var strap := Color(0.14, 0.14, 0.17, 0.3)
-	var radii := Vector3(hr.x * 1.1, hr.y * 1.16, hr.z * 1.12)
+	var strap := Color(0.12, 0.11, 0.16, 0.7)
+	var deep := Color(paint.r * 0.6, paint.g * 0.6, paint.b * 0.6, 0.8)
+	var radii := hr * HELMET
 	var tilt := Basis(Vector3.RIGHT, deg_to_rad(34))
-	var at := h + Vector3(0, 0.025, 0.035)
-	kit.paint = func(p: Vector3, n: Vector3, c: Color) -> Color:
+	var at := h + HELMET_AT
+	# The strap runs from the goggles on the brow down to mid-height at the back (in the head's
+	# frame, after the tilt), where the chase camera sees it as a dark visor band.
+	kit.paint = func(p: Vector3, _n: Vector3, c: Color) -> Color:
+		var w := tilt * p
 		var stripe := 1.0 - smoothstep(0.035, 0.06, absf(p.x))
-		var band := 1.0 - smoothstep(0.022, 0.04, absf(p.y - radii.y * 0.18))
-		return c.lerp(accent, stripe * (1.0 - band)).lerp(strap, band)
-	kit.add(K.blob(radii, 1.0, 1.0, 16, 7, PI * 0.56), Transform3D(tilt, at), paint)
+		var band := 1.0 - smoothstep(0.04, 0.058, absf(w.y - radii.y * 0.4 + w.z * 0.38))
+		var rim := smoothstep(-radii.y * 0.08, -radii.y * 0.16, p.y)
+		return c.lerp(accent, stripe * (1.0 - band)).lerp(deep, rim).lerp(strap, band)
+	kit.add(K.blob(radii, 1.0, 1.0, 14, 7, PI * 0.56), Transform3D(tilt, at), paint)
 	kit.paint = Callable()
 	# The goggles on the band, at the front.
 	var gl := Color(0.35, 0.85, 1.0, 1.0)
-	var rim := Color(0.85, 0.85, 0.9, 1.0)
-	var cols := PackedColorArray([rim, rim, gl, gl, gl])
+	var rim_c := Color(0.85, 0.85, 0.9, 1.0)
+	var cols := PackedColorArray([rim_c, rim_c, gl, gl, gl])
 	var prof := PackedVector2Array([Vector2(1.0, 0.0), Vector2(0.92, 0.55), Vector2(0.78, 0.52), Vector2(0.45, 0.64), Vector2(0.0, 0.68)])
 	for side: float in [-1.0, 1.0]:
-		var t := K.on_surface(radii, side * 0.11, radii.y * 0.18, 0.01)
+		var t := K.on_surface(radii, side * 0.11, radii.y * 0.16, 0.01)
 		kit.outline = 0.6
 		kit.add(K.lathe(prof, 8, cols), Transform3D((tilt * t.basis).scaled_local(Vector3(0.078, 0.08, 0.066)), at + tilt * t.origin), Color.WHITE)
 	kit.outline = 1.0

@@ -28,6 +28,9 @@ var glow := 0.0
 ## An optional painter for the next `add` calls: func(local_pos, local_normal, color) -> Color,
 ## in the added shape's own space (stripes, masks, bellies).
 var paint := Callable()
+## A transform applied after each `add`'s own (a whole group scaled about a point: the racers'
+## heads are built at portrait size, then shrunk onto the kart).
+var pre := Transform3D.IDENTITY
 
 var _st := SurfaceTool.new()
 var _empty := true
@@ -41,6 +44,7 @@ func _init() -> void:
 ## (alpha = the shader mask). A mesh with vertex colours (lathe, tube) is tinted by `color`.
 func add(mesh: Mesh, xf: Transform3D, color: Color) -> void:
 	var arrays: Array = mesh.get_mesh_arrays() if mesh is PrimitiveMesh else mesh.surface_get_arrays(0)
+	xf = pre * xf
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()

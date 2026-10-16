@@ -11,7 +11,7 @@ extends RefCounted
 
 const RACERS := [
 	{"id": "fox", "name": "Juniper", "species": "fox", "color": Color(1.0, 0.48, 0.1), "accent": Color(1.0, 0.93, 0.78),
-		"suit": Color(0.2, 0.24, 0.42), "eyes": Color(0.45, 0.26, 0.1), "helmet": Color(0.97, 0.96, 0.92), "weight": 1.0, "kart": "medium", "number": 7,
+		"suit": Color(0.2, 0.24, 0.42), "eyes": Color(0.45, 0.26, 0.1), "weight": 1.0, "kart": "medium", "number": 7,
 		"horn": {"hz": 620.0, "ratio": 1.26, "beeps": 2, "wave": "square"}, "tagline": "Quick wits, quicker corners"},
 	{"id": "panda", "name": "Tofu", "species": "panda", "color": Color(0.2, 0.78, 0.7), "accent": Color(0.97, 0.97, 0.95),
 		"suit": Color(0.14, 0.15, 0.2), "eyes": Color(0.25, 0.18, 0.14), "weight": 1.15, "kart": "heavy", "number": 22,
