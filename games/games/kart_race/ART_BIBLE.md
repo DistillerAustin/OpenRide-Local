@@ -67,7 +67,8 @@ colour change, so blob shadows stay right.
 | kerb a / b | `#DB211F` `#F7F7F2` | `#E0291F` `#FAF5EB` | `#296BD9` `#F7F5F2` | `#D9242E` `#FAFAFF` |
 | verge or ground a / b | `#549430` `#80B540` | `#E09457` `#F2B270` | `#668F42` `#85A34C` (cobbled quay verge) | `#E6EDFC` `#FAFCFF` |
 | rock | `#8C8575` | `#C75C33` (strata 1.6 m) | `#8F8585` | `#6B7085` |
-| wall a / b / rail | `#F5F5F7` `#2985DB` `#E63329` | `#FAF7F0` `#F2731F` `#2E2E38` | `#F5F2F0` `#296BD9` `#FAC733` | `#F7F7FC` `#D9242E` `#F5F7FF` |
+| wall a / b / rail | `#F5F5F7` `#2985DB` `#E63329` | `#BD8552` (timber) `#F2731F` `#2E2E38` | `#F5F2F0` `#296BD9` `#FAC733` | `#F7F7FC` `#D9242E` `#D9242E` |
+| wall cap / foot | `#E6E8ED` / tyres `#212126` | `#DBAD75` / `#6B3D29` | `#DBD6D1` / stone `#5C5761` | snow `#FAFCFF` / blue shade `#8099CC` |
 
 **Theme colour rules**
 
@@ -75,14 +76,13 @@ colour change, so blob shadows stay right.
   blue and red, Canyon orange and teal, Harbor blue and gold, Frost red.
 - **The road is always the darkest large value on screen.** The karts must pop against it.
   Asphalt luminance stays between 0.28 and 0.36 (Harbor's purple dusk may go darker).
-- **Correction (Frost):** the snow ground reads as grey mush (`frost_pass_fwd_race.png`). Snow is
-  bright white `#FAFCFF` in the sun, with **blue** shade `#A9C4EE` (sky ambient). Never grey.
-  Low-frequency noise contrast stays at 6% or less, with sparkle specks for texture. The Frost
-  rail (`#F5F7FF`) vanishes against the snow: use the theme's red `#D9242E` on a white wall,
-  with a dark cap.
-- **Correction (all walls):** walls carry a 30% self-glow (`wall_a.a = 0.3`), which flattens
-  them into unlit slabs. Walls take the sun like scenery, with a darker foot (AO) and a
-  bevelled, lighter top cap.
+- **Frost snow** is lit by its own rule (`ground.gdshader` `snow` = 1): bright white `#FFFDF7`
+  in the sun, **blue** `#A9C4EE` in the shade (sky ambient), never grey. Drift noise is 5% and
+  the grain 3%; texture comes from sparkle that twinkles as the view moves (one noise read,
+  offset by the view). The road's verges use `verge_grain` 0.06 and `verge_gain` 1.2. The Frost
+  wall is white and red under a red rail and a fat snow cap.
+- **Walls** take the sun like scenery: a self-glow of only 0.08, a darker foot and a chamfered,
+  lighter cap (see 6, Barriers).
 
 ### 3.3 The cast (`KartRoster.RACERS`): kart colour and accent
 
@@ -140,15 +140,14 @@ There are **no engine lights, shadows, fog, glow or post passes.** A full-screen
 | --- | --- | --- | --- |
 | Karts and drivers | `kart.gdshader` + `outline.gdshader` (next pass) | Per pixel: a toon ramp `smoothstep(-0.06-wrap, 0.14-wrap/2, N·L)`. Fur gets wrap 0.3 × (1 − gloss). The shade is sky-tinted (×0.78, a violet core). Paint (`COLOR.a` = gloss) gets a crisp toon highlight (pow 32, stepped 0.3-0.6), a broad sheen and a sky clear-coat. A **rim** (fresnel 0.55-0.95, strength 0.5): warm `#FFE6B8` in the sun, cool `#9EBDFF` in the shade. | Vertex colours carry the paint and the **painted AO**. `UV.y` = self-lit (eyes, lamps). `UV.x` = outline width (0 on eye glints and blush). `flash` is for hits and boosts. |
 | Outline | inverted hull, `cull_front` | none | Width 0.02 × `UV.x` × `clamp(dist·0.08, 0.7, 2.5)`. Colour `mix(#1F122A, surface×0.3, 0.35)`: a deep shade of the surface, **never pure black**. Karts and drivers only. Scenery has no outlines. |
-| Road | `road.gdshader` | Flat-normal: hemi × 0.55 + sun × `sun.y` × 1.25 | Everything is procedural in track space (UV = d, s): grain, repairs, the rubbered line, tyre marks weighted by corner, edge lines, the chequered line, grid boxes, kerbs (1 m blocks) and verges. |
-| Terrain | `ground.gdshader` | Per pixel, the same light | World-space textured. Slopes below `rock_slope` turn to strata. Specks are flowers or sparkle. |
+| Road | `road.gdshader` | Flat-normal: hemi × 0.55 + sun × `sun.y` × 1.25, plus a warm glare (`sheen` 0.22, pow 8 of the sun's mirror direction, broken by the grain) | Everything is procedural in track space (UV = d, s): grain, repairs, the rubbered line (−20%), tyre marks weighted by corner, a darker grime band 0.6 m inside each edge, edge lines, dashed lane lines, the chequered line, grid boxes, kerbs (1 m blocks) and verges. No extra texture reads. |
+| Terrain | `ground.gdshader` | Per pixel, the same light; snow (`snow` = 1) has its own: white in the sun, sky-blue in the shade | World-space textured. Slopes below `rock_slope` turn to strata. Specks are flowers; on snow, view-dependent sparkle. `grain` sets the fine noise's contrast. |
 | Scenery | `scenery.gdshader` | **Per vertex**: hemi + sun·N·L. Hazed and graded per pixel. | Painted AO in the vertex colours. `COLOR.a` = sway (foliage, flags) or glow (`alpha_glow`). MultiMesh for repeats (`INSTANCE_CUSTOM` tint). Matte only: no specular on scenery. |
 | Sky | `sky.gdshader` | n/a | Texture-free gradient, a sun halo, the grade. The clouds are cards (`_build_clouds`). |
 | Water, items | `water`, `item_*` | Same light | Items may be emissive and additive. They must read against both the road and the sky. |
 
-**Shadows.** Karts get blob shadows only, cast along `sun_dir()`. **Correction:** give the blob a
-tighter, darker core under the chassis (contact) inside its soft falloff. Without one, karts look
-pasted on (`meadow_ring_fwd_race.png`).
+**Shadows.** Karts get blob shadows only, cast along `sun_dir()`, with a tight, darker contact
+core (0.8 alpha) under the chassis inside the soft falloff, so karts sit on the road.
 
 **Anti-aliasing.** The 3D view renders at 0.62 (0.58 at governor tier 4) with no MSAA, and the
 stair-stepping on walls, stands and barrels is the single most "cheap"-looking artefact on the
@@ -180,17 +179,19 @@ with glowing rings. The UI uses slanted rounded badges.
 - Ears go through or over the helmet: they are the species' silhouette.
 - They lean into turns, squash on landing and cheer at the finish.
 
-**Correction: the view from behind.** The chase camera sees the back of the kart for 95% of a
-ride. Today, Juniper's white helmet reads as a white egg covering the kart
-(`racers_back.png`, `meadow_ring_fwd_race.png`). The rules:
+**The view from behind.** The chase camera sees the back of the kart for 95% of a ride:
 
-- From behind, the **helmet is in the racer's kart colour**, with an accent stripe, the
-  number, and a dark visor band or goggle strap that shows from the back. The fox's
-  `helmet: #F7F5EB` override breaks this.
-- The helmet is no wider than the rear axle's track × 0.45. Scale the current helmets by about
-  0.85, and keep the ears full size.
-- The rear of the kart needs: a **body-colour rear wing with endplates** (not a thin rod), a
-  visible engine block or diffuser, two taillights (self-lit, `UV.y`) and exhaust tips.
+- The **helmet is in the racer's kart colour** with an accent stripe, the number above a wide
+  dark goggle strap that wraps the back as a visor band, and a darker rim. Only Pip (a green
+  frog in a green kart) keeps a contrasting yellow override.
+- On the kart the head is built at portrait size and scaled by `HEAD_SCALE` 0.88, and the
+  helmet sits snug (`HELMET` 1.05 / 1.1 / 1.07 of the head). Its width stays within the rear
+  axle's track × 0.45 (Juniper: 0.63 m against 0.67). The ears stay full size.
+- The rear of every kart has a body-colour wing with an accent trailing edge, two self-lit
+  taillight bars (`UV.y`), glowing exhaust tips and a dark diffuser with fins. The classes
+  differ: the medium kart has a full-width wing on tall endplates, the light kart a narrow high
+  wing on its shark fin, and the heavy kart a low, wide ducktail across its fenders under twin
+  stacks. All stay under 3k triangles (2.5-2.9k).
 
 ## 6. Environments
 
@@ -209,21 +210,19 @@ ride. Today, Juniper's white helmet reads as a white egg covering the kart
   **Correction:** the grid shot is the same composition on all four tracks (the same
   grandstand and camera, in `*_fwd_grid.png`). Frame each grid on its landmark, and dress the
   grandstand per theme: snow on the roof for Frost, an awning and lamps for Harbor.
-- **Barriers. Correction.** Not flat two-colour slabs. Use:
-  - a rounded or chamfered profile with a lighter top cap (rail);
-  - a darker foot;
-  - panel seams every 4 m, painted in the shader;
-  - a per-theme type: tyre-stack walls and fences for Meadow, timber and rock for Canyon,
-    quay bollards and railings for Harbor, snow-capped boards for Frost.
-
-  Keep it one mesh and one material per track.
-- **Road. Correction.** The road is the largest area on screen, and today it reads as empty
-  grey (`canyon_dash_fwd_drone1.png`). Add dashed lane lines (3 m dash, 6 m gap, at d = ±hw/3),
-  a darker 0.6 m band just inside each edge line, and a faint warm sun-sheen band towards
-  `sun_dir`. All of it is procedural, with no new texture reads.
-- **Sky.** Clouds are puffy cards with a flat, shaded base. **Correction:** today they are
-  small "sausage" rows (`meadow_ring_fwd_lap.png`). Make them bigger, with 2-3 overlapping
-  layers and a darker underside, and place fewer of them.
+- **Barriers** (`KartWorld._wall_mesh`, one mesh and one material per track). The profile from
+  the road: a dark foot (0.2 m), panels alternating in the two wall colours with a dark seam at
+  every 2 m row, the rail as a stripe under the cap, a chamfered lighter cap and a shaded back.
+  Per theme (`wall_style`): Meadow's foot is a tyre row with a tread line, Canyon's panels are
+  timber planks with joints, Harbor's quay wall has a stone foot (the bollards are in its
+  dress), and Frost's cap is a fat lip of snow over a blue-shaded foot. About twice the old
+  wall's triangles, still one draw.
+- **Road.** The road is the largest area on screen. It carries dashed lane lines (3 m dash, 6 m
+  gap, at d = ±hw/3, none on the grid), a darker 0.6 m band just inside each edge line, a
+  stronger rubbered line, and a warm sun glare towards `sun_dir`. All of it is procedural.
+- **Sky.** Clouds are cumulus cards: puffs piled in a dome over a flat, cooler base, lit on top.
+  There are 40% fewer banks than before, each about twice the size, with one or two smaller
+  cards overlapping it (one MultiMesh).
 
 ## 7. UI and HUD
 
@@ -323,22 +322,21 @@ stars. Every effect fits that grammar, so no new pools or nodes are needed.
 
 | Effect | Look |
 | --- | --- |
-| Drift sparks | **Streaks, not discs.** Velocity-aligned, stretched 3-5:1, a white-hot core blending to the tier colour, plus a flickering wheel glow. A burst ring when a tier is reached. **Correction:** today they render as soft blue bubbles (`3_hud_drift_item.png`). |
+| Drift sparks | **Streaks, not discs** (`spark.gdshader`): stretched along their velocity (0.06 s of travel, so 3-5:1), a white-hot core blending to the tier colour. The still wheel glow is a hard-edged four-point flare. A tier reached bursts a flat ring of 12-22 streaks round the tail. KartFx writes each spark's velocity into its transform's free basis slots: the same buffer writes, no texture. |
 | Boost | Two flame cones from the exhausts, the tier colour → `FLAME_CORE` white, plus FOV +14° and the boost rumble |
 | Dust | Theme-tinted puffs: verge dust, sand, snow powder. Alpha ≤ 0.5. Short lived. |
 | Hit | Yellow stars orbiting the driver and a white `flash` on the kart |
 | Shield | A cyan bubble (`item_shield`) and a burst ring when it blocks |
-| Speed lines | Thin screen-space streaks from the draft point, **only above about 70% of top speed or while drafting.** Never across a still sky (`meadow_ring_fwd_lap.png` shows them at cruise). |
+| Speed lines | Thin screen-space streaks from the draft point, **only at a real sprint or on a boost**: from 1.15× the rider's steady 0.6-FTP speed, full at 1.27× (`KartRace.SPEED_LINES_*`). The draft streaks show while drafting. Never at cruise. |
 
 Additive effects must stay in the tier, flame and shield colours. Smoke and dust are never
 additive.
 
 ## 9. Camera
 
-- The chase camera today: 5.0 m back, 1.95 m up, looking 9 m ahead at 1.15 m, FOV 64→80 by speed.
-- **Correction:** about 5.6 m back and 2.6 m up, looking 10 m ahead at 0.9 m. That shows the
-  kart's top and more road over the helmet, matching the elevated three-quarter read that makes
-  karts look like toys.
+- The chase camera: 5.6 m back and 2.6 m up, looking 10 m ahead at 0.9 m, FOV 64→80 by speed.
+  That shows the kart's top and more road over the helmet: the elevated three-quarter read
+  that makes karts look like toys. "Close" is the same angle nearer: 4.0 m back, 1.95 m up.
 - Keep "close" for riders who want it.
 
 ## 10. Tablet budget: hard constraints
