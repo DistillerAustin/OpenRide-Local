@@ -1260,8 +1260,8 @@ Kart Race is the heaviest game so far: eight skinned karts, four dressed tracks 
 HUD, with the face tracker running. Here is what holding the frame rate took on the Gen 2
 (PowerVR GX6250, GL Compatibility):
 
-- **Render scale 0.62.** The 3D view renders into a `SubViewport` at 0.62 of 1080p, with no
-  MSAA, and is drawn scaled under the HUD (Dodge Ball's pattern; `scaling_3d_scale` below 1
+- **Render scale 0.66.** The 3D view renders into a `SubViewport` at 0.66 of 1080p (0.62
+  before polish pass 2), with no MSAA, and is drawn scaled under the HUD (Dodge Ball's pattern; `scaling_3d_scale` below 1
   hung the tablet). No full-screen pass: the colour grade is folded into every world shader,
   and the speed lines are thin polygons.
 - **Cheap surfaces.** The road and terrain are unshaded, with hand-made light and fog.
@@ -1395,6 +1395,22 @@ after a cool-down (CPU0 at 1.57 GHz): 31 / 51.3 / 61. The earlier 8.3-9.0 ms sum
 viewports, idle bakes' stale times included; on the desktop the bakes' real per-frame render
 cost was already about zero before this pass (`capture_kart_hud.gd`), so the render's CPU side is
 the 3D view and the screen's canvas.
+
+**Polish pass 2: anti-aliasing and the art (2026-10-15/16, mock build, `DEV_TUNING` on, Meadow
+Ring, `[governor] enabled=false tier=1`, 60 s of racing per run, 5 s perf lines).** The A72s'
+clock is in brackets where it was throttled.
+
+| Run | Tracker load on: fps avg (min) | Camera off: fps avg (min) |
+| --- | --- | --- |
+| Scale 0.62, no AA (the new art) | 46.4 (35); hot: 28.6, 39.5, 31.9 [1.0-1.4 GHz] | 51.7 (46), 52.6 (31), 52.5 (41) |
+| Scale 0.66 | 45.8 (40) | 50.8 (44) |
+| Scale 0.72 | 39.4; 27.5 [1.0 GHz] | 47.8 (39), 48.3 (38) |
+| MSAA 2x | 26.8, 29.2: the 3D view renders black | 50.9, 46.8: black too |
+
+FXAA (`screen_space_aa`) isn't available in Compatibility (the engine warns and ignores it).
+0.72 costs about 4 fps either way, beyond the 2 fps budget; 0.66 costs under 2 and ships
+(`RENDER_SCALE`). The art pass itself is GPU and build-time work: with the tracker on and cool
+clocks Meadow held 46.4 fps against 44.9 before it, camera off 51.7-52.6 against 51.3.
 
 For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
 `OPENRIDE_GAMES kart_race perf game_ms=… ticks=… tick_ms=… sync_ms=… hud_ms=… process_ms=…

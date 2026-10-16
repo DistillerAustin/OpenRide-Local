@@ -76,7 +76,7 @@ void fragment() {
 	vec3 lit = col * COLOR.rgb * v_light;
 	if (snow > 0.0) {
 		float sunlit = smoothstep(-0.02, 0.4, v_sun);
-		vec3 sn = mix(snow_shade, snow_lit * mix(vec3(1.0), sun_color, 0.35), sunlit);
+		vec3 sn = mix(snow_shade, snow_lit * mix(vec3(1.0), sun_color, 0.12), sunlit);
 		sn *= 1.0 + 0.05 * (big - 0.5) + 0.03 * (fine - 0.5);
 		// Sparkle: the fine read, offset by the view, so glints come and go as the kart moves.
 		vec3 vw = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;

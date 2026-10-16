@@ -28,7 +28,9 @@ enum Flow { IDLE, COUNTDOWN, RACING, RESULTS, PODIUM, DONE }
 
 ## The 3D view renders into a SubViewport at this share of 1080p, drawn scaled under the HUD
 ## (Dodge Ball's pattern: the tablet's GPU is fill-rate bound; scaling_3d_scale < 1 hangs it).
-const RENDER_SCALE := 0.62
+## 0.66 (2026-10-16): the most resolution against aliasing within 2 fps on the tablet (0.72 cost
+## about 4; MSAA 2x renders the 3D view black there, and Compatibility has no FXAA).
+const RENDER_SCALE := 0.66
 ## The quality governor's last trim (KartQualityGovernor tier `scale`): no lower than this.
 const RENDER_SCALE_TRIMMED := 0.58
 const FX_CAP_TRIMMED := 0.5

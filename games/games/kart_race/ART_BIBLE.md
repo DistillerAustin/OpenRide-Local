@@ -24,7 +24,7 @@ When something is ambiguous, pick the option that reads faster at 1 m and half-a
 
 | Pillar | Design test |
 | --- | --- |
-| **Readable first** | If a detail doesn't survive the tablet's 0.62 render scale at 1 m, cut it or make it bigger. Silhouettes, colour blocks and value contrast come before texture. |
+| **Readable first** | If a detail doesn't survive the tablet's 0.66 render scale at 1 m, cut it or make it bigger. Silhouettes, colour blocks and value contrast come before texture. |
 | **Toy-like and warm** | Rounded, chunky, slightly oversized forms with fat tyres. A warm, low sun. Nothing gritty, metallic or realistic. When in doubt, make it rounder and more saturated. |
 | **Speed you can feel** | Movement cues (kerbs, road dashes, streaks, FOV, sparks) beat static detail. Detail that only reads when standing still is low priority. |
 | **One hand-made light** | Every surface is lit by the same hand-written sun, hemisphere and haze (`light.gdshaderinc`). No engine lights. No asset may bring its own lighting model. |
@@ -149,12 +149,12 @@ There are **no engine lights, shadows, fog, glow or post passes.** A full-screen
 **Shadows.** Karts get blob shadows only, cast along `sun_dir()`, with a tight, darker contact
 core (0.8 alpha) under the chassis inside the soft falloff, so karts sit on the road.
 
-**Anti-aliasing.** The 3D view renders at 0.62 (0.58 at governor tier 4) with no MSAA, and the
-stair-stepping on walls, stands and barrels is the single most "cheap"-looking artefact on the
-tablet (`tablet_race_meadow.png`). The tablet is CPU-bound, and render scale 0.40 to 0.62
-measured within the noise. **Correction (to measure):** try MSAA 2× on the SubViewport. A tiled
-PowerVR resolves it on chip. Also try scale 0.75, and drop the governor's render-scale tier. Keep
-whichever costs at most 2 fps.
+**Anti-aliasing.** The 3D view renders at 0.66 of 1080p (0.58 at governor tier 4) and is
+scaled up linearly. Measured on the tablet (Meadow, 60 s of racing, tier 1 fixed, 2026-10-15/16):
+render scale 0.72 costs about 4 fps with the tracker on or off; 0.66 costs under 2 (−0.6 on,
+−1.3 off); MSAA 2× on the SubViewport renders the 3D view black on the PowerVR driver; FXAA
+isn't available in Compatibility. Silhouettes carry the rest: chamfered wall caps, outlines and
+no thin high-contrast slivers.
 
 ## 5. Shapes and proportions
 
@@ -357,7 +357,7 @@ CPU-bound on the main thread**, and the GL driver takes about 17% of it.
 5. Noise comes only from `noise_tex`, with at most 3 reads per pixel on large surfaces.
 6. Particles use the three pooled MultiMeshes and their caps. The governor halves the caps at
    tier 1.
-7. The 3D view renders in a SubViewport at 0.62. Never set `scaling_3d_scale` below 1. AA and
+7. The 3D view renders in a SubViewport at 0.66. Never set `scaling_3d_scale` below 1. AA and
    scale changes need a tablet measurement (±3 fps is noise).
 8. HUD widgets are baked, and labels change only when their values change. A new HUD element
    joins a `KartBaked` bake or the shared draw.
