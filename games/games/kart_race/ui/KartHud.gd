@@ -22,6 +22,8 @@ extends CanvasLayer
 ## dots and the effect overlays are free-standing (no container), so their per-frame changes
 ## never re-lay out the HUD.
 
+## The place badge popped to a new place (`better`: up the order): audio cues it on this frame.
+signal place_popped(place: int, better: bool)
 signal item_pressed
 
 const LAYER := 8
@@ -427,6 +429,7 @@ func _set_place(place: int) -> void:
 	view.rotation = -0.08 if better else 0.05
 	tw.tween_property(view, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(view, "rotation", 0.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	place_popped.emit(place, better)
 
 
 func _build_title() -> void:

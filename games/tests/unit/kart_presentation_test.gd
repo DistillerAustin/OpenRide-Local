@@ -3,8 +3,9 @@ extends GdUnitTestSuite
 ## in its Kart Race skin and every kart widget at its longest text, with nothing overlapping or
 ## off screen; the skin's layout keys are opt-in and clear; a real touch on the item button uses
 ## the item and a touch elsewhere doesn't; the results board and the podium run with no input
-## and advance on time; every effect preset renders cleanly; the music style renders; the
-## audio's pure rules (stems, tempo, engine pitch) hold.
+## and advance on time; every effect renders cleanly at a level that never clips; the music
+## style renders; the audio's rules (stems, tempo, the engine model, the bot-engine voice cap,
+## the duck and the place cue) hold.
 
 const Fixtures := preload("res://tests/kart_fixtures.gd")
 const Dsp := preload("res://audio/Dsp.gd")
@@ -618,29 +619,164 @@ func _renders(bakes: Array) -> int:
 
 func test_every_kart_effect_renders_a_clean_sound() -> void:
 	for sound in KartSfx.names():
-		var p := KartSfx.preset(sound)
-		var wav := SfxSynth.render(p)
-		var n := Dsp.frames(wav)
-		assert_int(n).override_failure_message("%s length %d" % [sound, n]).is_between(
-			int(p.duration() * Dsp.SR) - 4, int(p.duration() * Dsp.SR) + 4)
+		var s := KartSfx.samples(sound)
+		var n := s.size()
+		if sound in KartSfx.PRESETS:
+			var p := KartSfx.preset(sound)
+			assert_int(n).override_failure_message("%s length %d" % [sound, n]).is_between(
+				int(p.duration() * Dsp.SR) - 4, int(p.duration() * Dsp.SR) + 4)
 		var peak := 0.0
 		var max_step := 0.0
 		for i in n:
-			peak = maxf(peak, absf(Dsp.sample(wav, i)))
+			peak = maxf(peak, absf(s[i]))
 			if i > 0:
-				max_step = maxf(max_step, absf(Dsp.sample(wav, i) - Dsp.sample(wav, i - 1)))
+				max_step = maxf(max_step, absf(s[i] - s[i - 1]))
 		assert_float(peak).override_failure_message("%s peak %.3f" % [sound, peak]).is_between(0.05, 0.99)
-		if p.loop:
-			assert_int(wav.loop_mode).is_equal(AudioStreamWAV.LOOP_FORWARD)
-			var seam := absf(Dsp.sample(wav, 0) - Dsp.sample(wav, n - 1))
+		if KartSfx.is_loop(sound):
+			var seam := absf(s[0] - s[n - 1])
 			assert_float(seam).override_failure_message(sound + " clicks at the loop").is_less_equal(max_step * 1.1 + 0.001)
 		else:
-			assert_float(absf(Dsp.sample(wav, 0))).override_failure_message(sound + " starts with a click").is_less(0.002)
-			assert_float(absf(Dsp.sample(wav, n - 1))).override_failure_message(sound + " ends with a click").is_less(0.002)
-	# Registered, they play by name.
+			assert_float(absf(s[0])).override_failure_message(sound + " starts with a click").is_less(0.002)
+			assert_float(absf(s[n - 1])).override_failure_message(sound + " ends with a click").is_less(0.002)
+	# Registered, they play by name (the layered and synth ones through AudioDirector's factory).
 	KartSfx.register()
 	for sound in KartSfx.names():
-		assert_object(SfxSynth.stream(sound)).override_failure_message("no stream for " + sound).is_not_null()
+		var stream := KartSfx.stream(sound)
+		assert_object(stream).override_failure_message("no stream for " + sound).is_not_null()
+		assert_bool(stream.loop_mode != AudioStreamWAV.LOOP_DISABLED).is_equal(KartSfx.is_loop(sound))
+		if sound in KartSfx.LAYERED:
+			assert_object(AudioDirector._stream_for(sound)).override_failure_message("AudioDirector can't play " + sound).is_not_null()
+
+
+## The mix levels (the numbers from tests/render_kart_audio.gd's analysis): every one-shot at its
+## player level stays under full scale with room for the music, the cues that must read sit
+## high, and the drift tiers and place cues step the right way.
+func test_the_kart_mix_levels_and_headroom() -> void:
+	for sound in KartAudio.SFX_DB:
+		var s := KartSfx.samples(sound)
+		var peak := 0.0
+		var sum := 0.0
+		for v in s:
+			peak = maxf(peak, absf(v))
+			sum += v * v
+		var played := linear_to_db(peak) + float(KartAudio.SFX_DB[sound])
+		assert_float(played).override_failure_message("%s peaks at %.1f dBFS as played" % [sound, played]).is_less_equal(-1.0)
+		assert_float(played).override_failure_message("%s too quiet: %.1f dBFS" % [sound, played]).is_greater(-16.0)
+	for cue in ["kart_count", "kart_go", "kart_pickup", "kart_lap", "kart_fanfare", "kart_place_up"]:
+		assert_bool(cue in KartAudio.PRIORITY).override_failure_message(cue + " should duck the engine").is_true()
+	# Tiers: more notes and higher each step; the sizzle louder and higher each step.
+	var lengths := []
+	for t in [1, 2, 3]:
+		lengths.append(KartSfx.samples("kart_tier%d" % t).size())
+		assert_float(KartAudio.SFX_DB["kart_tier%d" % t]).is_greater_equal(KartAudio.SFX_DB["kart_tier%d" % maxi(1, t - 1)])
+	assert_bool(lengths[0] < lengths[1] and lengths[1] < lengths[2]).is_true()
+	for t in [1, 2, 3]:
+		assert_float(KartAudio.SIZZLE_DB[t]).is_greater(KartAudio.SIZZLE_DB[t - 1])
+		assert_float(KartAudio.SIZZLE_PITCH[t]).is_greater_equal(KartAudio.SIZZLE_PITCH[t - 1])
+	# A place lost reads softer than a place gained.
+	assert_float(KartAudio.SFX_DB.kart_place_down).is_less(KartAudio.SFX_DB.kart_place_up)
+	# The whole mix goes through a limiter under full scale.
+	var fx := KartAudio.master_effects()
+	assert_bool(fx[0] is AudioEffectHardLimiter).is_true()
+	assert_float((fx[0] as AudioEffectHardLimiter).ceiling_db).is_less_equal(-0.5)
+
+
+## The engine: its synth layers sit clear of the music's bass, the pitch climbs about an octave
+## and a half from idle to cruise, the low layer carries the idle and the high one the revs.
+func test_the_engine_model() -> void:
+	var idle := KartAudio.engine_mix(0.0, 0.0, false)
+	var cruise := KartAudio.engine_mix(20.0, 1.0, false)
+	var boost := KartAudio.engine_mix(20.0, 1.0, true)
+	var octaves := log(cruise.x / idle.x) / log(2.0)
+	assert_float(octaves).is_between(1.2, 1.7)
+	assert_float(boost.x).is_greater(cruise.x)
+	var f0 := float(KartSfx.ENGINES.kart_engine_lo.f0)
+	assert_float(f0 * idle.x).is_between(70.0, 110.0)  # a low, lumpy idle
+	assert_float(f0 * boost.x).is_between(220.0, 320.0)  # a buzzing boost
+	assert_float(idle.y).is_greater(idle.z)  # the low layer at idle
+	assert_float(cruise.z).is_greater(cruise.y)  # the high layer at speed
+	assert_float(boost.z).is_greater(cruise.z)
+	assert_float(KartAudio.engine_mix(20.0, 0.0, false).z).is_less(cruise.z)  # off the pedals: quieter
+	for layer in KartSfx.ENGINES:
+		assert_float(float(KartSfx.ENGINES[layer].highpass)).is_greater_equal(120.0)  # out of the bass's way
+
+
+## Bot engines: at most RIVAL_VOICES, the nearest, quieter with distance, silent at the range.
+func test_bot_engines_keep_only_the_nearest_voices() -> void:
+	var race := KartRaceLogic.new()
+	var racers := []
+	for i in 8:
+		racers.append({"racer_id": "r%d" % i})
+	race.setup(KartTrackModel.new(Fixtures.oval(600.0, 60.0)), racers, 3)
+	var k: KartState = race.karts[0]
+	k.pos = Vector3.ZERO
+	var dists := [9.0, 4.0, 20.0, 6.0, 12.0, 40.0, 2.5]
+	for i in 7:
+		(race.karts[i + 1] as KartState).pos = Vector3(dists[i], 0.0, 0.0)
+	var out: Array[int] = []
+	KartAudio.nearest_rivals(race.karts, k, KartAudio.RIVAL_VOICES, KartAudio.RIVAL_RANGE, out)
+	assert_int(KartAudio.RIVAL_VOICES).is_less_equal(2)
+	assert_array(out).contains_exactly([7, 2])
+	KartAudio.nearest_rivals(race.karts, k, 7, KartAudio.RIVAL_RANGE, out)
+	assert_array(out).contains_exactly([7, 2, 4, 1, 5, 3])  # 40 m is out of range
+	assert_float(KartAudio.rival_db(3.0)).is_equal(KartAudio.RIVAL_DB)
+	assert_float(KartAudio.rival_db(6.0)).is_less(KartAudio.rival_db(3.0) - 5.0)
+	assert_float(KartAudio.rival_db(KartAudio.RIVAL_RANGE)).is_equal_approx(KartAudio.SILENT_DB, 0.01)
+	# Played: seven bots in a pack round the rider, two engine voices.
+	for i in 7:
+		(race.karts[i + 1] as KartState).pos = Vector3(2.0 + i, 0.0, 0.0)
+		(race.karts[i + 1] as KartState).speed = 18.0
+	race.phase = KartRaceLogic.Phase.RACING
+	var audio: KartAudio = auto_free(KartAudio.new())
+	add_child(audio)
+	audio.listen(race)
+	while not KartSfx.warmed():
+		await get_tree().process_frame
+	for f in 20:
+		audio.step(race, "RACING", DT)
+	var voices := 0
+	for p in audio.find_children("Rival*", "AudioStreamPlayer", false, false):
+		if (p as AudioStreamPlayer).playing:
+			voices += 1
+	assert_int(voices).is_equal(KartAudio.RIVAL_VOICES)
+	audio.stop()
+
+
+## Duck and cue hooks: the countdown and banners duck the music 3 dB; the HUD's place pop plays
+## its cue on that call, only while racing.
+func test_the_audio_ducks_under_banners_and_cues_the_place_pop() -> void:
+	var race := KartRaceLogic.new()
+	var racers := []
+	for i in 4:
+		racers.append({"racer_id": "r%d" % i})
+	race.setup(KartTrackModel.new(Fixtures.oval(600.0, 60.0)), racers, 3)
+	var audio: KartAudio = auto_free(KartAudio.new())
+	add_child(audio)
+	audio.listen(race)
+	var played: Array[String] = []
+	var on_sound := func(sound: String, _bus: String): played.append(sound)
+	AudioDirector.sound_played.connect(on_sound)
+	AudioDirector._game_duck_left = 0.0
+	race.events.lap_completed.emit(KartRaceLogic.RIDER, 1, 30.0)
+	assert_array(played).contains(["kart_lap"])
+	assert_float(AudioDirector._game_duck_left).is_equal(KartAudio.DUCK_SEC.lap)
+	assert_float(AudioDirector._game_duck_db).is_equal(KartAudio.DUCK_DB)
+	AudioDirector._process(0.2)
+	assert_float(AudioDirector.duck_db).is_equal_approx(KartAudio.DUCK_DB, 0.01)
+	# The place cue: not on the grid, then on the pop itself while racing.
+	played.clear()
+	audio.step(race, "COUNTDOWN", DT)
+	audio.on_place_popped(3, true)
+	assert_array(played).not_contains(["kart_place_up"])
+	audio.step(race, "RACING", DT)
+	audio.on_place_popped(2, true)
+	assert_array(played).contains(["kart_place_up"])
+	audio.step(race, "RACING", 0.5)
+	audio.on_place_popped(3, false)
+	assert_array(played).contains(["kart_place_down"])
+	AudioDirector.sound_played.disconnect(on_sound)
+	AudioDirector._game_duck_left = 0.0
+	audio.stop()
 
 
 func test_the_kart_music_style_renders_its_stems_and_final_lap_variation() -> void:
@@ -682,7 +818,7 @@ func test_the_audio_rules() -> void:
 	assert_float(KartAudio.tempo_cadence_for(140.0)).is_equal(KartAudio.CADENCE_RANGE.y)
 	# The engine climbs with speed.
 	var last := 0.0
-	for v in [0.0, 5.0, 10.0, 20.0, 30.0]:
+	for v in [0.0, 5.0, 10.0, 20.0, 25.0]:
 		var p := KartAudio.engine_pitch(v, false)
 		assert_float(p).is_greater(last)
 		last = p

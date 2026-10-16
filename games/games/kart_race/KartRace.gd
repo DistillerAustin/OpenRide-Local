@@ -432,6 +432,8 @@ func _build_audio() -> void:
 	_audio.game = self
 	_audio.music_seed = int(segment.get("seed", 0))
 	add_child(_audio)
+	if _kart_hud:  # the place cue lands on the badge's pop
+		_kart_hud.place_popped.connect(_audio.on_place_popped)
 	_audio.start_music()
 	race_began.connect(func(r: KartRaceLogic): _audio.listen(r))
 
