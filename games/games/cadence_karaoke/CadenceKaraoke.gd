@@ -13,9 +13,15 @@ extends Game
 
 const CadenceAudioScript := preload("res://games/cadence_karaoke/CadenceAudio.gd")
 
+## "Neon Lines" (CadenceMusic: a sample bank and a score from games/tools/music), laid out by
+## SongSequencer at the target cadence: one beat a pedal stroke from 70 rpm, two below. A pace
+## change swaps in on a phrase boundary and carries on from the same place in the song. The bed
+## (drums, bass) always; the harmony in time, and the lead only while on target.
 const MUSIC_STYLE := {
-	"name": "bright",
-	# Drums and bass always; the harmony in time, and the lead only while on target.
+	"name": "neon_lines",
+	"song": "res://games/cadence_karaoke/CadenceMusic.gd",
+	"bars": 24,
+	"swap_keeps_place": true,
 	"stem_gates": {"harmony": 0.2, "lead": 0.99},
 }
 const RENDER_SCALE := 0.62
@@ -142,6 +148,7 @@ func _on_prepare(seg: Dictionary) -> void:
 	AudioDirector.set_intensity(0.4)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, CadenceAudioScript.music_effects())
 	AudioDirector.set_bus_effects(AudioDirector.SFX_BUS, CadenceAudioScript.sfx_effects())
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, GameMix.master_effects())
 	if not AudioDirector.tempo_swapped.is_connected(_on_tempo_swapped):
 		AudioDirector.tempo_swapped.connect(_on_tempo_swapped)
 	world.update_view(0.0, 0.0, logic.band_fraction(), 0.0, "out", false, 0.0, logic.target() / 60.0)
@@ -237,6 +244,7 @@ func _handle(event: Dictionary) -> void:
 			world.orb_flash = 1.0
 		"ease_off":
 			AudioDirector.play_sfx("ease_off_chime")
+			GameMix.duck_for_moment(1.0)
 			_show_message("Ease off a little", 2.0, HudTheme.WARN)
 		"recovered":
 			_message_left = 0.01
@@ -244,7 +252,8 @@ func _handle(event: Dictionary) -> void:
 
 ## The beat: one a pedal stroke at the target cadence. The visual flares on it and, if the rider
 ## asked for it, a tick plays. (The music's own beat grid can't be read back, so this clock is
-## the target's, which the music is rendered at; check the alignment on the bike.)
+## the target's, which the music is laid out at (two music beats a stroke below 70 rpm); check the
+## alignment on the bike.)
 func _beat(delta: float) -> void:
 	_beat_phase += delta * logic.target() / 60.0
 	if _beat_phase >= 1.0:
