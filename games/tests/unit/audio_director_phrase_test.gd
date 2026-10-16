@@ -174,3 +174,28 @@ func test_no_swap_while_paused() -> void:
 	AudioDirector.set_process(false)
 	AudioDirector.set_paused(false)
 	assert_str(AudioDirector.pending_music_key()).is_equal(_key(110.0))
+
+
+func test_a_style_can_carry_on_from_the_same_phrase() -> void:
+	# 16 bars at 120 bpm: four 8 s phrases. Swapping in just after the third phrase begins starts
+	# the new tempo at its own third phrase, not at the loop's start (#55, Cadence Karaoke).
+	var style := {"name": "drive", "bars": 16, "swap_keeps_place": true}
+	await _play(120.0, style)
+	await _play(110.0, style)
+	assert_str(AudioDirector.pending_music_key()).is_equal(_key(110.0, style))
+	AudioDirector._decks[AudioDirector._deck].seek(16.004)
+	AudioDirector._phrase_last = 7.9
+	AudioDirector._check_phrase_swap(0.004)
+	assert_str(AudioDirector.current_music_key()).is_equal(_key(110.0, style))
+	var phrase := 4 * 4 * 60.0 / 110.0
+	assert_float(AudioDirector._decks[AudioDirector._deck].get_playback_position()).is_equal_approx(2 * phrase + 0.004, 0.06)
+
+
+func test_without_it_a_swap_starts_the_loop_again() -> void:
+	var style := {"name": "drive", "bars": 16}
+	await _play(120.0, style)
+	await _play(110.0, style)
+	AudioDirector._decks[AudioDirector._deck].seek(16.004)
+	AudioDirector._phrase_last = 7.9
+	AudioDirector._check_phrase_swap(0.004)
+	assert_float(AudioDirector._decks[AudioDirector._deck].get_playback_position()).is_equal_approx(0.004, 0.06)

@@ -44,6 +44,8 @@ const SILENT_DB := -80.0
 const SFX_VOICES := 8
 const CUE_VOICES := 2
 const MUSIC_CACHE_SIZE := 4
+## ... and at most this much PCM: a tempo-following song's stems are big (#55).
+const MUSIC_CACHE_BYTES := 64 * 1024 * 1024
 ## Optional hook for #36: a script with `func register(director: Node) -> void`, instantiated
 ## once at startup, so generated sounds register without an autoload of their own.
 const HOOK_SCRIPT := "res://audio/Cues.gd"
@@ -181,6 +183,8 @@ func duck_music(db: float, seconds: float) -> void:
 ## loop's next phrase boundary instead (ask a few seconds ahead; a newer request replaces it).
 ## A style with `stem_files` ({stem: path}) plays those pre-rendered files instead of asking the
 ## generator (loaded off the main thread, looping from `loop_from` seconds; see stems_from_files).
+## A style with `swap_keeps_place` makes a tempo change carry on from the phrase it swaps in at
+## (the same place in the song) instead of the loop's start.
 func play_music(style: Dictionary, tempo_bpm: float, music_seed := 0) -> void:
 	_requested = {"style": style, "tempo_bpm": tempo_bpm, "seed": music_seed}
 	_requested_key = music_key(_requested)
@@ -390,10 +394,20 @@ func _collect_render() -> void:
 	else:
 		_music_cache[_render_key] = stems
 		_cache_order.append(_render_key)
-		while _cache_order.size() > MUSIC_CACHE_SIZE:
+		while _cache_order.size() > MUSIC_CACHE_SIZE or (_cache_order.size() > 1 and _cache_bytes() > MUSIC_CACHE_BYTES):
 			_music_cache.erase(_cache_order.pop_front())
 	if music_enabled and not _requested_key.is_empty():
 		_want(_requested_key)
+
+
+## The PCM held by the in-memory music cache (WAV stems; streamed files count as nothing).
+func _cache_bytes() -> int:
+	var total := 0
+	for key in _music_cache:
+		for stream in _music_cache[key].values():
+			if stream is AudioStreamWAV:
+				total += (stream as AudioStreamWAV).data.size()
+	return total
 
 
 ## Starts `stems` on the other deck and crossfades to it over `fade_sec`, from `from_sec` into
@@ -483,11 +497,24 @@ func _check_phrase_swap(since: float) -> void:
 	if since < _phrase_last - phrase / 2.0:
 		var key := _pending_key
 		var stems := _pending_stems
+		var place := _phrase_index(since) if _requested.get("style", {}).get("swap_keeps_place", false) else 0
 		_drop_pending()
-		_start(key, stems, SWAP_FADE_SEC, since, true)
+		_start(key, stems, SWAP_FADE_SEC, place * phrase_seconds(stems, _requested) + since, true)
 		tempo_swapped.emit(key, since)
 	else:
 		_phrase_last = since
+
+
+## Which phrase of the playing loop has just begun (`since` seconds ago), for a tempo change that
+## carries on from the same place in the song (a style's `swap_keeps_place`).
+func _phrase_index(since: float) -> int:
+	var phrase: float = _deck_phrase_sec[_deck]
+	var length: float = _decks[_deck].stream.get_length() if _decks[_deck].stream else 0.0
+	if phrase <= 0.0 or length <= 0.0:
+		return 0
+	var position := fposmod(_decks[_deck].get_playback_position() + AudioServer.get_time_since_last_mix(), length)
+	var count := maxi(1, roundi(length / phrase))
+	return posmod(roundi((position - since) / phrase), count)
 
 
 func _crossfade_to_silence(fade_sec: float) -> void:
