@@ -3,8 +3,12 @@ extends Node3D
 ## Kart Race's effects (#43): exhaust puffs, dust off the kerbs and grass, drift sparks in three
 ## tiers, boost flames, hit stars, contact sparks and the draft streaks' screen point. Three
 ## pooled MultiMeshes drawn as camera-facing sprites (alpha-blended puffs, additive sparks and
-## flames, alpha-blended stars), simulated here and written to the MultiMesh buffers each frame:
-## 3 draw calls for every effect on every kart, nothing allocated per frame.
+## flames, alpha-blended stars), simulated here and written to the MultiMesh buffers: 3 draw
+## calls for every effect on every kart, nothing allocated per frame.
+##
+## The pools simulate every SIM_EVERY frames (30 Hz: the main thread is the tablet's limit).
+## Emission still runs every frame, and on the frames between, sparks born that frame are written
+## straight away, so a flame never trails its exhaust; puffs are born transparent and wait.
 ##
 ## It only reads: each KartState (drift_dir/drift_tier for sparks, boost_time for flames,
 ## spin_time for stars, surface for dust, draft) and the race's events (`listen`): tier pings
@@ -23,6 +27,7 @@ const FLAME_CORE := Color(1.0, 0.9, 0.5)
 const STAR_SEC := 1.4  ## hit stars after a hit, if the kart isn't spinning that long
 const DRAFT_RANGE := Vector2(1.5, 8.0)  ## metres behind the kart ahead (the spec's draft)
 const DRAFT_LATERAL := 1.6
+const SIM_EVERY := 2
 
 var views: Array = []
 var camera: KartChaseCamera
@@ -63,6 +68,9 @@ var _boost_t := PackedFloat32Array()  # per kart: flames left from `boost()`
 var _boost_color := PackedColorArray()
 var _star_t := PackedFloat32Array()  # per kart: hit stars left
 var _time := 0.0
+var _sim_dt := 0.0  ## time since the pools last simulated
+var _frames := 0
+var _sn_drawn := 0  ## sparks in the buffer (the rest were born since)
 var _events: KartRaceEvents
 
 static var _star_tex: ImageTexture
@@ -96,6 +104,7 @@ func begin(kart_views: Array) -> void:
 		_star_t[i] = 0.0
 	_pn = 0
 	_sn = 0
+	_sn_drawn = 0
 
 
 ## Listens to a race's events (from KartRace's race_began).
@@ -181,21 +190,28 @@ func step(race: KartRaceLogic, dt: float) -> void:
 	var n := mini(views.size(), race.karts.size())
 	for i in n:
 		_kart(i, race.karts[i], views[i], race, dt, racing)
-	_simulate(dt)
+	_sim_dt += dt
+	_frames += 1
+	if _frames % SIM_EVERY == 0:
+		_simulate(_sim_dt)
+		_sim_dt = 0.0
+	else:
+		_draw_new_sparks()
 	_stars(race, n)
 
 
 func _kart(i: int, k: KartState, v: KartView, race: KartRaceLogic, dt: float, racing: bool) -> void:
 	var back := v.global_transform.basis.z
-	# Exhaust: puffs from both pipes, faster with speed; a little idle smoke on the grid.
+	# Exhaust: puffs from both pipes, faster with speed; a little idle smoke on the grid. None
+	# (and no dust) while the camera can't see the kart (KartView.seen).
 	_emit[i] -= dt
-	if _emit[i] <= 0.0:
+	if _emit[i] <= 0.0 and v.seen:
 		_emit[i] = 0.09 if k.speed > 2.0 else 0.22
 		for a in ["exhaust_l", "exhaust_r"]:
 			var p := v.anchor(a).global_position
 			_puff(p, back * 1.2 + Vector3.UP * 0.6 + _jitter(0.3), 0.55, Vector2(0.16, 0.55), Color(0.55, 0.55, 0.6, 0.38))
 	# Dust off the road edges and the grass.
-	if racing and k.surface != KartTrackModel.Surface.ROAD and k.speed > 4.0 and _rng.randf() < dt * 30.0:
+	if racing and v.seen and k.surface != KartTrackModel.Surface.ROAD and k.speed > 4.0 and _rng.randf() < dt * 30.0:
 		var w := v.anchor("wheel_rl" if _rng.randf() < 0.5 else "wheel_rr").global_position
 		var dusty := k.surface == KartTrackModel.Surface.OFFROAD
 		_puff(w, back * 2.0 + Vector3.UP * 1.0 + _jitter(0.8), 0.9 if dusty else 0.6, Vector2(0.3, 1.4 if dusty else 0.9),
@@ -277,7 +293,9 @@ func draft_screen(race: KartRaceLogic, cam: Camera3D, hud: KartHud) -> float:
 			best = i
 	if best < 0:
 		return k.draft
-	var target: Vector3 = race.karts[best].pos + Vector3.UP * 0.6
+	# Where it's drawn (between logic ticks), not where the logic has it.
+	var target: Vector3 = (views[best] as Node3D).global_position + Vector3.UP * 0.6 if best < views.size() \
+		else race.karts[best].pos + Vector3.UP * 0.6
 	if cam.is_position_behind(target):
 		return k.draft
 	var vp := cam.get_viewport()
@@ -335,10 +353,23 @@ func _simulate(dt: float) -> void:
 		i += 1
 	_puff_mm.visible_instance_count = _pn
 	_spark_mm.visible_instance_count = _sn
+	_sn_drawn = _sn
 	if _pn > 0:
 		_puff_mm.buffer = _puff_buf
 	if _sn > 0:
 		_spark_mm.buffer = _spark_buf
+
+
+## Between simulations: the sparks born this frame, at birth, after the ones already drawn.
+func _draw_new_sparks() -> void:
+	if _sn <= _sn_drawn:
+		return
+	for i in range(_sn_drawn, _sn):
+		var c := _sc[i]
+		_write(_spark_buf, i, _sp[i], _ss[i].x, Color(c.r, c.g, c.b, 1.0))
+	_sn_drawn = _sn
+	_spark_mm.visible_instance_count = _sn
+	_spark_mm.buffer = _spark_buf
 
 
 ## One instance in a TRANSFORM_3D + colour buffer: a uniform scale at p, then RGBA.

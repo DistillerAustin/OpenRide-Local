@@ -163,6 +163,10 @@ var top_speed := 20.0
 ## events) into it.
 var events: KartRaceEvents = null
 
+## Scratch for update_drafts (each kart's forward x and z), reused every tick.
+static var _fx_scratch := PackedFloat64Array()
+static var _fz_scratch := PackedFloat64Array()
+
 
 ## The bike speed (m/s) that `power_w` holds on `grade` (dy/ds) in a `draft` (0..1): the root
 ## of P = v·(Crr·m·g·cosθ + m·g·sinθ + ½·ρ·CdA·v²).
@@ -303,13 +307,15 @@ func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> voi
 
 	# Move, then find where on the track that is.
 	var p := track.project(k.pos + k.forward() * k.speed * dt, k.s)
-	var reach := track.half_width(p.s) + track.verge
+	var edge := track.half_width(p.s)
+	var reach := edge + track.verge
 	if absf(p.d) > reach:
 		p = _hit_wall(k, track, p, reach)
+		edge = track.half_width(p.s)
 	k.pos = p.position
 	k.s = p.s
 	k.d = p.d
-	k.surface = track.surface(p.s, p.d)
+	k.surface = KartTrackModel.surface_beside(edge, track.verge, p.d)
 	k.normal = p.normal
 
 
@@ -429,20 +435,31 @@ static func _trade(a: KartState, b: KartState, n: Vector3) -> float:
 ## Every kart's draft this tick (0..1): within DRAFT_MIN..DRAFT_MAX metres behind another kart
 ## going the same way, under DRAFT_LATERAL metres off its line; fading over the last stretch.
 static func update_drafts(karts: Array) -> void:
-	for a: KartState in karts:
+	var n := karts.size()
+	# Each kart's heading once (not once per pair): the main thread is the tablet's limit.
+	_fx_scratch.resize(n)
+	_fz_scratch.resize(n)
+	for i in n:
+		var h: float = (karts[i] as KartState).heading
+		_fx_scratch[i] = -sin(h)
+		_fz_scratch[i] = -cos(h)
+	for i in n:
+		var a: KartState = karts[i]
 		var best := 0.0
-		var f := a.forward()
-		for b: KartState in karts:
-			if b == a or b.speed < 3.0:
+		var fx := _fx_scratch[i]
+		var fz := _fz_scratch[i]
+		for j in n:
+			var b: KartState = karts[j]
+			if j == i or b.speed < 3.0:
 				continue
 			var rx := b.pos.x - a.pos.x
 			var rz := b.pos.z - a.pos.z
-			var along := rx * f.x + rz * f.z
+			var along := rx * fx + rz * fz
 			if along < DRAFT_MIN or along > DRAFT_MAX:
 				continue
-			if absf(rx * -f.z + rz * f.x) >= DRAFT_LATERAL or absf(b.pos.y - a.pos.y) > 2.0:
+			if absf(rx * -fz + rz * fx) >= DRAFT_LATERAL or absf(b.pos.y - a.pos.y) > 2.0:
 				continue
-			if b.forward().dot(f) < 0.7:
+			if _fx_scratch[j] * fx + _fz_scratch[j] * fz < 0.7:
 				continue
 			best = maxf(best, 1.0 - smoothstep(DRAFT_FADE, DRAFT_MAX, along))
 		a.draft = best
@@ -586,18 +603,9 @@ func _pose_drift(k: KartState, dt: float) -> void:
 
 ## Climb and pad zones under the kart (its s and d before this tick's move).
 func _zones(k: KartState, inp: KartInput, track: KartTrackModel) -> void:
-	var climbing := false
-	var pad := false
-	for z: Dictionary in track.zones:
-		var type: String = z.type
-		if type != "climb" and type != "boost":
-			continue
-		if not KartTrackModel.in_span(k.s, float(z.s0), float(z.s1)):
-			continue
-		if type == "climb":
-			climbing = true
-		elif absf(k.d - float(z.get("d", 0.0))) <= float(z.get("w", 99.0)) * 0.5 + PAD_GRACE:
-			pad = true
+	var flags := track.zone_flags(k.s, k.d, PAD_GRACE)
+	var climbing := (flags & KartTrackModel.ZONE_CLIMB) != 0
+	var pad := (flags & KartTrackModel.ZONE_PAD) != 0
 	k.climbing = climbing
 	k.standing_bonus = climbing and inp.standing
 	if pad and not k.on_pad:

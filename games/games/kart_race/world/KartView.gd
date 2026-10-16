@@ -80,8 +80,12 @@ static var _shadow_material: StandardMaterial3D
 static var _models := {}
 
 
-## Pose this kart every this many syncs (KartRace sets 3 for far karts); 1 = every frame.
+## Pose this kart every this many syncs (KartRace sets 2-3 for farther karts); 1 = every frame.
 var pose_every := 1
+## False while the camera can't see this kart (behind it, or hidden at the lens; KartRace sets
+## it): no pose and no shadow then, and the first sync back in view poses at once. Effects skip
+## its exhaust and dust too.
+var seen := true
 var _pose_skip := 0
 var _pose_dt := 0.0
 
@@ -192,6 +196,9 @@ func sync(k: KartState, dt: float) -> void:
 	# The pose (and its bone upload to both materials) every `pose_every` frames: a far kart's
 	# driver needn't breathe at 60 Hz (the main thread is the tablet's bottleneck).
 	_pose_dt += dt
+	if not seen:
+		_pose_skip = pose_every  # back in view: pose on that frame
+		return
 	_pose_skip += 1
 	if _pose_skip >= pose_every:
 		_pose_skip = 0

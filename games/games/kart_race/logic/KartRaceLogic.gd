@@ -35,6 +35,7 @@ var _best_lap: Array[int] = []  ## the highest lap each kart has reached
 var _lap_start: Array[float] = []  ## race time each kart's current lap began
 var _finish_order: Array[int] = []
 var _idle := KartInput.new()
+var _progress_scratch := PackedFloat64Array()  ## order(): the running karts' progress
 
 
 func _init() -> void:
@@ -71,6 +72,7 @@ func setup(track_model: KartTrackModel, racers: Array, race_laps: int) -> void:
 		k.normal = p.normal
 		k.surface = track.surface(p.s, p.d)
 		k.heading = track.yaw_at(p.s)
+		k.snap()
 		karts.append(k)
 		_best_lap.append(0)
 		_lap_start.append(0.0)
@@ -87,6 +89,8 @@ func start_countdown(seconds := 3.0) -> void:
 ## One fixed step. `inputs[id]` drives kart id (missing inputs coast). Inputs are ignored on the
 ## grid and during the countdown.
 func step(dt: float, inputs: Array) -> void:
+	for k: KartState in karts:
+		k.snap()  # the pose this tick starts from, for drawing between ticks
 	match phase:
 		Phase.GRID:
 			return
@@ -122,17 +126,25 @@ func _input_of(k: KartState, inputs: Array) -> KartInput:
 
 ## Kart ids by race position: finishers in finishing order, then the rest by progress.
 func order() -> Array:
-	var running := []
-	for k: KartState in karts:
-		if not k.finished:
-			running.append(k.id)
-	running.sort_custom(func(a: int, b: int) -> bool:
-		var pa := progress(a)
-		var pb := progress(b)
-		return pa > pb if pa != pb else a < b)
+	# Running karts by progress (ties by id): an insertion sort over at most eight, on progress
+	# read once each (the HUD asks every frame, the places every tick; no comparator calls).
 	var ids := []
 	ids.append_array(_finish_order)
-	ids.append_array(running)
+	var first := ids.size()
+	var length := track.length
+	_progress_scratch.clear()
+	for k: KartState in karts:
+		if k.finished:
+			continue
+		var p := k.lap * length + k.s
+		var at := ids.size()
+		while at > first:
+			var q := _progress_scratch[at - 1 - first]
+			if q > p or (q == p and ids[at - 1] < k.id):
+				break
+			at -= 1
+		ids.insert(at, k.id)
+		_progress_scratch.insert(at - first, p)
 	return ids
 
 

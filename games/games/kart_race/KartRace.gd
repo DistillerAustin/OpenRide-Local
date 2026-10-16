@@ -3,7 +3,8 @@ extends Game
 ## steer (the head tracker), tap to use items. The contract is games/kart_race/DESIGN.md.
 ##
 ## The logic lives in plain classes under logic/ (track space, physics, race, Grand Prix, bots,
-## scoring), stepped here at a fixed 60 Hz from `_on_frame`; the nodes only draw it. This scene
+## scoring), stepped here at a fixed 30 Hz from `_on_frame`; the nodes only draw it, every frame,
+## between the last two ticks (`_draw`, KartState.draw_into). This scene
 ## wires it to the framework: declarations, options, the GP flow, inputs, HUD, audio, the result.
 ##
 ## Ownership (Phase 2 agents edit only their own builder plus a few lines of wiring):
@@ -39,8 +40,11 @@ const DEV_TUNING := false
 const TUNING_PATH := "user://kart_tuning.cfg"
 const PERF_LOG_SEC := 5.0
 
-const TICK := 1.0 / 60.0
-const MAX_TICKS := 8  ## per frame, so a stall never snowballs
+## The logic's fixed step. 30 Hz: the tablet is bound by the main thread, and the logic was most
+## of its GDScript (4-7 ms a tick with the face tracker running, 2026-10-15). The lean arrives at
+## the camera's 30 Hz anyway; the views draw at the frame rate between the last two ticks.
+const TICK := 1.0 / 30.0
+const MAX_TICKS := 4  ## per frame (133 ms), so a stall never snowballs
 const RIDER := KartRaceLogic.RIDER
 const RACERS := 8
 const COUNTDOWN_SEC := 3.0
@@ -51,8 +55,12 @@ const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
 ## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
 const CAMERA_CLEAR := 4.2
-## Karts farther than this from the camera (metres) pose at a third of the frame rate.
+## Karts farther than this from the camera (metres) pose at a third of the frame rate, and
+## beyond POSE_CLOSE at half; the rider's kart and those nearer every frame.
 const POSE_NEAR := 35.0
+const POSE_CLOSE := 18.0
+## A kart this far behind the camera's plane (metres) is out of sight: no pose, no exhaust.
+const BEHIND_CLEAR := 3.0
 const GO_SEC := 0.8
 const DEFAULT_FTP := 150.0
 ## The bots' shares of the rider's FTP, weakest to strongest, by difficulty (forgiving: rider
@@ -97,6 +105,8 @@ var _est_lap := 60.0
 var _built_track := ""
 var _rider_input := KartInput.new()
 var _input_list := []  ## reused every tick
+## What the views, the camera and the item views draw: each kart between its last two ticks.
+var _draw: Array[KartState] = []
 var _item_key := false
 var _item_edge := false
 var _countdown_shown := -1
@@ -112,6 +122,13 @@ var _tuned := false
 var _perf_usec := 0
 var _perf_frames := 0
 var _perf_dc_max := 0  ## the most draw calls in one frame since the last perf line
+var _perf_ticks := 0  ## logic ticks since the last perf line, and their time
+var _perf_tick_usec := 0
+var _perf_sync_usec := 0  ## _sync_views and _update_hud time
+var _perf_hud_usec := 0
+var _perf_proc_ms := 0.0  ## the engine's process time per frame, summed
+var _perf_render_cpu := 0.0  ## the 3D view's and the screen's measured render times, summed
+var _perf_render_gpu := 0.0
 var _perf_left := PERF_LOG_SEC
 
 
@@ -192,6 +209,9 @@ func _ready() -> void:
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
 	add_child(_view)
+	if DEV_TUNING:
+		RenderingServer.viewport_set_measure_render_time(_view.get_viewport_rid(), true)
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	var shown := TextureRect.new()
 	shown.name = "View3DImage"
 	shown.texture = _view.get_texture()
@@ -411,13 +431,18 @@ func _begin_race() -> void:
 	for r in lineup:
 		racers.append({"racer_id": r.id, "weight": r.weight})
 	race.setup(track, racers, current.laps)
+	_draw.clear()
+	for k: KartState in race.karts:
+		_draw.append(KartState.new())
+	if _item_views:
+		_item_views.draw_karts = _draw
 	scoring.begin_race(race)
 	race.events.race_started.connect(_on_race_started)
 	race.events.race_finished.connect(_on_race_finished)
 	race.events.final_lap.connect(_on_final_lap)
 	flow = Flow.IDLE
 	_sync_views(0.0)
-	camera.snap(race.karts[RIDER])
+	camera.snap(_draw[RIDER])
 	race_began.emit(race)
 
 
@@ -539,12 +564,23 @@ func _on_frame(delta: float) -> void:
 	_frame(delta)
 	_perf_usec += Time.get_ticks_usec() - started
 	_perf_frames += 1
+	_perf_proc_ms += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0  # the last frame's
+	for rid: RID in [_view.get_viewport_rid(), get_viewport().get_viewport_rid()]:
+		_perf_render_cpu += RenderingServer.viewport_get_measured_render_time_cpu(rid)
+		_perf_render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
 	_perf_dc_max = maxi(_perf_dc_max, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
 	_perf_left -= delta
 	if _perf_left <= 0.0:
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f process_ms=%.2f fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
-			_perf_usec / 1000.0 / maxi(_perf_frames, 1),
-			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		var frames := maxi(_perf_frames, 1)
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f ticks=%.2f tick_ms=%.2f sync_ms=%.2f hud_ms=%.2f process_ms=%.2f render_cpu_ms=%.2f render_gpu_ms=%.2f fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
+			_perf_usec / 1000.0 / frames,
+			float(_perf_ticks) / frames,
+			_perf_tick_usec / 1000.0 / maxi(_perf_ticks, 1),
+			_perf_sync_usec / 1000.0 / frames,
+			_perf_hud_usec / 1000.0 / frames,
+			_perf_proc_ms / frames,
+			_perf_render_cpu / frames,
+			_perf_render_gpu / frames,
 			Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			_perf_dc_max,
@@ -555,6 +591,13 @@ func _on_frame(delta: float) -> void:
 			Flow.keys()[flow], InputBus.tracker_state, _applied_tier])
 		_perf_usec = 0
 		_perf_frames = 0
+		_perf_ticks = 0
+		_perf_tick_usec = 0
+		_perf_sync_usec = 0
+		_perf_hud_usec = 0
+		_perf_proc_ms = 0.0
+		_perf_render_cpu = 0.0
+		_perf_render_gpu = 0.0
 		_perf_dc_max = 0
 		_perf_left = PERF_LOG_SEC
 
@@ -568,13 +611,22 @@ func _frame(delta: float) -> void:
 	_item_edge = _item_edge or (key and not _item_key)
 	_item_key = key
 	_acc = minf(_acc + delta, TICK * MAX_TICKS)
+	var t0 := Time.get_ticks_usec() if DEV_TUNING else 0
 	while _acc >= TICK:
 		_acc -= TICK
 		_tick(TICK)
+		if DEV_TUNING:
+			_perf_ticks += 1
 		if has_ended():
 			return
+	var t1 := Time.get_ticks_usec() if DEV_TUNING else 0
 	_sync_views(delta)
+	var t2 := Time.get_ticks_usec() if DEV_TUNING else 0
 	_update_hud(delta)
+	if DEV_TUNING:
+		_perf_tick_usec += t1 - t0
+		_perf_sync_usec += t2 - t1
+		_perf_hud_usec += Time.get_ticks_usec() - t2
 
 
 ## A session's governor at full quality (the tier never carries over from the last session).
@@ -654,33 +706,55 @@ func _read_rider() -> KartInput:
 
 
 func _sync_views(delta: float) -> void:
+	# Between the last two ticks: the time since the last one, as a share of a tick.
+	var alpha := clampf(_acc / TICK, 0.0, 1.0)
+	for i in race.karts.size():
+		(race.karts[i] as KartState).draw_into(_draw[i], alpha)
 	for i in views.size():
-		views[i].sync(race.karts[i], delta)
-	var k: KartState = race.karts[RIDER]
+		views[i].sync(_draw[i], delta)
+	var k: KartState = _draw[RIDER]
+	# The countdown fell a tick at the last step; drawn, it falls smoothly.
+	var countdown := race.countdown + TICK * (1.0 - alpha) if race.phase == KartRaceLogic.Phase.COUNTDOWN else race.countdown
 	if flow == Flow.IDLE:
 		camera.flyover(k, 0.0, track)
-	elif flow == Flow.COUNTDOWN and race.countdown > COUNTDOWN_SEC:
-		camera.flyover(k, 1.0 - (race.countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)
+	elif flow == Flow.COUNTDOWN and countdown > COUNTDOWN_SEC:
+		camera.flyover(k, 1.0 - (countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)
 	else:
 		camera.follow(k, delta)
-	# A bot right at the lens would fill the screen: hide it until it's clear (integration).
-	var eye := camera.global_position
-	for i in range(1, views.size()):
-		var v: KartView = views[i]
-		var d2 := v.global_position.distance_squared_to(eye)
-		v.visible = camera.hold or d2 > CAMERA_CLEAR * CAMERA_CLEAR
-		# Far karts pose at 20 Hz (their position still moves every frame).
-		v.pose_every = 3 if d2 > POSE_NEAR * POSE_NEAR else 1
+	_cull_views()
 	if _item_views:  # race-systems
+		_item_views.alpha = alpha
 		_item_views.sync(delta)
 	if _fx:
 		_fx.step(race, delta)
 	if _audio:  # presentation
 		_audio.step(race, Flow.keys()[flow], delta)
-	if _kart_hud:  # presentation: speed lines and draft streaks
-		var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
-		_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))
-		_kart_hud.draft = _fx.draft_screen(race, camera, _kart_hud) if _fx and flow == Flow.RACING else 0.0
+	_sync_screen_fx()
+
+
+## A bot right at the lens would fill the screen: hide it until it's clear (integration). Far
+## karts pose at a lower rate (their position still moves every frame: only the driver's
+## breathing, wheels and lean step at 20-30 Hz, too small to see from 18 m).
+func _cull_views() -> void:
+	var eye := camera.global_position
+	var look := -camera.global_transform.basis.z
+	for i in range(1, views.size()):
+		var v: KartView = views[i]
+		var to := v.global_position - eye
+		var d2 := to.length_squared()
+		v.visible = camera.hold or d2 > CAMERA_CLEAR * CAMERA_CLEAR
+		v.seen = v.visible and to.dot(look) > -BEHIND_CLEAR
+		v.pose_every = 3 if d2 > POSE_NEAR * POSE_NEAR else (2 if d2 > POSE_CLOSE * POSE_CLOSE else 1)
+
+
+## The HUD's speed lines and draft streaks (presentation).
+func _sync_screen_fx() -> void:
+	if not _kart_hud:
+		return
+	var k: KartState = race.karts[RIDER]
+	var lines := clampf((k.speed - 17.0) / 8.0, 0.0, 1.0) if flow == Flow.RACING else 0.0
+	_kart_hud.speed_lines = maxf(lines, minf(k.boost_time, 1.0))
+	_kart_hud.draft = _fx.draft_screen(race, camera, _kart_hud) if _fx and flow == Flow.RACING else 0.0
 
 
 func _update_hud(delta: float) -> void:

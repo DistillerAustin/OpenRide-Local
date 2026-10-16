@@ -76,6 +76,9 @@ const GOO_LIFE_SEC := 40.0
 const GOO_MAX := 8
 
 const HIT_REACH := KartPhysics.KART_RADIUS + PUCK_RADIUS
+## Hits and pickups are swept over a tick's movement; a kart that moved further than this in one
+## (placed by hand) is tested where it is.
+const SWEEP_MAX := 4.0
 
 ## Bot and Auto-items policy.
 const AUTO_SKILL := 0.85
@@ -101,6 +104,7 @@ class Shot:
 	var owner := -1
 	var target := -1  ## drones: the kart id it chases, -1 none
 	var pos := Vector3.ZERO  ## on the road surface (views lift it)
+	var prev_pos := Vector3.ZERO  ## at the start of the last tick (the views draw in between)
 	var s := 0.0
 	var d := 0.0
 	var progress := 0.0  ## drones: lap × length + s, like KartRaceLogic.progress
@@ -229,6 +233,8 @@ func step(dt: float, inputs: Array) -> void:
 				pod.age = 0.0
 		else:
 			pod.age += dt
+	for shot in shots:
+		shot.prev_pos = shot.pos
 	for k: KartState in race.karts:
 		_step_kart(k, inputs[k.id] if k.id < inputs.size() else null, dt)
 	for shot in shots:
@@ -268,13 +274,12 @@ func _step_kart(k: KartState, inp: KartInput, dt: float) -> void:
 
 func _pickups(k: KartState) -> void:
 	var reach2 := POD_REACH * POD_REACH
+	var from := _swept_from(k)
 	for i in pods.size():
 		var pod := pods[i]
 		if not pod.ready():
 			continue
-		var dx := pod.pos.x - k.pos.x
-		var dz := pod.pos.z - k.pos.z
-		if dx * dx + dz * dz > reach2 or absf(pod.pos.y - k.pos.y) > 2.0:
+		if not passes_within(from - pod.pos, k.pos - pod.pos, reach2) or absf(pod.pos.y - k.pos.y) > 2.0:
 			continue
 		pod.respawn = POD_RESPAWN_SEC
 		pod_broken.emit(i, k.id)
@@ -352,6 +357,7 @@ func _fire_puck(k: KartState) -> void:
 	shot.pos = p.position
 	shot.s = p.s
 	shot.d = p.d
+	shot.prev_pos = shot.pos
 	shots.append(shot)
 
 
@@ -362,6 +368,7 @@ func _step_puck(shot: Shot, dt: float) -> void:
 		shot.alive = false
 		return
 	var fwd := Vector3(-sin(shot.heading), 0.0, -cos(shot.heading))
+	var was := shot.pos
 	var p := track.project(shot.pos + fwd * shot.speed * dt, shot.s)
 	var reach := track.half_width(p.s) + track.verge - PUCK_WALL_INSET
 	if absf(p.d) > reach:
@@ -381,9 +388,7 @@ func _step_puck(shot: Shot, dt: float) -> void:
 	for k: KartState in race.karts:
 		if k.id == shot.owner and shot.age < PUCK_ARM_SEC:
 			continue
-		var dx := k.pos.x - shot.pos.x
-		var dz := k.pos.z - shot.pos.z
-		if dx * dx + dz * dz <= reach2 and absf(k.pos.y - shot.pos.y) < 2.0:
+		if passes_within(_swept_from(k) - was, k.pos - shot.pos, reach2) and absf(k.pos.y - shot.pos.y) < 2.0:
 			shot.alive = false
 			hit(k, shot.owner, "puck")
 			return
@@ -403,6 +408,7 @@ func _fire_drone(k: KartState) -> void:
 	shot.height = 1.2
 	shot.pos = race.track.position_at(shot.s, shot.d)
 	shot.heading = race.track.yaw_at(shot.s)
+	shot.prev_pos = shot.pos
 	shots.append(shot)
 
 
@@ -469,12 +475,30 @@ func _step_goo(goo: Goo, dt: float) -> void:
 			continue
 		if k.spin_time > 0.0:
 			continue
-		var dx := k.pos.x - goo.pos.x
-		var dz := k.pos.z - goo.pos.z
-		if dx * dx + dz * dz <= reach2 and absf(k.pos.y - goo.pos.y) < 1.5:
+		if passes_within(_swept_from(k) - goo.pos, k.pos - goo.pos, reach2) and absf(k.pos.y - goo.pos.y) < 1.5:
 			goo.alive = false
 			hit(k, goo.owner, "goo")
 			return
+
+
+# --- Swept contacts ---
+
+## Where kart k started this tick, for the swept tests: its pose at the tick's start, or where
+## it is now if it moved further than a tick could take it (placed by hand: tests, the grid).
+func _swept_from(k: KartState) -> Vector3:
+	return k.prev_pos if k.prev_pos.distance_squared_to(k.pos) < SWEEP_MAX * SWEEP_MAX else k.pos
+
+
+## Whether something moving from offset `a0` to offset `a1` (from a target, horizontally) came
+## within sqrt(reach2) of it on the way: swept, so a 30 Hz tick never steps through a hit.
+static func passes_within(a0: Vector3, a1: Vector3, reach2: float) -> bool:
+	var ex := a1.x - a0.x
+	var ez := a1.z - a0.z
+	var len2 := ex * ex + ez * ez
+	var t := clampf(-(a0.x * ex + a0.z * ez) / len2, 0.0, 1.0) if len2 > 0.000001 else 1.0
+	var x := a0.x + ex * t
+	var z := a0.z + ez * t
+	return x * x + z * z <= reach2
 
 
 # --- Magnets ---
@@ -559,10 +583,13 @@ func _side_step(s: float, hazard_d: float, d: float, gap: float) -> float:
 func pod_d(s: float, d: float, ahead: float) -> float:
 	var best := NAN
 	var best_gap := INF
+	var length := race.track.length
 	for pod in pods:
-		if not pod.ready():
+		if pod.respawn > 0.0:  # not ready()
 			continue
-		var ds := race.track.delta(s, pod.s)
+		var ds := fposmod(pod.s - s, length)  # track.delta, inline (bots ask every think)
+		if ds > length * 0.5:
+			ds -= length
 		if ds < 2.0 or ds > ahead:
 			continue
 		var gap := absf(pod.d - d)

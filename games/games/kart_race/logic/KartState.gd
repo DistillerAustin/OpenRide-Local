@@ -46,6 +46,71 @@ var drift_release := 0.0  ## seconds the lean has been eased off during a drift
 var drift_res0 := 0.0  ## the resistance when the drift began (the knob's rise)
 var drift_cool := 0.0  ## seconds before another drift may start
 
+## Further than this (metres) in one tick is a placement, not a move (`draw_into`).
+const TELEPORT_M := 4.0
+
+# The pose at the start of the last logic tick (`snap`), for drawing between ticks: the logic
+# steps at 30 Hz and the views draw at 60, between the two poses (`draw_into`).
+var prev_pos := Vector3.ZERO
+var prev_heading := 0.0
+var prev_normal := Vector3.UP
+var prev_hop := 0.0
+var prev_slide := 0.0
+var prev_steer := 0.0
+var prev_speed := 0.0
+
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0.0, -cos(heading))
+
+
+## Remembers the current pose as the previous one (KartRaceLogic, at the start of each tick and
+## when it places the karts).
+func snap() -> void:
+	prev_pos = pos
+	prev_heading = heading
+	prev_normal = normal
+	prev_hop = hop
+	prev_slide = slide
+	prev_steer = steer
+	prev_speed = speed
+
+
+## A copy to draw, into `out`: the pose `alpha` (0..1) of the way from the last tick's start to
+## now, and the rest of the state as it is (the views, the camera and the item views read it).
+## A kart moved further than a tick could take it (placed by hand) is drawn where it is.
+func draw_into(out: KartState, alpha: float) -> void:
+	if prev_pos.distance_squared_to(pos) > TELEPORT_M * TELEPORT_M:
+		alpha = 1.0
+	out.id = id
+	out.racer_id = racer_id
+	out.weight = weight
+	out.pos = prev_pos.lerp(pos, alpha)
+	out.heading = wrapf(prev_heading + angle_difference(prev_heading, heading) * alpha, -PI, PI)
+	out.normal = prev_normal.lerp(normal, alpha).normalized()
+	out.hop = lerpf(prev_hop, hop, alpha)
+	out.slide = lerpf(prev_slide, slide, alpha)
+	out.steer = lerpf(prev_steer, steer, alpha)
+	out.speed = lerpf(prev_speed, speed, alpha)
+	out.v_bike = v_bike
+	out.s = s
+	out.d = d
+	out.lap = lap
+	out.surface = surface
+	out.drift_dir = drift_dir
+	out.drift_charge = drift_charge
+	out.drift_tier = drift_tier
+	out.knob_boosting = knob_boosting
+	out.boost_time = boost_time
+	out.spin_time = spin_time
+	out.shield_time = shield_time
+	out.item = item
+	out.roulette_time = roulette_time
+	out.finished = finished
+	out.finish_time = finish_time
+	out.place = place
+	out.draft = draft
+	out.lean_smooth = lean_smooth
+	out.drift_time = drift_time
+	out.boost_kind = boost_kind
+	out.boost_tier = boost_tier

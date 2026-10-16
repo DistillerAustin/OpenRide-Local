@@ -26,6 +26,9 @@ const POD_LIFT := 1.1  ## the capsule's centre over the road
 const POD_BOB := 0.12
 const POD_SPIN := 0.8  ## rad/s
 const POD_POP_SEC := 0.45
+## Pods farther than this from the camera (metres), or behind it, keep their last pose: a bob
+## and a spin nobody can see aren't worth the main thread (the tablet's limit).
+const POD_ANIM_RANGE := 80.0
 const PUCKS := 4
 const DRONES := 3
 const SHIELD_RADIUS := 1.6
@@ -46,6 +49,10 @@ const MAGNET_COLOR := Color(0.35, 1.0, 0.72)
 
 var items: KartItemLogic
 var race: KartRaceLogic
+## Drawing between logic ticks (KartRace, every frame): the share of a tick since the last one,
+## and the karts as drawn (KartState.draw_into). Without them, the logic's own state.
+var alpha := 1.0
+var draw_karts: Array[KartState] = []
 
 var _time := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -53,6 +60,7 @@ var _pod_glass: MultiMesh
 var _pod_core: MultiMesh
 var _pod_halo: MultiMesh
 var _pod_band: MultiMesh
+var _pod_drawn := PackedInt32Array()  ## per pod: 1 drawn ready, 0 drawn gone, -1 not yet
 var _beam_clock := 0.0
 var _pucks: Array[Dictionary] = []  ## {root, body, rim, trail, mesh, shot, points, clock}
 var _drones: Array[Dictionary] = []  ## {root, body, red, green, strobe, lock, trail, mesh, shot, points, clock}
@@ -111,6 +119,8 @@ func bind(logic: KartItemLogic, race_logic: KartRaceLogic) -> void:
 	_pod_core.instance_count = logic.pods.size()
 	_pod_halo.instance_count = logic.pods.size()
 	_pod_band.instance_count = logic.pods.size()
+	_pod_drawn.resize(logic.pods.size())
+	_pod_drawn.fill(-1)
 	while _shields.size() < race.karts.size():
 		_shields.append(_make_shield(_shields.size()))
 		_magnets.append(_make_magnet(_magnets.size()))
@@ -140,12 +150,28 @@ func sync(dt: float) -> void:
 	_simulate(dt)
 
 
+## Kart `id` as drawn this frame (between ticks), or the logic's when nothing draws it.
+func _drawn(id: int) -> KartState:
+	return draw_karts[id] if id < draw_karts.size() else race.karts[id]
+
+
 # --- Pods ---
 
 func _sync_pods() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var eye := cam.global_position if cam else Vector3.ZERO
+	var look := -cam.global_transform.basis.z if cam else Vector3.ZERO
 	for i in items.pods.size():
 		var pod: KartItemLogic.Pod = items.pods[i]
-		if not pod.ready():
+		var ready := pod.ready()
+		if cam and _pod_drawn[i] == int(ready):
+			var to := pod.pos - eye
+			if to.length_squared() > POD_ANIM_RANGE * POD_ANIM_RANGE or to.dot(look) < -3.0:
+				continue
+			if not ready:
+				continue  # drawn gone already
+		_pod_drawn[i] = int(ready)
+		if not ready:
 			var gone := Transform3D(Basis().scaled(Vector3.ONE * 0.0001), pod.pos)
 			_pod_glass.set_instance_transform(i, gone)
 			_pod_core.set_instance_transform(i, gone)
@@ -244,7 +270,7 @@ func _sync_shots(dt: float) -> void:
 
 
 func _pose_puck(slot: Dictionary, shot: KartItemLogic.Shot, dt: float) -> void:
-	var at := shot.pos + Vector3.UP * 0.2
+	var at := shot.prev_pos.lerp(shot.pos, alpha) + Vector3.UP * 0.2
 	slot.root.visible = true
 	slot.root.global_transform = Transform3D(Basis(Vector3.UP, shot.heading), at)
 	slot.body.rotation.y = -_time * 14.0
@@ -253,7 +279,7 @@ func _pose_puck(slot: Dictionary, shot: KartItemLogic.Shot, dt: float) -> void:
 
 
 func _pose_drone(slot: Dictionary, shot: KartItemLogic.Shot, dt: float) -> void:
-	var at := shot.pos + Vector3.UP * (shot.height + 0.08 * sin(_time * 5.0))
+	var at := shot.prev_pos.lerp(shot.pos, alpha) + Vector3.UP * (shot.height + 0.08 * sin(_time * 5.0))
 	slot.root.visible = true
 	var tilt := Basis(Vector3.RIGHT, -0.22)  # nose down, flying forward
 	slot.root.global_transform = Transform3D(Basis(Vector3.UP, shot.heading) * tilt, at)
@@ -264,7 +290,7 @@ func _pose_drone(slot: Dictionary, shot: KartItemLogic.Shot, dt: float) -> void:
 	_trail(slot, at - slot.root.global_basis.z * -0.3, dt, 0.18, DRONE_TRAIL)
 	# The lock-on ring under the target.
 	if shot.target >= 0 and shot.target < race.karts.size():
-		var t: KartState = race.karts[shot.target]
+		var t := _drawn(shot.target)
 		slot.lock.visible = true
 		var pulse := 1.0 + 0.15 * sin(_time * 14.0)
 		slot.lock.global_transform = Transform3D(Basis(Vector3.UP, _time * 2.0).scaled(Vector3(pulse, 1.0, pulse)), t.pos + Vector3.UP * 0.06)
@@ -405,8 +431,9 @@ func _sync_shields(dt: float) -> void:
 		else:
 			node.visible = false
 		if node.visible:
-			var up := k.normal if k.normal.length_squared() > 0.5 else Vector3.UP
-			node.global_position = k.pos + up * 0.75
+			var drawn := _drawn(k.id)
+			var up := drawn.normal if drawn.normal.length_squared() > 0.5 else Vector3.UP
+			node.global_position = drawn.pos + up * 0.75
 
 
 func _on_shield_blocked(kart_id: int) -> void:
@@ -442,8 +469,9 @@ func _sync_magnets() -> void:
 		slot.grip.visible = on
 		if not on:
 			continue
-		var t: KartState = race.karts[t_id]
-		var a := k.pos + k.forward() * 1.1 + Vector3.UP * 0.75
+		var t := _drawn(t_id)
+		var kd := _drawn(k.id)
+		var a := kd.pos + kd.forward() * 1.1 + Vector3.UP * 0.75
 		var b := t.pos - t.forward() * 1.2 + Vector3.UP * 0.75
 		var axis := b - a
 		var length := axis.length()

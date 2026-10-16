@@ -220,10 +220,13 @@ func _pass_lane(k: KartState, race: KartRaceLogic) -> float:
 	var look := maxf(PASS_LOOK_MIN, k.speed * lerpf(PASS_LOOK_SEC[0], PASS_LOOK_SEC[1], aggression))
 	var block := -1
 	var block_ds := INF
+	var length := track.length
 	for o: KartState in race.karts:
 		if o.id == k.id:
 			continue
-		var ds := track.delta(k.s, o.s)
+		var ds := fposmod(o.s - k.s, length)  # track.delta, inline (hot: every kart, every think)
+		if ds > length * 0.5:
+			ds -= length
 		if ds <= 0.5 or ds > look or ds >= block_ds:
 			continue
 		if absf(o.d - lane) > LANE and o.id != _pass_id:
@@ -261,11 +264,13 @@ func _pass_lane(k: KartState, race: KartRaceLogic) -> float:
 
 ## Pushes the wanted lane away from karts alongside.
 func _keep_apart(k: KartState, race: KartRaceLogic, want: float) -> float:
-	var track := race.track
+	var length := race.track.length
 	for o: KartState in race.karts:
 		if o.id == k.id:
 			continue
-		var ds := track.delta(k.s, o.s)
+		var ds := fposmod(o.s - k.s, length)  # track.delta, inline
+		if ds > length * 0.5:
+			ds -= length
 		if absf(ds) > BESIDE:
 			continue
 		var dd := k.d - o.d

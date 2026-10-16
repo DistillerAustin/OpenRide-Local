@@ -17,6 +17,10 @@ extends RefCounted
 
 enum Surface { ROAD, KERB, OFFROAD, WALL }
 
+## `zone_flags` bits.
+const ZONE_CLIMB := 1
+const ZONE_PAD := 2
+
 ## The lookup table's spacing, metres (the actual spacing divides the length evenly).
 const STEP := 1.0
 ## Kerbs: a band just outside the road's edge. Driving on them is as fast as the road.
@@ -51,6 +55,12 @@ var _bank := PackedFloat32Array()
 var _curv := PackedFloat32Array()
 var _grade := PackedFloat32Array()
 var _line := PackedFloat32Array()
+## The climb and boost zones again, typed, for the physics' per-tick check (`zone_flags`).
+var _zk := PackedInt32Array()  ## ZONE_CLIMB or ZONE_PAD
+var _zs0 := PackedFloat64Array()
+var _zs1 := PackedFloat64Array()
+var _zd := PackedFloat64Array()
+var _zw := PackedFloat64Array()
 var _at := 0  ## scratch: the row `_locate` found
 var _frac := 0.0  ## scratch: the fraction to the next row
 
@@ -100,14 +110,25 @@ func project(pos: Vector3, hint_s := -1.0) -> KartTrackPoint:
 	var best := 0
 	var best_d2 := INF
 	if hint_s >= 0.0:
+		# Walk downhill from the hint's row (a kart moves well under a row a tick, so this is one
+		# to three distances, not the window's 51), at most PROJECT_WINDOW either way, so it
+		# never leaves the hint's branch for another part of the track that passes close by.
 		var h := roundi(_wrap(hint_s) / _ds)
 		var w := ceili(PROJECT_WINDOW / _ds)
-		for k in range(h - w, h + w + 1):
-			var i := posmod(k, _n)
-			var d2 := pos.distance_squared_to(_pos[i])
-			if d2 < best_d2:
-				best_d2 = d2
-				best = i
+		best = posmod(h, _n)
+		best_d2 = pos.distance_squared_to(_pos[best])
+		var dir := 1
+		var next_d2 := pos.distance_squared_to(_pos[(best + 1) % _n])
+		var prev_d2 := pos.distance_squared_to(_pos[(best - 1 + _n) % _n])
+		if prev_d2 < next_d2:
+			dir = -1
+			next_d2 = prev_d2
+		var walked := 0
+		while next_d2 < best_d2 and walked < w:
+			best = posmod(best + dir, _n)
+			best_d2 = next_d2
+			walked += 1
+			next_d2 = pos.distance_squared_to(_pos[posmod(best + dir, _n)])
 	else:
 		for i in _n:
 			var d2 := pos.distance_squared_to(_pos[i])
@@ -132,15 +153,7 @@ func project(pos: Vector3, hint_s := -1.0) -> KartTrackPoint:
 		s = _wrap(s + clampf(step, -3.0 * _ds, 3.0 * _ds))
 		if absf(step) < 0.0005:
 			break
-	_locate(s)
-	var i0 := _at
-	var f0 := _frac
-	var j0 := (i0 + 1) % _n
-	var centre := _pos[i0].lerp(_pos[j0], f0)
-	var tan0 := _tan[i0].lerp(_tan[j0], f0).normalized()
-	var offset := pos - centre
-	offset.y = 0.0
-	return _point(s, offset.dot(Vector3(-tan0.z, 0.0, tan0.x)))
+	return _point(s, 0.0, pos)
 
 
 ## The road's half-width at s (the edge of the tarmac; kerbs and the verge lie beyond it).
@@ -151,13 +164,17 @@ func half_width(s: float) -> float:
 ## What is under (s, d): ROAD, KERB (the first KERB_WIDTH past the edge), OFFROAD (the rest of
 ## the verge) or WALL (beyond the verge: the barrier).
 func surface(s: float, d: float) -> int:
+	return surface_beside(half_width(s), verge, d)
+
+
+## `surface` for a road edge (half-width) already looked up.
+static func surface_beside(edge: float, verge_m: float, d: float) -> int:
 	var a := absf(d)
-	var edge := half_width(s)
 	if a <= edge:
 		return Surface.ROAD
 	if a <= edge + KERB_WIDTH:
 		return Surface.KERB
-	if a <= edge + verge:
+	if a <= edge + verge_m:
 		return Surface.OFFROAD
 	return Surface.WALL
 
@@ -198,6 +215,22 @@ func zones_at(s: float) -> Array[Dictionary]:
 		if in_span(x, float(z.s0), float(z.s1)):
 			found.append(z)
 	return found
+
+
+## The climb and boost-pad zones under (s, d), as ZONE_CLIMB | ZONE_PAD bits: on a pad means
+## within its half-width plus `pad_grace` of its d. The same answer as walking `zones`, typed.
+func zone_flags(s: float, d: float, pad_grace: float) -> int:
+	var flags := 0
+	for i in _zk.size():
+		var s0 := _zs0[i]
+		var s1 := _zs1[i]
+		if not (s >= s0 and s <= s1 if s0 <= s1 else s >= s0 or s <= s1):
+			continue
+		if _zk[i] == ZONE_CLIMB:
+			flags |= ZONE_CLIMB
+		elif absf(d - _zd[i]) <= _zw[i] * 0.5 + pad_grace:
+			flags |= ZONE_PAD
+	return flags
 
 
 ## Whether s lies in the span s0 → s1 (driving forward, wrapping past the line when s1 < s0).
@@ -358,6 +391,13 @@ func _build_zones() -> void:
 			copy.s0 = fposmod(s0 - def.start_s, length)
 			copy.s1 = fposmod(s1 - def.start_s, length)
 		zones.append(copy)
+		var type := str(copy.get("type", ""))
+		if type == "climb" or type == "boost":
+			_zk.append(ZONE_CLIMB if type == "climb" else ZONE_PAD)
+			_zs0.append(float(copy.s0))
+			_zs1.append(float(copy.s1))
+			_zd.append(float(copy.get("d", 0.0)))
+			_zw.append(float(copy.get("w", 99.0)))
 
 
 # --- Table lookups ---
@@ -375,19 +415,26 @@ func _lerp_table(table: PackedFloat32Array, s: float) -> float:
 	return lerpf(table[_at], table[(_at + 1) % _n], _frac)
 
 
-func _point(s: float, d: float) -> KartTrackPoint:
+## The point at (s, d); or, with `from` (not NAN), at s and the d of `from` across the road (its
+## horizontal offset from the centre line along the right): `project`'s answer, one lookup.
+func _point(s: float, d: float, from := Vector3(NAN, NAN, NAN)) -> KartTrackPoint:
 	_locate(s)
 	var i := _at
 	var f := _frac
 	var j := (i + 1) % _n
 	var p := KartTrackPoint.new()
 	p.s = s
-	p.d = d
 	var t := _tan[i].lerp(_tan[j], f).normalized()
 	p.right = Vector3(-t.z, 0.0, t.x)
+	var centre := _pos[i].lerp(_pos[j], f)
+	if not is_nan(from.x):
+		var offset := from - centre
+		offset.y = 0.0
+		d = offset.dot(p.right)
+	p.d = d
 	var b := lerpf(_bank[i], _bank[j], f)
 	var g := lerpf(_grade[i], _grade[j], f)
-	p.position = _pos[i].lerp(_pos[j], f) + p.right * d + Vector3.UP * (d * tan(b))
+	p.position = centre + p.right * d + Vector3.UP * (d * tan(b))
 	p.height = p.position.y
 	p.tangent = (t + Vector3.UP * g).normalized()
 	var right_banked := p.right * cos(b) + Vector3.UP * sin(b)

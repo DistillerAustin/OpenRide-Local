@@ -233,13 +233,13 @@ func test_a_tap_fires_the_item_the_roulette_landed_and_its_icon_matches() -> voi
 			boosts.append(kind))
 	items.pods.clear()
 	items.add_pod(k.s, k.d)
-	game._on_frame(DT)
+	game._on_frame(KartRaceScript.TICK)  # one logic tick
 	assert_float(k.roulette_time).is_greater(0.0)
 	items._pending[KartRaceLogic.RIDER] = "turbo"
 	await _settle()
 	var button := kh.item_button.get_global_rect()
 	_touch(button.get_center())
-	game._on_frame(DT)
+	game._on_frame(KartRaceScript.TICK)
 	assert_array(used).is_empty()
 	while k.roulette_time > 0.0:
 		game._on_frame(DT)

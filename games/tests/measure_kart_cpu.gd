@@ -3,8 +3,9 @@ extends SceneTree
 ## running): plays a local race headless and times each part of a frame, per 60 Hz tick and per
 ## frame, over SECONDS of racing:
 ##   $GODOT_BIN --headless --path games -s res://tests/measure_kart_cpu.gd [-- --seconds=60]
-## Prints `MEASURE kart_cpu part=… us_per_frame=…`. The desktop is several times faster than the
-## tablet: read the shares, not the absolute numbers.
+## Prints `MEASURE kart_cpu part=… us_per_frame=…` per 60 Hz frame (the logic parts run at the
+## game's TICK, 30 Hz, so they're averaged over the frames between). The desktop is 15-25 times
+## faster than the tablet: read the shares, not the absolute numbers.
 
 const DT := 1.0 / 60.0
 var _t := {}
@@ -38,37 +39,70 @@ func _run() -> void:
 	inp.cadence = 85.0
 	game.test_input = inp
 	game.start()
+	game.set_process(false)  # this script steps the frame (Game._process would step it a second time)
 	# To the green light.
 	while game.flow != game.Flow.RACING:
 		game._on_frame(DT)
 	var frames := roundi(seconds * 60.0)
+	var measured := 0
+	var tick: float = game.TICK
+	var acc := 0.0
 	for f in frames:
 		inp.lean = sin(f * 0.01) * 0.3
 		var t0 := Time.get_ticks_usec()
-		game.sim_time += DT
-		var inputs: Array = _time("bots+inputs", func(): return game._inputs(DT))
-		# race.step, part by part (KartRaceLogic.step while racing).
 		var race = game.race
-		race.time += DT
-		_time("race.drafts", func(): KartPhysics.update_drafts(race.karts))
-		_time("race.physics", func():
-			for k in race.karts:
-				var prev_s: float = k.s
-				race.physics.step(k, race._input_of(k, inputs), race.track, DT)
-				if not k.finished:
-					race._check_line(k, prev_s, DT))
-		_time("race.contacts", func():
-			for hit in KartPhysics.resolve_contacts(race.karts):
-				race.events.kart_bump.emit(int(hit[0]), int(hit[1]), float(hit[2])))
-		_time("race.places", func(): race._update_places())
-		_time("items.step", func(): game.items.step(DT, inputs))
-		_time("scoring.step", func(): game.scoring.step(DT, inputs[0].power_w))
-		_time("sync_views (views, camera, item views, fx, audio, draft)", func(): game._sync_views(DT))
+		# KartRace._frame: the logic at its fixed tick, part by part (KartRaceLogic.step racing).
+		acc += DT
+		while acc >= tick:
+			acc -= tick
+			game.sim_time += tick
+			var inputs: Array = _time("bots+inputs", func(): return game._inputs(tick))
+			race.time += tick
+			_time("race.snap", func():
+				for k in race.karts:
+					k.snap())
+			_time("race.drafts", func(): KartPhysics.update_drafts(race.karts))
+			_time("race.physics", func():
+				for k in race.karts:
+					var prev_s: float = k.s
+					race.physics.step(k, race._input_of(k, inputs), race.track, tick)
+					if not k.finished:
+						race._check_line(k, prev_s, tick))
+			_time("race.contacts", func():
+				for hit in KartPhysics.resolve_contacts(race.karts):
+					race.events.kart_bump.emit(int(hit[0]), int(hit[1]), float(hit[2])))
+			_time("race.places", func(): race._update_places())
+			_time("items.step", func(): game.items.step(tick, inputs))
+			_time("scoring.step", func(): game.scoring.step(tick, inputs[0].power_w))
+		game._acc = acc
+		# _sync_views, part by part (KartRace._sync_views while racing), every frame.
+		var alpha := acc / tick
+		_time("views.draw_into", func():
+			for i in race.karts.size():
+				race.karts[i].draw_into(game._draw[i], alpha))
+		_time("views.sync", func():
+			for i in game.views.size():
+				game.views[i].sync(game._draw[i], DT))
+		_time("camera", func(): game.camera.follow(game._draw[0], DT))
+		_time("views.cull", func(): game._cull_views())
+		_time("item_views", func():
+			game._item_views.alpha = alpha
+			game._item_views.sync(DT))
+		_time("fx", func(): game._fx.step(race, DT))
+		_time("audio", func(): game._audio.step(race, game.Flow.keys()[game.flow], DT))
+		_time("draft_screen", func(): game._sync_screen_fx())
 		_time("hud", func(): game._update_hud(DT))
 		_t["frame"] = _t.get("frame", 0) + Time.get_ticks_usec() - t0
-		await process_frame  # the engine's own _process callbacks (bakes, board, KartWorld spinners)
+		measured += 1
+		# Let the engine run a frame (the other nodes' _process: HUD widgets, bakes) once a second
+		# only: idling between frames lets the desktop clock the thread down, which swamps the
+		# numbers. Back-to-back frames keep it at a steady clock.
+		if f % 60 == 59:
+			await process_frame
 		if game.flow != game.Flow.RACING:
 			break
+	frames = maxi(measured, 1)
+	print("MEASURE kart_cpu frames=%d race_time=%.1f" % [frames, game.race.time])
 	var parts := _t.keys()
 	parts.sort_custom(func(a, b): return _t[a] > _t[b])
 	for p in parts:

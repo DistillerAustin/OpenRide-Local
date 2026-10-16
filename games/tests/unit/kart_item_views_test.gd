@@ -138,7 +138,7 @@ func test_the_game_steps_items_and_hands_them_to_the_bots() -> void:
 	game.get("race").events.item_used.connect(func(id: int, item: String): used.append([id, item]))
 	items.give(0, "turbo")
 	inp.use_item = true
-	game._on_frame(DT)
+	game._on_frame(preload("res://games/kart_race/KartRace.gd").TICK)  # one logic tick
 	inp.use_item = false
 	assert_array(used).contains([[0, "turbo"]])
 	# Auto items, switched on mid-race, takes over.
