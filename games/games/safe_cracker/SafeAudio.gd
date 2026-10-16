@@ -1,13 +1,15 @@
 extends RefCounted
 ## Safe Cracker's own sounds (#41), registered with AudioDirector by the game scene.
 ##
-## Synth presets (`sfx/*.tres`, through SfxSynth): tumbler_click, proximity_tick (played faster
-## as the dial nears a hidden target), soft_alarm (gentle: no sirens during recovery),
-## vault_open and door_creak. The music is the `noir` style, sparse and calm, which thins out
-## while the alarm light is on. Bus effects for this game only: a small-room reverb and a
+## Rendered effects (`music/sfx/*.ogg`, games/tools/music/songs/safe_cracker.py, in the music's
+## key): tumbler_click, proximity_tick (played faster as the dial nears a hidden target),
+## soft_alarm (gentle: no sirens during recovery), vault_open and door_creak. They replace the
+## synth presets of the same names (`sfx/*.tres`, SfxSynth's fallback). The music is "Night
+## Shift" (SafeMusic), which thins to its bed while the alarm light is on. Bus effects for this game only: a small-room reverb and a
 ## glue compressor on the music.
 
 const SFX_DIR := "res://games/safe_cracker/sfx"
+const SafeMusic := preload("res://games/safe_cracker/SafeMusic.gd")
 
 static var _registered := false
 
@@ -17,6 +19,10 @@ static func register() -> void:
 		return
 	_registered = true
 	SfxSynth.add_preset_dir(SFX_DIR)
+	for sound in SafeMusic.SOUNDS:
+		var rendered := load(SafeMusic.SOUNDS[sound]) as AudioStream
+		if rendered:
+			AudioDirector.register_sound(sound, rendered)
 
 
 static func music_effects() -> Array[AudioEffect]:

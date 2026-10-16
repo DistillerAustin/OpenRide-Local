@@ -11,10 +11,16 @@ extends Game
 
 const SafeAudioScript := preload("res://games/safe_cracker/SafeAudio.gd")
 
+const SafeMusic := preload("res://games/safe_cracker/SafeMusic.gd")
+
+## "Night Shift" (SafeMusic, rendered by games/tools/music): the bed (ride, brushes, walking
+## bass) always; the harmony (vibes, Rhodes, muted brass) and lead (sax, spy guitar) while the
+## rider is steady. Both drop out while the alarm rings.
 const MUSIC_STYLE := {
-	"name": "noir",
-	# Drums and bass always; the harmony and lead come in when the rider is steady.
-	"stem_gates": {"harmony": 0.3, "lead": 0.6},
+	"name": "night_shift",
+	"stem_files": SafeMusic.STEM_FILES,
+	"loop_from": SafeMusic.LOOP_FROM,
+	"stem_gates": {"harmony": 0.3, "lead": 0.45},
 }
 const BODY_HOME := Vector2(960, 645)  ## the door's centre on the 1920x1080 canvas
 const SLIDE_FROM := 1500.0  ## a new safe slides in from the right
@@ -112,10 +118,11 @@ func _on_prepare(seg: Dictionary) -> void:
 	_status = SafeStatus.new()
 	hud.add_widget(_status)
 	hud.metrics.set_cadence_band(logic.cadence_min)
-	AudioDirector.play_music(MUSIC_STYLE, logic.cadence_min + 15.0, int(seg.get("seed", 0)))
+	AudioDirector.play_music(MUSIC_STYLE, SafeMusic.BPM)
 	AudioDirector.set_intensity(0.5)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, SafeAudioScript.music_effects())
 	AudioDirector.set_bus_effects(AudioDirector.SFX_BUS, SafeAudioScript.sfx_effects())
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, GameMix.master_effects())
 	_update_status()
 
 
@@ -201,11 +208,13 @@ func _handle(event: Dictionary) -> void:
 				AudioDirector.play_sfx("tumbler_click", -2.0, 1.0 + 0.06 * event.index)
 		"alarm":
 			AudioDirector.play_sfx("soft_alarm")
+			GameMix.duck_for_moment(1.2)
 			_show_message("Easy on the pedals!", 1.6, HudTheme.WARN)
 		"vault_open":
 			award(event.points)
 			AudioDirector.play_sfx("vault_open")
 			AudioDirector.play_sfx("door_creak", -6.0)
+			GameMix.duck_for_sting(2.0)
 			_show_message("Safe cracked! +%d" % roundi(event.points), SafeLogic.OPEN_SEC, HudTheme.GOOD)
 			if _door_tween:
 				_door_tween.kill()
