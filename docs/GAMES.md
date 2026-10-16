@@ -1247,7 +1247,7 @@ their own line, drift, item and aggression personas. Bot power: easy 0.35→0.60
 
 **Scoring.** Live awards go through `award()`, so the effort multiplier applies: an overtake
 +15, a mini-turbo +10/20/35, an item hit +25, a lap +30, and the race's points × 20 at each
-finish. Stars are points a minute (standard 75, 135, 245): mid-pack earns one star, a podium
+finish. Stars are points a minute (standard 90, 155, 270): mid-pack earns one star, a podium
 two, and three takes podiums plus effort.
 
 **Options** (per rider): Driver, Assist, Camera (chase or close) and Auto items. **Stats:**

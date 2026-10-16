@@ -1,9 +1,11 @@
 extends RefCounted
 ## Canyon Dash (#43): red layered rock, mesas and a dry riverbed. About 1.3 km, clockwise: the
-## start straight runs along the riverbed, a right-hander climbs out of it, a fast left-right
-## esses through the narrows, then the long climb up the canyon wall to a tight hairpin at the
-## top, a run along the mesa, a sweeping right-hander that drops back down, and the descent to
-## the line. An original layout, laid out as a route card (KartTrackShape).
+## start straight runs along the riverbed under a rock arch; turn 1 (38 m, 90°: a tier-2 drift)
+## climbs out of it; a fast left-right esses through the narrows (a second arch); the long climb
+## up the canyon wall to the summit hairpin (24 m, 180°: the tier-3 drift) by a lone rock spire;
+## a run along the mesa, a sweeping right-hander that drops back down, and the last corner (36
+## m, 90°: tier 2) onto the start straight. An original layout, laid out as a route card
+## (KartTrackShape).
 
 const WIDE := 7.5
 const ROAD := 6.5
@@ -13,8 +15,9 @@ const TOP := 18.0  ## the mesa road's height, metres
 ## The route; `a` and `b` are the two straights KartTrackShape.solve() sizes to close the loop.
 static func shape(a: float, b: float) -> KartTrackShape:
 	var t := KartTrackShape.new(Vector2.ZERO, 0.0, 0.0, WIDE)
-	t.straight(110.0)
-	t.arc(55.0, -90.0, 0.0, ROAD)
+	t.straight(125.0)
+	# Turn 1 out of the riverbed: tight enough to drift (tier 2), the run to the narrows after.
+	t.arc(38.0, -90.0, 0.0, ROAD)
 	t.mark("items1")
 	t.straight(60.0)
 	t.mark("climb0")
@@ -24,7 +27,8 @@ static func shape(a: float, b: float) -> KartTrackShape:
 	# The long climb up the canyon wall.
 	t.straight(a, TOP - 4.0)
 	t.mark("hairpin")
-	t.arc(22.0, -180.0, TOP, WIDE)
+	# The summit hairpin: a long drift (tier 3) onto the mesa straight.
+	t.arc(24.0, -180.0, TOP, WIDE)
 	t.mark("climb1")
 	# Along the mesa, then the drop back to the riverbed.
 	t.straight(100.0, TOP - 1.0, ROAD)
@@ -33,9 +37,10 @@ static func shape(a: float, b: float) -> KartTrackShape:
 	t.straight(b, 3.0)
 	t.mark("boost")
 	t.arc(60.0, -90.0, 0.0)
-	t.straight(60.0)
-	t.arc(55.0, -90.0)
-	t.straight(100.0, 0.0, WIDE)
+	t.straight(75.0)
+	# The last corner, under the arch's shadow: a tier-2 drift onto the start straight.
+	t.arc(36.0, -90.0)
+	t.straight(115.0, 0.0, WIDE)
 	return t
 
 
@@ -56,9 +61,13 @@ static func build() -> KartTrackDef:
 		{"type": "boost", "s0": m.boost + 4.0, "s1": m.boost + 10.0, "d": -2.6, "w": 1.4},
 		{"type": "boost", "s0": m.boost + 4.0, "s1": m.boost + 10.0, "d": 2.6, "w": 1.4},
 	]
-	# The dry riverbed winds through the infield; a rock arch stands over the esses.
+	# The dry riverbed winds through the infield; rock arches span the start straight (the
+	# title shot frames it over the grid) and the esses (a gateway into the climb); a lone rock
+	# spire stands on the summit hairpin's outside, the view as the karts come round.
 	def.landmarks = [
 		{"type": "river", "s": 40.0, "d": 70.0},
+		{"type": "arch", "s": 75.0, "d": 0.0, "hero": true},
 		{"type": "arch", "s": m.climb0 + 60.0, "d": 0.0},
+		{"type": "spire", "s": m.hairpin + 38.0, "d": -30.0},
 	]
 	return def

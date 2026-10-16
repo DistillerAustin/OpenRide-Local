@@ -10,13 +10,18 @@ extends RefCounted
 ## each finish the race's points × 20.
 ##
 ## Stars are per minute of play (`STAR_THRESHOLDS`, KartRace's `info()`), tuned in simulation
-## with the Phase 2 physics, bots and items (tests/unit/kart_scoring_test.gd; 6 seeds a point,
-## Meadow Ring, one 3-lap race plus the 14.5 s around it). Points a minute at 1.0×:
+## with the merged physics, bots and items: a bot-driven rider against each difficulty's field,
+## one 3-lap race plus the 14.5 s around it, 3 seeds a point (tests/unit/kart_scoring_test.gd
+## checks Meadow Ring). Re-validated in polish pass 3, when every track gained corners that pay a
+## tier-2 or tier-3 mini-turbo: the cup's average barely moved (standard mid-pack 141 → 138,
+## winning 240 → 237), but Meadow Ring, the old calibration track, rose from 114 to 141 (it had
+## no drift corners before), and the cup average had always sat above the old Meadow-based
+## thresholds. Points a minute at 1.0× now:
 ##
-## | field    | mid-pack (4th-5th) | podium (2nd-3rd) | winning at 1.0× |
-## | easy     | 81-104, mean 92    | 108-129          | 147-226         |
-## | standard | 97-127, mean 114   | 127-162          | 146-250         |
-## | hard     | 98-127, mean 112   | 108-171          | 180-252         |
+## | field    | mid-pack (4th-5th)          | podium (1st-2nd at 75% FTP) | winning at 1.0×   |
+## | easy     | (0.6 FTP places 2nd: 163-214) | 163-214                   | Meadow 226-253, Harbor 248-271 |
+## | standard | Meadow 138-147, cup 110-196 | Meadow 179-181, cup 177-218 | Meadow 224-257, cup 200-277 |
+## | hard     | (0.6 FTP places 5th-7th: 104-182) | -                     | Meadow 205-246, Harbor 255-282 |
 ##
 ## So a mid-pack ride earns one star, a podium ride two, and three take podiums plus effort
 ## (the effort multiplier is up to 1.5×): a win at 1.0× stays under the third star (unless far
@@ -34,9 +39,9 @@ const GHOST_MAX_POINTS := 3600
 const MINI_TURBO_GAP_SEC := 4.0
 ## Points per minute for one, two and three stars, by difficulty.
 const STAR_THRESHOLDS := {
-	"easy": [65, 115, 220],
-	"standard": [75, 135, 245],
-	"hard": [85, 140, 255],
+	"easy": [80, 140, 275],
+	"standard": [90, 155, 270],
+	"hard": [100, 165, 300],
 }
 
 var rider_id := 0

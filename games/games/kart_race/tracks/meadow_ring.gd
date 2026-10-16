@@ -1,51 +1,78 @@
 extends RefCounted
-## Meadow Ring, v0 (#43): the hero track. Green hills and wide sweepers, about 1.15 km: a
-## straight past the grandstand, a long banked left-hander, a climb along the back to a crest,
-## a winding descent and a flowing run back to the line. An original layout (from a sum of
-## sines, rounded to control points). The world agent owns the final layout and dressing.
+## Meadow Ring (#43): the hero track. Green hills, wide sweepers and three corners that pay a
+## long drift, about 1.15 km, anticlockwise. An original layout, laid out as a route card
+## (KartTrackShape):
+##
+## - the start straight past the grandstand into **the Carousel**, a long banked left-hander
+##   (34 m, 150°: a tier-3 drift) that opens onto the item row;
+## - a kink, then the climb along the back to **the crest hairpin** by the windmill (25 m, 115°:
+##   tier 2), the view opening over the valley as the karts come round;
+## - the winding descent (wide esses), the run past the hay fields to **the barn bend** (30 m,
+##   95°: tier 2), the boost pads on its exit, and a last sweeper onto the line.
 
-const POINTS := [
-	Vector3(58.2, 0.0, 87.9), Vector3(81.4, 0.0, 78.6), Vector3(107.5, 0.0, 68.1),
-	Vector3(141.0, 0.0, 54.6), Vector3(183.6, 0.0, 33.9), Vector3(224.0, 0.0, 0.0),
-	Vector3(241.0, 0.0, -44.6), Vector3(221.7, 0.0, -85.8), Vector3(174.1, 0.0, -110.0),
-	Vector3(120.3, 0.0, -116.2), Vector3(77.1, 0.0, -116.1), Vector3(44.7, 0.8, -119.7),
-	Vector3(15.2, 2.4, -125.7), Vector3(-15.2, 4.4, -126.1), Vector3(-44.2, 6.6, -118.4),
-	Vector3(-71.4, 8.6, -107.6), Vector3(-101.0, 9.8, -97.6), Vector3(-134.3, 10.0, -84.8),
-	Vector3(-163.2, 9.4, -63.2), Vector3(-177.6, 8.0, -32.8), Vector3(-177.3, 6.2, 0.0),
-	Vector3(-173.3, 4.4, 32.0), Vector3(-173.3, 2.8, 67.1), Vector3(-170.6, 1.4, 107.8),
-	Vector3(-151.1, 0.5, 145.9), Vector3(-110.3, 0.0, 166.2), Vector3(-60.0, 0.0, 160.5),
-	Vector3(-16.6, 0.0, 137.1), Vector3(13.6, 0.0, 112.6), Vector3(36.2, 0.0, 96.8),
-]
-## The start straight is wider, for the grid.
 const WIDE := 7.5
 const ROAD := 6.5
-## The long left-hander (points 5-7) is banked a little.
-const BANK := 0.08
+const HAIRPIN := 7.0  ## the crest hairpin is a little wider: room to drift round it
+const CREST := 9.5  ## metres above the start
+const BANK := 0.1  ## the Carousel leans in (the outside, the right edge, higher)
+
+
+## The route; `a` and `b` are the two straights KartTrackShape.solve() sizes to close the loop.
+static func shape(a: float, b: float) -> KartTrackShape:
+	var t := KartTrackShape.new(Vector2(58.0, 88.0), -22.0, 0.0, WIDE)
+	t.straight(65.0)
+	t.straight(90.0, NAN, ROAD)
+	t.mark("carousel")
+	t.arc(34.0, 150.0, NAN, NAN, BANK)
+	t.straight(18.0, NAN, NAN, 0.0)
+	t.mark("items1")
+	t.straight(70.0)
+	# A pair of wide sweepers through the hay fields, flat out.
+	t.arc(90.0, -50.0)
+	t.arc(90.0, 50.0)
+	t.mark("climb0")
+	# The climb along the back, about 4.5%.
+	t.straight(a, CREST - 0.5)
+	t.mark("crest")
+	t.arc(25.0, 115.0, CREST, HAIRPIN)
+	t.mark("climb1")
+	t.straight(90.0, CREST - 3.0, ROAD)
+	# The winding descent.
+	t.arc(65.0, -50.0, CREST - 5.5)
+	t.arc(65.0, 50.0, CREST - 7.5)
+	t.mark("items2")
+	t.straight(b, 0.6)
+	t.mark("barn")
+	t.arc(30.0, 95.0, 0.0)
+	t.mark("boost")
+	t.straight(50.0)
+	t.straight(70.0, 0.0, WIDE)
+	t.straight(55.0)
+	return t
 
 
 static func build() -> KartTrackDef:
-	var def := KartTrackDef.new()
-	def.id = "meadow_ring"
-	def.title = "Meadow Ring"
-	def.theme = "meadow"
-	def.points = PackedVector3Array(POINTS)
-	var widths := PackedFloat32Array()
-	var bank := PackedFloat32Array()
-	for i in POINTS.size():
-		widths.append(WIDE if i in [28, 29, 0, 1, 2] else ROAD)
-		bank.append(BANK if i in [5, 6, 7] else 0.0)
-	def.half_widths = widths
-	def.banking = bank
+	var ab := KartTrackShape.solve(shape)
+	var t := shape(ab.x, ab.y)
+	var def := t.def("meadow_ring", "Meadow Ring", "meadow")
 	def.verge = 4.0
 	def.start_s = 0.0
+	var m := t.marks
+	var lap := t.length()
 	def.zones = [
-		{"type": "start", "s0": 1100.0, "s1": 50.0},
-		{"type": "items", "s0": 290.0, "s1": 292.0},
-		{"type": "climb", "s0": 465.0, "s1": 650.0, "dir": "forward"},
+		{"type": "start", "s0": lap - 50.0, "s1": 50.0},
+		{"type": "items", "s0": m.items1 + 25.0, "s1": m.items1 + 27.0},
+		{"type": "climb", "s0": m.climb0, "s1": m.crest, "dir": "forward"},
 		# Driven the other way round, the winding descent is the climb.
-		{"type": "climb", "s0": 690.0, "s1": 960.0, "dir": "reversed"},
-		{"type": "items", "s0": 875.0, "s1": 877.0},
-		{"type": "boost", "s0": 1020.0, "s1": 1026.0, "d": -2.8, "w": 1.4},
-		{"type": "boost", "s0": 1020.0, "s1": 1026.0, "d": 2.8, "w": 1.4},
+		{"type": "climb", "s0": m.climb1, "s1": m.items2 + 40.0, "dir": "reversed"},
+		{"type": "items", "s0": m.items2 + 30.0, "s1": m.items2 + 32.0},
+		{"type": "boost", "s0": m.boost + 30.0, "s1": m.boost + 36.0, "d": -2.8, "w": 1.4},
+		{"type": "boost", "s0": m.boost + 30.0, "s1": m.boost + 36.0, "d": 2.8, "w": 1.4},
+	]
+	# The windmill turns on a rise in the infield by the start (the title shot frames it over
+	# the grid); the barn stands on the barn bend's outside, facing the karts as they exit.
+	def.landmarks = [
+		{"type": "windmill", "s": 85.0, "d": -36.0},
+		{"type": "barn", "s": m.barn + 50.0, "d": 30.0},
 	]
 	return def

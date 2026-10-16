@@ -26,7 +26,7 @@ func test_the_cup_has_four_themed_tracks() -> void:
 
 
 func test_route_cards_close_on_themselves() -> void:
-	for id in ["canyon_dash", "harbor_lights", "frost_pass"]:
+	for id in KartTracks.CUP:
 		var script: GDScript = load(KartTracks.SCRIPTS[id])
 		var ab := KartTrackShape.solve(script.shape)
 		# The two sized straights are real straights.
@@ -92,12 +92,93 @@ func test_zones_lie_on_the_road_both_ways_round() -> void:
 			assert_bool(m.zones_at(0.5).any(func(z): return z.type == "start")).is_true()
 			assert_bool(m.zones_at(m.wrap(-45.0)).any(func(z): return z.type == "start")).is_true()
 			assert_bool(m.zones_at(45.0).any(func(z): return z.type == "start")).is_true()
-			# The grid is straight and wide (Meadow Ring's, the hero slice's, curves gently).
+			# The grid is straight and wide.
 			var g := -42.0
-			while g < 2.0 and id != "meadow_ring":
+			while g < 2.0:
 				assert_float(absf(m.curvature(m.wrap(g)))).override_failure_message("%s grid bends at %.0f" % [id, g]).is_less(0.008)
 				assert_float(m.half_width(m.wrap(g))).is_greater(6.8)
 				g += 2.0
+
+
+## The corners of `m`: stretches where the road curves one way at least as much as the drift's
+## full-charge curvature (KartPhysics.DRIFT_CHARGE_K). Each: {s0, s1, length, r_min, cash}, where
+## `cash` is the run after it that bends less than 1/60 per metre (where a mini-turbo pays).
+static func corners(m: KartTrackModel) -> Array:
+	var out := []
+	var cur := {}
+	var s := 0.0
+	while s < m.length:
+		var k := m.curvature(s)
+		var on := absf(k) >= KartPhysics.DRIFT_CHARGE_K
+		if on and (cur.is_empty() or signf(k) != cur.sign):
+			if not cur.is_empty():
+				out.append(cur)
+			cur = {"s0": s, "s1": s, "sign": signf(k), "k": 0.0}
+		elif not on and not cur.is_empty():
+			out.append(cur)
+			cur = {}
+		if not cur.is_empty():
+			cur.s1 = s
+			cur.k = maxf(cur.k, absf(k))
+		s += 1.0
+	if not cur.is_empty():
+		out.append(cur)
+	for c: Dictionary in out:
+		c.length = float(c.s1) - float(c.s0)
+		c.r_min = 1.0 / float(c.k)
+		var cash := 0.0
+		while cash < 300.0 and absf(m.curvature(m.wrap(float(c.s1) + cash))) < 1.0 / 60.0:
+			cash += 1.0
+		c.cash = cash
+	return out
+
+
+## The drift tier a corner of `length` metres reaches at DRIFT_DESIGN_SPEED (the charge runs at
+## full rate the whole way round; DRIFT_ENTRY is lost to the hop and the lean's hold).
+static func tier_for(length: float) -> int:
+	var t := length / DRIFT_DESIGN_SPEED - DRIFT_ENTRY
+	var tier := 0
+	for i in KartPhysics.TIER_SEC.size():
+		if t >= float(KartPhysics.TIER_SEC[i]):
+			tier = i + 1
+	return tier
+
+
+const DRIFT_DESIGN_SPEED := 20.0  ## m/s: a strong rider (the bots' field averages 16-18)
+const DRIFT_ENTRY := 0.3  ## s
+const DRIFT_TIGHT := 40.0  ## m: a drift corner is at least this tight somewhere
+const CASH := 50.0  ## m of straight after it to spend the mini-turbo
+
+
+func test_every_track_has_drift_corners_that_pay_tier_2_and_one_that_pays_tier_3() -> void:
+	# Polish pass 3: drifting is the skill. Each track, both ways round, has at least two tight
+	# corners long enough for a tier-2 mini-turbo and one for tier 3, each with a straight after
+	# it to spend the boost on.
+	for id in KartTracks.CUP:
+		for m: KartTrackModel in _models(id):
+			var tier2 := 0
+			var tier3 := 0
+			for c: Dictionary in corners(m):
+				if float(c.r_min) > DRIFT_TIGHT or float(c.cash) < CASH:
+					continue
+				var tier := tier_for(c.length)
+				if tier >= 2:
+					tier2 += 1
+				if tier >= 3:
+					tier3 += 1
+			var what := "%s reversed=%s: %d tier-2 and %d tier-3 drift corners" % [id, m.reversed, tier2, tier3]
+			assert_int(tier2).override_failure_message(what).is_greater_equal(2)
+			assert_int(tier3).override_failure_message(what).is_greater_equal(1)
+
+
+func test_each_tracks_tightest_corner_is_a_real_drift_corner_but_drivable() -> void:
+	# Before pass 3 Meadow Ring's tightest was about 46 m and Frost Pass's 52 m: nothing to drift.
+	for id in KartTracks.CUP:
+		var m: KartTrackModel = _models(id)[0]
+		var tightest := INF
+		for c: Dictionary in corners(m):
+			tightest = minf(tightest, float(c.r_min))
+		assert_float(tightest).override_failure_message("%s tightest %.1f m" % [id, tightest]).is_between(17.0, 32.0)
 
 
 func test_climb_zones_climb_in_their_direction() -> void:
