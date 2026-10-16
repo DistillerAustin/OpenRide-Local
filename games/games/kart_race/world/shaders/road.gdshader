@@ -2,8 +2,8 @@
 // x = d (metres across, + right), y = s (metres along from the start line). UV2.x is the road's
 // half-width there. COLOR.r is the racing line (d, mapped from -10..10 m), COLOR.g how hard the
 // corner is (0-1): tyre marks gather there. Everything painted is procedural: asphalt grain,
-// edge lines, the chequered line, the grid boxes, kerbs, tyre marks, and verges (mown stripes,
-// sand, cobbles or snow).
+// edge lines, dashed lane lines, an inner grime band, the low sun's sheen, the chequered line,
+// the grid boxes, kerbs, tyre marks, and verges (mown stripes, sand, cobbles or snow).
 shader_type spatial;
 render_mode unshaded, fog_disabled, cull_disabled;
 
@@ -24,8 +24,11 @@ uniform vec3 grass_b : source_color = vec3(0.44, 0.70, 0.24);
 uniform float verge_stripes = 0.4;  // mown stripes' contrast (0: none)
 uniform vec3 verge_dust : source_color = vec3(0.42, 0.38, 0.3);
 uniform float cobbles = 0.0;  // 1: the verge is a cobbled quay
+uniform float verge_grain = 0.3;  // the verge's noise contrast (snow: low)
+uniform float verge_gain = 1.0;  // the verge's brightness (snow is brighter than grass)
 uniform float kerb_width = 0.8;
 uniform float light_gain = 1.0;
+uniform float sheen = 0.22;  // the low sun's warm glare off the asphalt (0: none)
 
 varying float v_hw;
 varying float v_line;
@@ -50,6 +53,7 @@ void fragment() {
 	// Signed s around the start line (the grid sits just behind it, at the end of the loop).
 	float ss = s > track_length * 0.5 ? s - track_length : s;
 	vec3 col;
+	float glare = 0.0;
 	if (ad < hw) {
 		// Asphalt: two scales of grain plus patchy repairs.
 		// Three texture reads in all (the tablet is fill-rate bound): grain, patches, streaks.
@@ -58,7 +62,9 @@ void fragment() {
 		col = mix(asphalt, asphalt_dark, 0.35 * smoothstep(0.62, 0.7, big)) * (0.84 + 0.2 * g + 0.1 * big);
 		// Rubbered-in racing line: darker where the karts run.
 		float lane = smoothstep(2.4, 0.4, abs(d - v_line));
-		col *= 1.0 - 0.12 * lane;
+		col *= 1.0 - 0.2 * lane;
+		// A darker 0.6 m band of grime just inside each edge line.
+		col *= 1.0 - 0.14 * smoothstep(0.34, 0.1, abs(ad - (hw - 0.8)));
 		// Tyre marks: pairs of dark streaks off the line, thicker in corners and off the grid.
 		float streak = vnoise(vec2(d * 3.0, s * 0.11)) * (0.4 + big);
 		float tyre = max(band(d, v_line - 0.62, 0.11), band(d, v_line + 0.62, 0.11));
@@ -70,8 +76,15 @@ void fragment() {
 			marks = max(marks, launch * smoothstep(0.15, 0.5, g) * 0.8);
 		}
 		col = mix(col, vec3(0.08, 0.08, 0.09), marks * 0.42);
-		// Edge lines.
+		// Edge lines, and dashed lane lines at a third of the width (3 m dash, 6 m gap; none on the grid).
 		col = mix(col, line_color, band(ad, hw - 0.35, 0.09));
+		float on_grid = step(ss, 2.0) * step(-(grid_first + grid_gap * float(grid_slots)) - 3.0, ss);
+		float dash = band(fract(s / 9.0), 0.17, 0.165) * (1.0 - on_grid);
+		col = mix(col, line_color * 0.92, band(ad, hw / 3.0, 0.07) * dash * 0.6);
+		// The low sun's glare: a broad warm sheen where the road mirrors the sun, broken by the grain.
+		vec3 v = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
+		float m = max(dot(vec3(-v.x, v.y, -v.z), normalize(sun_dir)), 0.0);
+		glare = m * m * m * m * m * m * m * m * sheen * (0.5 + g);
 		// The start/finish line: a chequered band 1.6 m deep.
 		if (ss >= 0.0 && ss < 1.6) {
 			vec2 c = floor(vec2((d + hw) / (2.0 * hw / 10.0), ss / 0.8));
@@ -97,7 +110,7 @@ void fragment() {
 		// Verge: mown stripes along the track, with clover noise.
 		float stripe = step(0.5, fract(s / 8.0));
 		float n = vnoise(vec2(d, s) * 3.0);
-		col = mix(grass_a, grass_b, 0.35 + verge_stripes * stripe) * (0.85 + 0.3 * n);
+		col = mix(grass_a, grass_b, 0.35 + verge_stripes * stripe) * (1.0 + verge_grain * (n - 0.5)) * verge_gain;
 		if (cobbles > 0.0) {
 			// Cobbles: offset rows of rounded setts, dark joints between.
 			vec2 c = vec2(ad * 3.2, s * 2.4);
@@ -109,6 +122,6 @@ void fragment() {
 		// Rubber and dust thrown onto the verge just off the kerb.
 		col = mix(col, verge_dust, 0.25 * smoothstep(hw + kerb_width + 0.9, hw + kerb_width, ad));
 	}
-	vec3 lit = col * (hemi(vec3(0.0, 1.0, 0.0)) * 0.55 + sun_color * normalize(sun_dir).y * 1.25) * light_gain;
+	vec3 lit = col * (hemi(vec3(0.0, 1.0, 0.0)) * 0.55 + sun_color * normalize(sun_dir).y * 1.25) * light_gain + sun_color * glare;
 	ALBEDO = grade(haze(lit, length(VERTEX)), SCREEN_UV);
 }

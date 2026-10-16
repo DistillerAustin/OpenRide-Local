@@ -2,7 +2,7 @@
 // Unshaded and opaque (no blending): a deep-to-shallow colour rippled by two scrolling noise
 // reads, the sky's horizon reflected at grazing angles, and the sun's glitter path off a wavy
 // normal. With `ice` = 1 the ripples stop, the glitter sharpens to glints, and pale cracks and
-// snow drifts show. Three texture reads (the tablet is fill-rate bound).
+// snow drifts and skate scratches show. Three texture reads (the tablet is fill-rate bound).
 shader_type spatial;
 render_mode unshaded, fog_disabled, cull_disabled;
 
@@ -40,6 +40,9 @@ void fragment() {
 		float crack = (1.0 - smoothstep(0.0, 0.025, abs(n1 - 0.5))) * smoothstep(0.3, 0.6, n2);
 		col = mix(col, snow * 0.95, crack * 0.55 * ice);
 		col = mix(col, snow, smoothstep(0.7, 0.85, big) * ice * 0.8);
+		// Skate scratches: long thin pale arcs, broken up by the ripple read.
+		float sk = abs(fract(dot(p, vec2(0.37, 0.93)) * 0.6 + n2 * 1.5) - 0.5);
+		col = mix(col, snow, (1.0 - smoothstep(0.0, 0.035, sk)) * smoothstep(0.35, 0.6, n1) * 0.4 * ice);
 	}
 	col *= 0.85 + 0.25 * sun_color.r;
 	ALBEDO = grade(haze(col, length(VERTEX)), SCREEN_UV);

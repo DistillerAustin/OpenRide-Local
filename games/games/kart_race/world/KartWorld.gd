@@ -16,6 +16,8 @@ extends Node3D
 ## beyond CELL_RANGE) or per wedge of the far woods (SECTORS); repeated animated things are
 ## MultiMeshes. About 30 draw calls in view (`draw_budget()` counts the upper bound).
 
+const ROAD_DEFAULTS := {"cobbles": 0.0, "verge_grain": 0.3, "verge_gain": 1.0}
+const GROUND_DEFAULTS := {"snow": 0.0, "grain": 0.24}
 const ROAD_STEP := 2.0  ## metres between mesh rows along the track
 const SKIRT := 8.0  ## the skirt from the barrier's foot out and down under the land
 const WALL_HEIGHT := 0.95
@@ -381,10 +383,9 @@ func _build_environment() -> void:
 func _apply_theme() -> void:
 	KartLook.apply(_sky_mat, look.sky)
 	_sky_mat.set_shader_parameter("sun_dir", KartLook.sun_dir())
-	KartLook.apply(road_mat, look.road)
-	if not look.road.has("cobbles"):
-		road_mat.set_shader_parameter("cobbles", 0.0)
-	KartLook.apply(ground_mat, look.ground)
+	# The materials outlive a track: a theme's optional keys fall back to their defaults.
+	KartLook.apply(road_mat, ROAD_DEFAULTS.merged(look.road, true))
+	KartLook.apply(ground_mat, GROUND_DEFAULTS.merged(look.ground, true))
 	if look.has("water"):
 		KartLook.apply(water_mat, look.water)
 	_env.environment.ambient_light_color = look.light.sky_color
@@ -490,46 +491,78 @@ func _paint_mesh() -> ArrayMesh:
 	return st.commit() if any else null
 
 
-## The barrier: panels alternating in the theme's two colours under a rail, darker at the foot.
+## The barrier: one mesh in props_mat, lit by the sun like scenery (a 0.08 self-glow only). Its
+## profile from the road: a dark foot (AO, or tyres), panels alternating in the theme's two
+## colours with dark seams every row, the rail as a stripe, a chamfered lighter cap, and a shaded
+## back. Per theme (`wall_style`): Meadow's foot is a row of tyres, Canyon's panels are timber
+## planks, Harbor's quay wall is stone-footed, and Frost's cap is a fat lip of snow.
 func _wall_mesh() -> ArrayMesh:
 	var kit := KartMeshKit.new()
 	var rows := maxi(8, roundi(track.length / ROAD_STEP))
 	var step := track.length / rows
-	var top := Vector3.UP * WALL_HEIGHT
-	var rail := Vector3.UP * (WALL_HEIGHT + 0.14)
-	# A little self-light (props_mat's alpha glow) keeps the panels bright on the shaded side.
-	var wall_a: Color = look.wall_a
-	var wall_b: Color = look.wall_b
-	var wall_rail: Color = look.wall_rail
-	wall_a.a = 0.3
-	wall_b.a = 0.3
-	wall_rail.a = 0.2
+	var style := str(look.get("wall_style", ""))
+	var h := WALL_HEIGHT + 0.14
+	var cap: Color = look.get("wall_cap", Color(0.9, 0.9, 0.92))
+	var foot_c: Color = look.get("wall_foot", Color(0.2, 0.2, 0.22))
+	var rail: Color = look.wall_rail
+	var lip := 0.1 if style == "snow" else 0.0
+	# (out, up) from the barrier's face at the road edge, outward; one colour per segment
+	# (null: the panel's colour). The foot runs to 0.2 m, the stripe sits under the cap.
+	var prof := [Vector2(0.0, 0.0), Vector2(0.0, 0.2), Vector2(0.0, h - 0.17), Vector2(0.0, h - 0.07),
+		Vector2(0.07 - lip, h + lip * 0.6), Vector2(0.38 + lip, h + lip * 0.6), Vector2(0.45, h - 0.07), Vector2(0.45, 0.0)]
+	var seg_cols := [foot_c, null, rail, cap.darkened(0.06), cap, cap.darkened(0.2), null]
 	for i in rows:
 		var s0 := i * step
 		var s1 := fmod((i + 1) * step, track.length)
-		var color: Color = wall_a if (i >> 1) & 1 == 0 else wall_b
+		var panel: Color = look.wall_a if (i >> 1) & 1 == 0 else look.wall_b
 		for side: float in [-1.0, 1.0]:
 			var e0 := track.half_width(s0) + track.verge
 			var e1 := track.half_width(s1) + track.verge
-			var a := track.position_at(s0, side * e0)
-			var b := track.position_at(s1, side * e1)
-			var a2 := track.position_at(s0, side * (e0 + 0.45))
-			var b2 := track.position_at(s1, side * (e1 + 0.45))
-			var foot := color.darkened(0.35)
-			foot.a = 0.0
-			var mid := Vector3.UP * (WALL_HEIGHT * 0.35)
-			if side > 0.0:
-				kit.quad(a, a + mid, b + mid, b, foot)
-				kit.quad(a + mid, a + top, b + top, b + mid, color)
-				kit.quad(a + top, a + rail, b + rail, b + top, wall_rail)
-				kit.quad(a + rail, a2 + rail, b2 + rail, b + rail, wall_rail.darkened(0.1))
-				kit.quad(a2, b2, b2 + rail, a2 + rail, foot.darkened(0.2))
-			else:
-				kit.quad(b, b + mid, a + mid, a, foot)
-				kit.quad(b + mid, b + top, a + top, a + mid, color)
-				kit.quad(b + top, b + rail, a + rail, a + top, wall_rail)
-				kit.quad(b + rail, b2 + rail, a2 + rail, a + rail, wall_rail.darkened(0.1))
-				kit.quad(b2, a2, a2 + rail, b2 + rail, foot.darkened(0.2))
+			for j in seg_cols.size():
+				var c: Color = panel if seg_cols[j] == null else seg_cols[j]
+				if j == seg_cols.size() - 1:
+					c = panel.darkened(0.4)
+				c.a = 0.08
+				var p0: Vector2 = prof[j]
+				var p1: Vector2 = prof[j + 1]
+				var a0 := track.position_at(s0, side * (e0 + p0.x)) + Vector3.UP * p0.y
+				var a1 := track.position_at(s0, side * (e0 + p1.x)) + Vector3.UP * p1.y
+				var b0 := track.position_at(s1, side * (e1 + p0.x)) + Vector3.UP * p0.y
+				var b1 := track.position_at(s1, side * (e1 + p1.x)) + Vector3.UP * p1.y
+				# Wound so each face's front looks out of the barrier's profile (the old wall's were
+				# inside out: the road saw its shaded back).
+				if side > 0.0:
+					kit.quad(b0, b1, a1, a0, c)
+				else:
+					kit.quad(a0, a1, b1, b0, c)
+			# Painted detail on the face, a centimetre proud: a seam at the row's start, and the
+			# theme's bands (tyres' treads, timber's plank joints).
+			var lines: Array = []  # [up0, up1, s_len (0 = the whole row), colour]
+			lines.append([0.2, h - 0.17, 0.08, panel.darkened(0.45)])
+			match style:
+				"tyres":
+					lines.append([0.08, 0.11, 0.0, Color(0.32, 0.32, 0.35)])
+				"timber":
+					for k in [0.43, 0.66]:
+						lines.append([k - 0.012, k + 0.012, 0.0, panel.darkened(0.35)])
+				"snow":
+					lines.append([0.2, 0.26, 0.0, foot_c.lightened(0.25)])
+			for ln: Array in lines:
+				var len: float = ln[2] if ln[2] > 0.0 else step
+				var sa := s0
+				var sb := fmod(s0 + len, track.length)
+				var col: Color = ln[3]
+				col.a = 0.08
+				var ea := track.half_width(sa) + track.verge - 0.01
+				var eb := track.half_width(sb) + track.verge - 0.01
+				var lo := Vector3.UP * float(ln[0])
+				var hi := Vector3.UP * float(ln[1])
+				var a := track.position_at(sa, side * ea)
+				var b := track.position_at(sb, side * eb)
+				if side > 0.0:
+					kit.quad(b + lo, b + hi, a + hi, a + lo, col)
+				else:
+					kit.quad(a + lo, a + hi, b + hi, b + lo, col)
 	return kit.commit()
 
 
@@ -931,13 +964,21 @@ func _build_clouds(parent: Node3D) -> void:
 	quad.material = mat
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
+	# Fewer, bigger cumulus: each a main card with one or two smaller cards overlapping it, a
+	# little higher and to the side, so they read as banks, not rows of sausages (one MultiMesh).
 	var xfs := []
+	count = maxi(3, roundi(count * 0.6))
 	for i in count:
-		var a := TAU * i / count + rng.randf_range(-0.12, 0.12)
-		var r := rng.randf_range(560.0, 820.0)
-		var sc := rng.randf_range(70.0, 150.0)
-		xfs.append(Transform3D(Basis().scaled(Vector3(sc, sc * 0.55, sc)),
-			centre + Vector3(cos(a) * r, rng.randf_range(90.0, 230.0), sin(a) * r)))
+		var a := TAU * i / count + rng.randf_range(-0.15, 0.15)
+		var r := rng.randf_range(600.0, 840.0)
+		var sc := rng.randf_range(150.0, 280.0)
+		var at := centre + Vector3(cos(a) * r, rng.randf_range(110.0, 240.0), sin(a) * r)
+		var tangent := Vector3(-sin(a), 0.0, cos(a))
+		xfs.append(Transform3D(Basis().scaled(Vector3(sc, sc * 0.55, sc)), at))
+		for j in 1 + int(rng.randf() < 0.5):
+			var k := rng.randf_range(0.45, 0.7)
+			var shift := tangent * sc * rng.randf_range(-0.7, 0.7) + Vector3.UP * sc * rng.randf_range(0.12, 0.25)
+			xfs.append(Transform3D(Basis().scaled(Vector3(sc * k, sc * k * 0.55, sc * k)), at + shift - (at - centre).normalized() * 6.0))
 	parent.add_child(KartMeshKit.multimesh_node(quad, xfs, "Clouds"))
 
 
@@ -946,21 +987,31 @@ static var _cloud_tex: ImageTexture
 
 static func _cloud_texture() -> ImageTexture:
 	if _cloud_tex == null:
+		# A cumulus: puffs piled into a dome over a flat base. Each puff is lit on its top and
+		# shaded below; the base is a flat, cooler band.
 		var img := Image.create(128, 64, true, Image.FORMAT_RGBA8)
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 11
 		var blobs := []
-		for i in 9:
-			blobs.append([Vector2(rng.randf_range(22, 106), rng.randf_range(30, 44) - absf(i - 4) * 1.5), rng.randf_range(12, 22)])
+		for i in 8:
+			var x := lerpf(18.0, 110.0, i / 7.0) + rng.randf_range(-4, 4)
+			var dome := 1.0 - pow((x - 64.0) / 52.0, 2.0)
+			var rad := lerpf(11.0, 21.0, dome) * rng.randf_range(0.85, 1.1)
+			blobs.append([Vector2(x, 46.0 - dome * 16.0 - rad * 0.35), rad])
 		for y in 64:
 			for x in 128:
 				var a := 0.0
+				var lit := 0.0
 				for b in blobs:
-					var r: float = Vector2(x, y).distance_to(b[0]) / b[1]
-					a = maxf(a, clampf(1.2 - r, 0.0, 1.0))
-				a *= smoothstep(60.0, 44.0, float(y))
-				var shade := lerpf(1.0, 0.82, clampf((y - 26.0) / 30.0, 0.0, 1.0))
-				img.set_pixel(x, y, Color(shade, shade * 0.99, shade * 1.02, clampf(a * 1.4, 0.0, 1.0)))
+					var d: Vector2 = Vector2(x, y) - b[0]
+					var k: float = clampf(1.25 - d.length() / b[1], 0.0, 1.0)
+					if k > a:
+						a = k
+						lit = clampf(-d.y / b[1], -1.0, 1.0)
+				a *= smoothstep(50.0, 46.0, float(y))
+				var shade := 0.88 + 0.12 * lit
+				shade = lerpf(shade, 0.74, smoothstep(38.0, 47.0, float(y)))
+				img.set_pixel(x, y, Color(shade * 0.98, shade * 0.98, shade * 1.04, clampf(a * 1.6, 0.0, 1.0)))
 		img.generate_mipmaps()
 		_cloud_tex = ImageTexture.create_from_image(img)
 	return _cloud_tex
