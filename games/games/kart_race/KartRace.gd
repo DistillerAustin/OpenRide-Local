@@ -32,6 +32,11 @@ const RENDER_SCALE := 0.62
 ## The quality governor's last trim (KartQualityGovernor tier `scale`): no lower than this.
 const RENDER_SCALE_TRIMMED := 0.58
 const FX_CAP_TRIMMED := 0.5
+## The governor goes no lower than this tier: half the effects' caps (their GDScript). Foliage,
+## crowd and render scale cost the look and saved nothing measurable on the tablet, which is bound
+## by the main thread (tier 0 against tier 4 with the tracker running, the same clocks: 40.4 and
+## 41.6 fps, render CPU 9.3 ms both; 2026-10-15). The tuning file can still force any tier.
+const GOVERNOR_FLOOR := 1
 const MSAA := Viewport.MSAA_DISABLED  ## 2x halved the frame rate on the tablet (Dodge Ball)
 ## Developer aid, off in every build: set true to read `user://kart_tuning.cfg` ([render]
 ## scale, msaa, outlines, glow; [world] road, walls, ground, scenery, hud, fx, track, laps; [governor]
@@ -127,8 +132,24 @@ var _perf_tick_usec := 0
 var _perf_sync_usec := 0  ## _sync_views and _update_hud time
 var _perf_hud_usec := 0
 var _perf_proc_ms := 0.0  ## the engine's process time per frame, summed
-var _perf_render_cpu := 0.0  ## the 3D view's and the screen's measured render times, summed
+var _perf_render_cpu := 0.0  ## every viewport's measured render time, summed
 var _perf_render_gpu := 0.0
+var _perf_vps: Array[Viewport] = []
+var _perf_frame_ms := 0.0
+var _perf_frame_max := 0.0
+var _perf_game_max := 0
+var _perf_first: _PerfProbe
+var _perf_last: _PerfProbe
+
+
+## DEV_TUNING: stamps the time it processes (first and last in the frame, by priority).
+class _PerfProbe extends Node:
+	var stamp := 0
+	var prev := 0
+
+	func _process(_delta: float) -> void:
+		prev = stamp
+		stamp = Time.get_ticks_usec()
 var _perf_left := PERF_LOG_SEC
 
 
@@ -210,8 +231,12 @@ func _ready() -> void:
 	_view.audio_listener_enable_3d = false
 	add_child(_view)
 	if DEV_TUNING:
-		RenderingServer.viewport_set_measure_render_time(_view.get_viewport_rid(), true)
-		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+		_perf_first = _PerfProbe.new()
+		_perf_first.process_priority = -1000000
+		_perf_last = _PerfProbe.new()
+		_perf_last.process_priority = 1000000
+		get_tree().root.add_child.call_deferred(_perf_first)
+		get_tree().root.add_child.call_deferred(_perf_last)
 	var shown := TextureRect.new()
 	shown.name = "View3DImage"
 	shown.texture = _view.get_texture()
@@ -230,6 +255,9 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	MusicGen.parallel = _music_parallel
+	for probe in [_perf_first, _perf_last]:
+		if probe and is_instance_valid(probe):
+			probe.queue_free()
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -564,23 +592,35 @@ func _on_frame(delta: float) -> void:
 	_frame(delta)
 	_perf_usec += Time.get_ticks_usec() - started
 	_perf_frames += 1
-	_perf_proc_ms += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0  # the last frame's
-	for rid: RID in [_view.get_viewport_rid(), get_viewport().get_viewport_rid()]:
-		_perf_render_cpu += RenderingServer.viewport_get_measured_render_time_cpu(rid)
-		_perf_render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	_perf_game_max = maxi(_perf_game_max, Time.get_ticks_usec() - started)
+	# The whole process step (the first and last _process of the frame, the probes) and the frame
+	# (first probe to first probe), both for the frame before this one.
+	if _perf_first and _perf_first.prev > 0:
+		_perf_proc_ms += (_perf_last.stamp - _perf_first.prev) / 1000.0 if _perf_last.stamp > _perf_first.prev else 0.0
+		var frame_ms := (_perf_first.stamp - _perf_first.prev) / 1000.0
+		_perf_frame_ms += frame_ms
+		_perf_frame_max = maxf(_perf_frame_max, frame_ms)
+	for vp: Viewport in _perf_vps:
+		if is_instance_valid(vp):
+			_perf_render_cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp.get_viewport_rid())
+			_perf_render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp.get_viewport_rid())
 	_perf_dc_max = maxi(_perf_dc_max, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
 	_perf_left -= delta
 	if _perf_left <= 0.0:
 		var frames := maxi(_perf_frames, 1)
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f ticks=%.2f tick_ms=%.2f sync_ms=%.2f hud_ms=%.2f process_ms=%.2f render_cpu_ms=%.2f render_gpu_ms=%.2f fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f ticks=%.2f tick_ms=%.2f sync_ms=%.2f hud_ms=%.2f process_ms=%.2f frame_ms=%.2f frame_max_ms=%.1f game_max_ms=%.1f render_cpu_ms=%.2f render_gpu_ms=%.2f viewports=%d fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
 			_perf_usec / 1000.0 / frames,
 			float(_perf_ticks) / frames,
 			_perf_tick_usec / 1000.0 / maxi(_perf_ticks, 1),
 			_perf_sync_usec / 1000.0 / frames,
 			_perf_hud_usec / 1000.0 / frames,
 			_perf_proc_ms / frames,
+			_perf_frame_ms / frames,
+			_perf_frame_max,
+			_perf_game_max / 1000.0,
 			_perf_render_cpu / frames,
 			_perf_render_gpu / frames,
+			_perf_vps.size(),
 			Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			_perf_dc_max,
@@ -598,6 +638,16 @@ func _on_frame(delta: float) -> void:
 		_perf_proc_ms = 0.0
 		_perf_render_cpu = 0.0
 		_perf_render_gpu = 0.0
+		_perf_frame_ms = 0.0
+		_perf_frame_max = 0.0
+		_perf_game_max = 0
+		# Every viewport that renders (the 3D view, the bakes, the screen), measured.
+		_perf_vps.clear()
+		_perf_vps.append(get_viewport())
+		for vp: Node in find_children("*", "SubViewport", true, false):
+			_perf_vps.append(vp)
+		for vp: Viewport in _perf_vps:
+			RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
 		_perf_dc_max = 0
 		_perf_left = PERF_LOG_SEC
 
@@ -633,6 +683,7 @@ func _frame(delta: float) -> void:
 ## The tuning file can turn it off and fix a tier: [governor] enabled=false tier=2.
 func _new_governor() -> void:
 	quality = KartQualityGovernor.new()
+	quality.floor_tier = GOVERNOR_FLOOR
 	var fixed := 0
 	if _tuned:
 		fixed = clampi(int(_tuning.get_value("governor", "tier", 0)), 0, KartQualityGovernor.TIERS.size() - 1)

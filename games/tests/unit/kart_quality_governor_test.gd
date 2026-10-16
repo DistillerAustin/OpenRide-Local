@@ -127,7 +127,9 @@ func test_the_game_applies_each_tier_and_a_new_session_starts_full() -> void:
 	var q: KartQualityGovernor = game.get("quality")
 	var view: SubViewport = game.get("_view")
 	var full_size := view.size
-	q.tier = q.floor_tier
+	# The game's governor stops at the effects trim (the others saved nothing on the tablet).
+	assert_int(q.floor_tier).is_equal(1)
+	q.tier = KartQualityGovernor.TIERS.size() - 1  # the tuning file can still force the last tier
 	game._apply_quality()
 	var world: KartWorld = game.get("world")
 	assert_float(world.foliage_range).is_equal(KartWorld.CELL_RANGE_TRIMMED)

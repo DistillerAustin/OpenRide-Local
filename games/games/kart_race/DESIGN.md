@@ -58,7 +58,7 @@ Logic never touches nodes; nodes only read logic and listen to `KartRaceEvents`.
 
 ```
 InputBus ──► KartRace._read_rider() ─┐   (item button tap → use_item edge)
-KartBotDriver.think() × 7 ───────────┴─► inputs[] ─► KartRaceLogic.step(1/60)
+KartBotDriver.think() × 7 ───────────┴─► inputs[] ─► KartRaceLogic.step(1/30)
                                                          │  countdown: rocket start; GO: launch
                                                          │  drafts, KartPhysics.step() per kart
                                                          │  contacts, laps, places, finish
@@ -70,10 +70,18 @@ KartBotDriver.think() × 7 ───────────┴─► inputs[] �
      KartHud.update (HUD) ◄────────────────────┘       └─► KartRace (GP flow), HUD, audio, fx, camera
 ```
 
-- **The fixed step.** `_on_frame(delta)` adds delta to an accumulator and runs `_tick(1/60)`
-  while it holds a tick (at most `MAX_TICKS` = 8 a frame), then syncs the views once. The
-  framework stops `_on_frame` while paused, so pausing freezes the race, the bots and the
+- **The fixed step.** `_on_frame(delta)` adds delta to an accumulator and runs `_tick(1/30)`
+  while it holds a tick (at most `MAX_TICKS` = 4 a frame, 133 ms), then syncs the views once.
+  The framework stops `_on_frame` while paused, so pausing freezes the race, the bots and the
   clocks.
+- **Drawing between ticks.** The logic steps at 30 Hz (the tablet is bound by the main
+  thread; the tracker's lean arrives at 30 Hz anyway) and the views draw every frame. Each
+  tick starts with `KartState.snap()`; `_sync_views` fills one draw copy per kart with
+  `draw_into(copy, alpha)` (alpha = the accumulator over the tick) and hands the copies to
+  `KartView.sync`, the camera and `KartItemViews` (`draw_karts`, `alpha`; shots carry
+  `prev_pos`). A kart moved more than 4 m in a tick is drawn where it is. Puck, goo and pod
+  contacts are swept over the tick's movement (`KartItemLogic.passes_within`). Tests that
+  need exactly one tick step `KartRace.TICK`.
 - **Per race**, `_begin_race()` builds a fresh `KartRaceLogic` (with its own `events`),
   rebuilds the world only when the track or direction changes, and emits
   `race_began(race)`. **Hook a race's events in a `race_began` handler** connected from your

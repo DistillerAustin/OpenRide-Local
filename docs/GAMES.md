@@ -1271,14 +1271,20 @@ HUD, with the face tracker running. Here is what holding the frame rate took on 
 - **Serial music renders.** Kart Race sets `MusicGen.parallel` off while it runs, so a tempo
   change renders on one worker thread. The parallel render took every core for 1-2.5 s, twice
   per tempo change, and the frame rate fell to 16-30 meanwhile.
-- **Far karts pose at 20 Hz.** A kart more than 35 m from the camera re-poses (and re-uploads
-  its bones) every third frame; its position still moves every frame.
+- **30 Hz logic, drawn at the frame rate.** The race logic steps at 30 Hz and the views draw
+  every frame between the last two ticks (`KartState.draw_into`); contacts are swept over a tick.
+  The tracker's lean arrives at 30 Hz anyway.
+- **Less to draw-sync.** Karts behind the camera skip posing and exhaust; karts past 18 m pose
+  at 30 Hz and past 35 m at 20 Hz (their position still moves every frame); pods beyond 80 m or
+  behind keep their last pose; the effects simulate at 30 Hz.
 - **Adaptive quality.** `KartQualityGovernor` averages the frame rate over each 4 s of racing.
-  Below 56 fps it steps down one tier, at least 4 s apart, down to the floor, and never back up
-  during a session. The tiers, in order: half the effects' particle caps, trackside foliage
-  drawn to 150 m instead of 230, half the grandstand crowd, then render scale 0.58. Each step
-  is printed (`OPENRIDE_GAMES kart_race quality tier=… (…) after … fps on …`), and the dev perf
-  line carries `tier=`.
+  Below 56 fps it steps down one tier, at least 4 s apart, and never back up during a session.
+  The game's floor is tier 1, half the effects' particle caps. The other tiers (foliage to
+  150 m, half the crowd, render scale 0.58) cost the look and saved nothing measurable: tier 0
+  against tier 4 with the tracker running, back to back on Meadow at the same clocks, gave
+  40.4 and 41.6 fps and 9.3 ms of render CPU each. The tuning file can still force them. Each
+  step is printed (`OPENRIDE_GAMES kart_race quality tier=…`), and the dev perf line carries
+  `tier=`.
 
 **Where the time goes (2026-10-15, mock build, `DEV_TUNING` on).** The tablet is
 **CPU-bound on Godot's main thread, not fill-rate bound.**
@@ -1334,14 +1340,48 @@ fixed-tier comparison on Meadow with the camera off (45 s each, the governor off
 51.7 and 48.3, tier 1 50.5, tier 2 54.2, tier 3 54.5, tier 4 49.3 and 54.6. That's a few fps
 at most, inside the spread.
 
+**After the CPU pass (2026-10-15 evening, the same switch and ride).**
+
+- **Is the switch fair?** Dodge Ball with `tracker_load` on, on a tablet warm from Kart Race, held
+  58.2 fps over 4.7 minutes (58.9 after the first, min 51) while the A72 cores ran at 1.0 GHz.
+  The no-face path does no extra work: BlazeFace runs a full detection on every frame either
+  way (VIDEO mode has no tracking step), 22-34 ms a frame at about 29 fps.
+- **What the tracker costs** (per-thread CPU while racing, % of one core): MediaPipe's four
+  inference threads about 75 together, the camera's GL thread 18, MediaPipe's GL runner 9,
+  CameraX and the analysis executor 11, about 1.2 cores in all. Godot's main thread was at 98%.
+- **Desktop, `measure_kart_cpu.gd`** (us per 60 Hz frame, steady clock): 481 before, 241
+  after. Physics 117 → 44, bots 106 → 45, effects 67 → 22, kart views 57 → 31 (+8 for the draw
+  copies), item views 34 → 23, items 25 → 19, drafts 20 → 10, HUD 17 → 11, places 10 → 2.
+- **On the tablet the tick costs 20-30 times the desktop's**: 4-7 ms a tick at full clocks
+  with the tracker on, 7-9 ms once throttled. At 30 Hz that is 3-5 ms a frame. The views take
+  2-3 ms, the HUD 0.3, and the render's CPU side (every viewport) 7-9 ms, 13 when throttled: it
+  is now as big as the game's GDScript.
+
+| Track (racing) | Tracker load on: fps min / avg / max | tier | Camera off: fps min / avg / max | tier |
+| --- | --- | --- | --- | --- |
+| Meadow Ring | 26 / 44.3 / 51 | 0 → 4 in 20 s | 26 / 56.8 / 61 | 0 → 4 in 20 s |
+| Canyon Dash | 39 / 45.0 / 52 | 4 | 56 / 59.3 / 61 | 4 |
+| Harbor Lights | 41 / 45.2 / 51 | 4 | 54 / 59.1 / 61 | 4 |
+
+fps here is per 5 s perf line. The 10-minute ride fitted three races. With the tracker on, the
+A72s ran at 1.2 GHz most of the time (the A53s at 1.57); `game_ms` was 6.2-6.4 and render CPU
+8.3-9.0 ms. Camera off, at full clocks: `game_ms` 3.3-3.6, render CPU 5.2-6.0. After an hour of
+back-to-back runs the A72s sat at 507 MHz and the tracker-on rate fell to 28-31 fps whatever the
+tier. The target (50 with the tracker on) isn't met: the remaining cost is the tracker's 1.2
+cores on a 4-core, throttling SoC, the render's CPU side, and the GDScript left in the tick.
+
 For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
-`OPENRIDE_GAMES kart_race perf game_ms=… process_ms=… fps=… draw_calls=… draw_calls_max=…
+`OPENRIDE_GAMES kart_race perf game_ms=… ticks=… tick_ms=… sync_ms=… hud_ms=… process_ms=…
+frame_ms=… frame_max_ms=… game_max_ms=… render_cpu_ms=… render_gpu_ms=… viewports=… fps=…
+draw_calls=… draw_calls_max=…
 primitives=… track=… flow=… tracker=… tier=…` every 5 s. `user://kart_tuning.cfg` (strings
 quoted) overrides the render settings (`[render] scale=0.62 msaa=0 outlines=true`), switches
 parts off (`[world] road=false walls=false ground=false scenery=false foliage=false
 props=false woods=false stand=false clouds=false hud=false fx=false`), forces a track or a lap
 count (`[world] track="meadow_ring" laps=1`), and fixes a tier with the governor off
-(`[governor] enabled=false tier=2`).
+(`[governor] enabled=false tier=2`). `ticks` is logic ticks per frame and `tick_ms` their
+average; `process_ms` is the whole process step and `frame_ms` the frame (two probe nodes at the
+extremes of `process_priority`); `render_cpu_ms` sums every viewport's measured render time.
 
 **Tests and captures.**
 
@@ -1357,7 +1397,8 @@ count (`[world] track="meadow_ring" laps=1`), and fixes a tier with the governor
   - `capture_kart_items.gd` and `capture_racers.gd`.
 - Measurements: `measure_kart_hud.gd` and `measure_kart_board.gd` count the HUD's and the
   boards' draw calls (the board's also frame by frame as it opens). `measure_kart_cpu.gd`
-  times each part of a frame's GDScript, headless.
+  times each part of a frame's GDScript, headless, with the logic at the game's tick and back-to-
+  back frames (an idle desktop clocks the thread down and swamps the numbers).
 - `kart_quality_governor_test` covers the governor (windows, spacing, floor, no step back up,
   racing frames only) and each tier applied to the world, the effects and the view.
 
