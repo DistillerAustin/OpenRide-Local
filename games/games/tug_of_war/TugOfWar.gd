@@ -13,12 +13,17 @@ extends Game
 
 const TugAudioScript := preload("res://games/tug_of_war/TugAudio.gd")
 
+const TugMusic := preload("res://games/tug_of_war/TugMusic.gd")
+
+## "Heave Together" (TugMusic, rendered by games/tools/music): the bed (stomps, claps, bass)
+## always; the harmony (strums, accordion) once the rope is tight; the lead in a surge.
 const MUSIC_STYLE := {
-	"name": "heave",
-	# Drums and bass always; the harmony once the rope is tight; the lead in a surge.
+	"name": "heave_together",
+	"stem_files": TugMusic.STEM_FILES,
+	"loop_from": TugMusic.LOOP_FROM,
 	"stem_gates": {"harmony": 0.55, "lead": 0.9},
 }
-const MUSIC_BPM := 80.0
+const MUSIC_BPM := TugMusic.BPM
 const SCREEN_FX_LAYER := 5  ## under the HUD (10)
 ## The 3D view renders into a SubViewport at this share of the screen's resolution, drawn
 ## scaled up under the HUD (see DodgeBall.gd: the tablet's GPU is fill-rate bound at 1080p).
@@ -149,10 +154,11 @@ func _on_prepare(seg: Dictionary) -> void:
 	_status = TugStatus.new()
 	hud.add_widget(_status)
 	world.set_bot(0)
-	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM, int(seg.get("seed", 0)))
+	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM)
 	AudioDirector.set_intensity(0.5)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, TugAudioScript.music_effects())
 	AudioDirector.set_bus_effects(AudioDirector.SFX_BUS, TugAudioScript.sfx_effects())
+	AudioDirector.set_bus_effects(AudioDirector.MASTER_BUS, GameMix.master_effects())
 	# One frame of the pier at rest behind the intro card, and the effects warmed up.
 	world.update_view(0.0, 0.0, 0.5, "", 0.0)
 	world.prewarm()
@@ -225,6 +231,7 @@ func _handle(event: Dictionary) -> void:
 	match event.type:
 		"telegraph":
 			AudioDirector.play_sfx("surge_drumroll", -2.0)
+			GameMix.duck_for_moment(1.2)
 			_show_message("Surge coming!", 1.0, HudTheme.WARN)
 		"surge_start":
 			AudioDirector.play_sfx("rope_creak", -2.0, 0.7)
@@ -239,11 +246,13 @@ func _handle(event: Dictionary) -> void:
 				_best_rung = maxi(_best_rung, logic.rung + 1)
 				world.fall(true)
 				AudioDirector.play_sfx("win_sting")
-				AudioDirector.play_sfx("crowd_swell")
+				AudioDirector.play_sfx("crowd_swell", -4.0)
+				GameMix.duck_for_sting(2.0)
 				_show_message("Round won!", TugLogic.ROUND_END_SEC, HudTheme.GOOD)
 			else:
 				world.fall(false)
 				AudioDirector.play_sfx("lose_sting")
+				GameMix.duck_for_sting(2.0)
 				_flash_rect.color = Color(0.1, 0.35, 0.55, 0.9)
 				_flash_rect.visible = true
 				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, HudTheme.BAD)
