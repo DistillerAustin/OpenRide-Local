@@ -6,13 +6,16 @@ extends CanvasLayer
 ##
 ##   top left      the slanted lap badge and race chip (KartStatus), the race clock under it,
 ##                 then the racer list with portraits (KartRacerList)
-##   top right     the round item button (KartItemButton); the framework's compact time left,
-##                 score and Pause | End sit just left of it (Hud.set_skin "reserve_right")
-##   right         the drift meter with its knob glyph (KartDriftMeter), then the big gradient
-##                 position number, which pops on every change
+##   top right     the framework's compact time left and score, with Recalibrate | Pause | End
+##                 under it (Hud.set_skin "recalibrate_top"; End keeps the corner)
+##   right         the big gradient position number, which pops on every change
+##   bottom right  the round item button (KartItemButton), the drift meter wrapped round its
+##                 upper-left edge as an arc with the knob glyph. It sits at the far end of the
+##                 screen from End: a rushed tap can't end the ride.
 ##   bottom left   the minimap (KartMinimap)
-##   bottom centre the ride metrics strip (KartRideStrip) in place of the framework's ride panel
-##   bottom right  the framework's Recalibrate (camera games)
+##   bottom centre the ride metrics strip (KartRideStrip) in place of the framework's ride panel;
+##                 the camera strip, when steering is off, sits just above it, between the minimap
+##                 and the item button (Hud.set_skin "status_width", "reserve_bottom")
 ##
 ## Over everything: speed lines and draft streaks, the title card, the countdown and the lap
 ## banners. Everything except the clock changes only with its value; the clock, the minimap's
@@ -29,14 +32,18 @@ const STATUS_POS := Vector2(M, M)
 const CLOCK_RECT := Rect2(M + 6, 156, 268, 58)
 const LIST_POS := Vector2(M, 236)
 const MAP_POS := Vector2(M, H - M - KartMinimap.SIZE.y)
-const ITEM_POS := Vector2(W - M - KartItemButton.SIZE, M)
-const DRIFT_POS := Vector2(W - M - KartDriftMeter.SIZE.x, 548)
-const BADGE_RECT := Rect2(W - M - 400, 636, 400, 260)
+## The item button's square: its disc (KartItemButton.SIZE) touches the margins in the bottom-right
+## corner; the hit circle round it (1.25×) fills the square.
+const ITEM_CENTRE := Vector2(W - M - KartItemButton.SIZE * 0.5, H - M - KartItemButton.SIZE * 0.5)
+const ITEM_POS := ITEM_CENTRE - Vector2(KartItemButton.HIT_SIZE, KartItemButton.HIT_SIZE) * 0.5
+const BADGE_RECT := Rect2(W - M - 400, 336, 400, 260)
 const PORTRAIT_PX := 160
 const ATLAS_COLS := 4
 const ATLAS_ROWS := 2
-## Kept free at the right of the framework HUD's top bar for the item button.
-const RESERVE_RIGHT := KartItemButton.SIZE
+## The camera strip's width ("Camera steering is off", …): between the minimap and the item
+## button, so it covers neither (it wraps to two lines).
+const STATUS_WIDTH := 1080.0
+const STATUS_WIDTH_BOARD := 1640.0
 const STATUS_BAKE := Vector2(560, 104)  ## room for the lap badge at its widest ("FINAL RACE")
 
 ## racer id -> its portrait (a rendered head), also used by the boards.
@@ -59,7 +66,6 @@ var racer_list: KartRacerList
 var minimap: KartMinimap
 var ride_strip: KartRideStrip
 var item_button: KartItemButton
-var drift_meter: KartDriftMeter
 var _map_track: KartTrackModel  ## the track the minimap shows
 var _bakes: Array[KartBaked] = []  ## status, racer list, ride strip, place badge
 var _badge_view: KartBaked  ## the place badge on screen (its pop tweens here)
@@ -125,9 +131,6 @@ func _init() -> void:
 	ride_strip = KartRideStrip.new()
 	ride_strip.position = Vector2((W - ride_strip.size.x) * 0.5, H - M - ride_strip.size.y)
 	_gameplay.add_child(ride_strip)
-	drift_meter = KartDriftMeter.new()
-	drift_meter.position = DRIFT_POS
-	_gameplay.add_child(drift_meter)
 	_build_badge()
 	# The slow-changing widgets render into textures only when they change (KartBaked: one draw
 	# call each on screen instead of a pair per label).
@@ -150,8 +153,12 @@ func _init() -> void:
 
 
 ## The framework HUD's skin for this layout: Kart Race's fonts and panels, the ride panel hidden
-## (the ride strip replaces it), a compact clock, and room at the top right for the item button.
-static func hud_skin() -> Dictionary:
+## (the ride strip replaces it), a compact clock, Recalibrate moved up beside Pause | End (the
+## bottom right is the item button's) as a quieter outline pill, and the camera strip kept
+## between the minimap and the item button, above the ride strip. While a board shows (`board`),
+## the gameplay widgets are gone and the strip takes the bottom band under the board's rows on
+## one line.
+static func hud_skin(board := false) -> Dictionary:
 	var panel := KartTheme.badge(KartTheme.PANEL, 0.0, 22, KartTheme.PANEL_EDGE)
 	panel.content_margin_left = 24
 	panel.content_margin_right = 24
@@ -160,9 +167,22 @@ static func hud_skin() -> Dictionary:
 	var button := KartTheme.badge(Color(0.36, 0.22, 0.86, 0.95), 0.0, 22, Color(0.75, 0.66, 1.0))
 	var pressed := KartTheme.badge(Color(0.5, 0.36, 1.0, 1.0), 0.0, 22, Color(0.9, 0.85, 1.0))
 	var end := KartTheme.badge(Color(0.75, 0.16, 0.32, 0.95), 0.0, 22, Color(1.0, 0.6, 0.7))
+	# Secondary: a dark pill with a violet outline, so End never sits beside a twin.
+	var recal := KartTheme.badge(Color(0.1, 0.06, 0.24, 0.72), 0.0, 22, Color(0.75, 0.66, 1.0))
+	recal.set_border_width_all(4)
+	recal.border_width_bottom = 6
+	recal.content_margin_left = 22
+	recal.content_margin_right = 22
 	return {"font": KartTheme.display(true), "outline_color": KartTheme.OUTLINE, "outline_size": 8,
 		"panel": panel, "button": button, "button_pressed": pressed, "end_button": end,
-		"ride_panel": false, "clock_value_size": HudTheme.MEDIUM, "reserve_right": RESERVE_RIGHT}
+		"recalibrate_button": recal, "recalibrate_top": true,
+		"ride_panel": false, "clock_value_size": HudTheme.MEDIUM,
+		"status_width": status_area(board)[0], "reserve_bottom": status_area(board)[1]}
+
+
+## The camera strip's row (Hud.set_status_area): [width, reserve_bottom], racing or on a board.
+static func status_area(board := false) -> Array:
+	return [STATUS_WIDTH_BOARD, 0.0] if board else [STATUS_WIDTH, KartRideStrip.TILE.y + 12.0]
 
 
 ## A new grid: the racers (KartRoster entries, kart id order) and the track for the minimap.
@@ -201,7 +221,7 @@ func update(race: KartRaceLogic, delta := 0.0) -> void:
 	racer_list.set_order(race.order())
 	minimap.set_karts(race.karts)
 	item_button.set_item(k.item, k.roulette_time, delta)
-	drift_meter.set_drift(k.drift_dir, k.drift_charge, k.drift_tier, k.knob_boosting, delta)
+	item_button.set_drift(k.drift_dir, k.drift_charge, k.drift_tier, k.knob_boosting, delta)
 	if _overlay.visible:
 		_overlay.queue_redraw()
 	if _ring_t < 1.0:

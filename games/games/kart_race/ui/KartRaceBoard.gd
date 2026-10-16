@@ -7,17 +7,22 @@ extends CanvasLayer
 ##   gradient title that pops in, then the finishing order sliding in row by row: place,
 ##   portrait, name, time gap, the race's points chip and the Grand Prix total. The rider's row
 ##   is gold. Confetti when the rider made the podium.
-## - `show_podium`: the Grand Prix podium. The top three on gold, silver and bronze blocks that
-##   rise in turn (third, second, then the champion with a burst), big portraits, names and
-##   points, and the full standings beside it, under a shower of confetti.
+## - `show_podium`: the Grand Prix podium. With a `stage` (KartPodium's screen points: the game
+##   built the 3D podium, and the top three's own karts land on its blocks and cheer), the
+##   sunburst clears over the stage and each place's number (on its block's face), name and
+##   points (over its kart) pop in as its kart lands. Without one, 2D gold, silver and bronze
+##   blocks rise in turn with portraits. The full standings sit beside it, under confetti.
 ##
-## The title sits left of the framework HUD's clock and Pause | End (top right), so nothing that
-## stays touchable is ever covered.
+## The title sits left of the framework HUD's clock and Recalibrate | Pause | End (top right),
+## so nothing that stays touchable is ever covered, and the rows and the pill end above the
+## bottom band, where the framework's camera strip goes while a board shows
+## (`KartHud.hud_skin(true)`). Confetti falls behind the titles and the rows.
 ##
-## The tablet's draw-call budget: the title, the subtitle, the pill, every row and every podium
-## block are baked (KartBaked: rendered into a texture when they change, one draw call each on
-## screen); the slide, pop and rise tweens move the baked rects. `tests/measure_kart_board.gd`
-## measures it.
+## The tablet's budget: the header (title and subtitle), the pill, every row and every podium
+## plate are baked (KartBaked: rendered into a texture when they change, one draw call each on
+## screen); the slide, pop and rise tweens move the baked rects. Every bake is built when a board
+## opens and freed when it closes, so the race behind runs with none of the board's viewports.
+## `tests/measure_kart_board.gd` measures the draw calls.
 
 const LAYER := 9  ## under the HUD (10), over the 3D view
 const W := 1920.0
@@ -25,9 +30,15 @@ const H := 1080.0
 const TITLE_CENTRE := 650.0  ## clear of the framework's clock cluster at the top right
 const ROW_W := 980.0
 const ROW_H := 62.0
-const ROWS_TOP := 360.0
+const ROW_GAP := 5.0
+const ROWS_TOP := 318.0
 const MINI_W := 640.0
 const MINI_H := 58.0
+const MINI_GAP := 6.0
+## The pill's top edge: under the eighth row, above the camera strip's band (y 960 and down).
+const PILL_TOP := 862.0
+## Projected times (bots still racing when the rider finished) are muted.
+const PROJECTED_INK := Color(0.78, 0.74, 0.95, 0.85)
 const CONFETTI := 110
 const PODIUM_COLORS := [Color(1.0, 0.78, 0.2), Color(0.8, 0.84, 0.92), Color(0.86, 0.52, 0.26)]
 const SHADOW_ROOM := Vector2(16, 16)  ## a baked panel's drop shadow, right and below
@@ -46,6 +57,7 @@ var _burst: ColorRect
 var _title: Label
 ## The board's bakes take turns rendering (KartBakeQueue).
 var bakes := KartBakeQueue.new()
+var _header: Control
 var _title_view: KartBaked
 var _subtitle: Label
 var _content: Control
@@ -78,29 +90,44 @@ func _init() -> void:
 	mat.set_shader_parameter("alpha", 0.86)
 	_burst.material = mat
 	_root.add_child(_burst)
-	_title = KartTheme.label("", 130, KartTheme.INK)
-	_title.name = "Title"
-	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_title.size = Vector2(1160, 200)
-	_title.position = Vector2(TITLE_CENTRE - 580, 50)
-	_title.pivot_offset = _title.size * 0.5
-	_title.add_theme_constant_override("outline_size", 30)
-	KartTheme.gradient(_title, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
-	_root.add_child(_title)
-	_title_view = _bake(_title, _root)
-	_subtitle = KartTheme.label("", 36, KartTheme.CHIP)
-	_subtitle.name = "Subtitle"
-	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_subtitle.size = Vector2(1160, 56)
-	_subtitle.position = Vector2(TITLE_CENTRE - 580, 248)
-	_root.add_child(_subtitle)
-	_bake(_subtitle, _root)
+	# Confetti falls behind the header, the rows and the pill (the review: never over text).
+	_confetti = Control.new()
+	_confetti.name = "Confetti"
+	_confetti.size = _root.size
+	_confetti.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_confetti.draw.connect(_draw_confetti)
+	_root.add_child(_confetti)
 	_content = Control.new()
 	_content.name = "Content"
 	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_content.size = _root.size
 	_root.add_child(_content)
+
+
+## The header (the title over the subtitle, one bake) and the pill, built fresh for each board.
+func _build_chrome() -> void:
+	_header = Control.new()
+	_header.name = "Header"
+	_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_header.position = Vector2(TITLE_CENTRE - 560, 50)
+	_header.size = Vector2(1120, 260)
+	_header.pivot_offset = Vector2(560, 100)
+	_title = KartTheme.label("", 130, KartTheme.INK)
+	_title.name = "Title"
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_title.size = Vector2(1120, 200)
+	_title.add_theme_constant_override("outline_size", 30)
+	KartTheme.gradient(_title, KartTheme.GOLD_TOP, KartTheme.GOLD_BOTTOM)
+	_header.add_child(_title)
+	_subtitle = KartTheme.label("", 36, KartTheme.CHIP)
+	_subtitle.name = "Subtitle"
+	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_subtitle.size = Vector2(1120, 56)
+	_subtitle.position = Vector2(0, 198)
+	_header.add_child(_subtitle)
+	_root.add_child(_header)
+	_title_view = _bake(_header, _root)
 	_pill = PanelContainer.new()
 	_pill.name = "Pill"
 	_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -123,11 +150,22 @@ func _init() -> void:
 	_pill.add_child(_pill_label)
 	_pill.resized.connect(_centre_pill)
 	_pill_view = _bake(_pill_box, _root)
-	_confetti = Control.new()
-	_confetti.size = _root.size
-	_confetti.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_confetti.draw.connect(_draw_confetti)
-	_root.add_child(_confetti)
+
+
+## Frees every bake (the header, the pill, the rows and plates): their viewports go with them.
+func _free_chrome() -> void:
+	for c in _content.get_children():
+		c.queue_free()
+	for v in [_title_view, _pill_view]:
+		if v and is_instance_valid(v):
+			v.queue_free()
+	_title_view = null
+	_pill_view = null
+
+
+## Viewports the board holds (for tests and the render probe): none while it's closed.
+func viewport_count() -> int:
+	return find_children("*", "SubViewport", true, false).filter(func(v): return not v.is_queued_for_deletion() and not v.get_parent().is_queued_for_deletion()).size()
 
 
 ## The results board. rows: [{name, detail}] in finishing order, optionally with racer_id, time,
@@ -136,12 +174,13 @@ func _init() -> void:
 func show_board(title: String, rows: Array, subtitle := "", next_sec := 0.0, next_text := "Next race") -> void:
 	mode = "results"
 	_open(title, subtitle, next_sec, next_text)
+	_set_stage_hole(Vector2.ZERO, 0.0)
 	for i in rows.size():
 		var row := _row(i, rows[i])
-		row.position = Vector2((W - ROW_W) * 0.5, ROWS_TOP + i * (ROW_H + 7))
+		row.position = Vector2((W - ROW_W) * 0.5, ROWS_TOP + i * (ROW_H + ROW_GAP))
 		_content.add_child(row)
 		_slide_in(_bake(row, _content, row.size + SHADOW_ROOM), 0.25 + i * 0.07, 220.0)
-	_place_pill(Vector2(W * 0.5, ROWS_TOP + rows.size() * (ROW_H + 7) + 16))
+	_place_pill(Vector2(W * 0.5, PILL_TOP))
 	var rider_place := -1
 	for i in rows.size():
 		if bool(rows[i].get("you", false)):
@@ -150,12 +189,41 @@ func show_board(title: String, rows: Array, subtitle := "", next_sec := 0.0, nex
 
 
 ## The Grand Prix podium and the final standings. rows: standings order, as `show_board`'s
-## (`time` may carry the wins), with `points` the GP total.
-func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, next_text := "Ride summary") -> void:
+## (`time` may carry the wins), with `points` the GP total. `stage`: KartPodium.screen_points()
+## when the game built the 3D podium (its karts land at KartPodium.landed_at); empty for the 2D
+## blocks.
+func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, next_text := "Ride summary", stage := {}) -> void:
 	mode = "podium"
 	_open(title, subtitle, next_sec, next_text)
+	if stage.is_empty():
+		_set_stage_hole(Vector2.ZERO, 0.0)
+		_podium_2d(rows)
+	else:
+		_set_stage_hole(stage.centre, 0.42)
+		for i in mini(3, rows.size()):
+			var plate := _podium_plate(i, rows[i], stage)
+			_content.add_child(plate)
+			var node := _bake(plate, _content, plate.size)
+			_pop_in(node, KartPodium.landed_at(i))
+			if i == 0:
+				var at: Vector2 = stage.heads[0]
+				get_tree().create_timer(KartPodium.landed_at(0)).timeout.connect(func():
+					if mode == "podium":
+						_burst_confetti(at))
+	# The full standings beside the podium.
+	for i in rows.size():
+		var row := _mini_row(i, rows[i])
+		row.position = Vector2(W - 40.0 - MINI_W, ROWS_TOP + i * (MINI_H + MINI_GAP))
+		_content.add_child(row)
+		_slide_in(_bake(row, _content, row.size + SHADOW_ROOM), 0.2 + i * 0.06, 180.0)
+	_place_pill(Vector2(640.0, PILL_TOP))
+	_start_confetti(true)
+
+
+## The 2D podium (no 3D stage): blocks rising in turn with portraits.
+func _podium_2d(rows: Array) -> void:
 	# The blocks: second on the left, the champion in the middle, third on the right.
-	var slots := [[1, 300.0, 215.0], [0, 640.0, 285.0], [2, 980.0, 165.0]]  # [place index, centre x, block height]
+	var slots := [[1, 300.0, 200.0], [0, 640.0, 260.0], [2, 980.0, 150.0]]  # [place index, centre x, block height]
 	var order := [2, 1, 0]  # third rises first, the champion last
 	for o in order.size():
 		var slot: Array = slots[[2, 0, 1][o]]
@@ -173,20 +241,13 @@ func show_podium(title: String, rows: Array, subtitle := "", next_sec := 0.0, ne
 		tw.tween_property(node, "position:y", final_y, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		if place == 0:
 			tw.tween_callback(func(): _burst_confetti(Vector2(slot[1], final_y + KartBaked.PAD + PODIUM_TOP + 40.0)))
-	# The full standings beside the podium.
-	for i in rows.size():
-		var row := _mini_row(i, rows[i])
-		row.position = Vector2(W - 40.0 - MINI_W, ROWS_TOP + i * (MINI_H + 6))
-		_content.add_child(row)
-		_slide_in(_bake(row, _content, row.size + SHADOW_ROOM), 0.2 + i * 0.06, 180.0)
-	_place_pill(Vector2(640.0, 938.0))
-	_start_confetti(true)
 
 
 func hide_board() -> void:
 	visible = false
 	mode = ""
 	_bits.clear()
+	_free_chrome()
 
 
 ## Seconds until what comes next (the pill's countdown).
@@ -195,6 +256,8 @@ func seconds_left() -> float:
 
 
 func _open(title: String, subtitle: String, next_sec: float, next_text: String) -> void:
+	_free_chrome()
+	_build_chrome()
 	_title.text = title
 	# Long titles shrink to stay clear of the framework's clock.
 	var font_size := 130
@@ -203,8 +266,6 @@ func _open(title: String, subtitle: String, next_sec: float, next_text: String) 
 	_title.add_theme_font_size_override("font_size", font_size)
 	(_title.material as ShaderMaterial).set_shader_parameter("span", Vector2(100.0 - font_size * 0.38, 100.0 + font_size * 0.42))
 	_subtitle.text = subtitle.to_upper()
-	for c in _content.get_children():
-		c.queue_free()
 	_left = next_sec
 	_next_text = next_text
 	_pill_box.visible = next_sec > 0.0
@@ -213,6 +274,24 @@ func _open(title: String, subtitle: String, next_sec: float, next_text: String) 
 	_title_view.scale = Vector2(0.2, 0.2)
 	var tt := _title_view.create_tween()
 	tt.tween_property(_title_view, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+
+## The sunburst's clear window over the 3D podium (canvas centre, radius as a share of the
+## width; 0 = none).
+func _set_stage_hole(centre: Vector2, radius: float) -> void:
+	var mat := _burst.material as ShaderMaterial
+	mat.set_shader_parameter("hole", Vector2(centre.x / W, centre.y / H))
+	mat.set_shader_parameter("hole_radius", radius)
+
+
+## A baked plate pops in after `delay` seconds (its kart landing).
+func _pop_in(node: Control, delay: float) -> void:
+	node.modulate.a = 0.0
+	node.scale = Vector2(0.4, 0.4)
+	var tw := node.create_tween()
+	tw.tween_interval(delay)
+	tw.tween_property(node, "modulate:a", 1.0, 0.15)
+	tw.parallel().tween_property(node, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## Bakes `w` in turn with the board's others: one render a frame, so a board's first frame
@@ -328,7 +407,9 @@ func _row(i: int, r: Dictionary) -> Control:
 		pic.position = Vector2(130, (ROW_H - 54) * 0.5)
 		row.add_child(pic)
 	row.add_child(_text(str(r.get("name", "")), 38, ink, you, Rect2(206, 0, 330, ROW_H), HORIZONTAL_ALIGNMENT_LEFT))
-	row.add_child(_text(str(r.get("time", "")), 32, ink, you, Rect2(520, 0, 190, ROW_H), HORIZONTAL_ALIGNMENT_RIGHT))
+	# A bot still racing when the rider finished shows its projected gap, muted (an estimate).
+	var projected := bool(r.get("projected", false)) and not you
+	row.add_child(_text(str(r.get("time", "")), 32, PROJECTED_INK if projected else ink, you, Rect2(520, 0, 190, ROW_H), HORIZONTAL_ALIGNMENT_RIGHT))
 	var pts := str(r.get("points", r.get("detail", "")))
 	if pts != "":
 		var chip := PanelContainer.new()
@@ -384,6 +465,57 @@ func _mini_row(i: int, r: Dictionary) -> Control:
 	row.add_child(_text(str(r.get("name", "")), 34, ink, you, Rect2(136, 0, 300, MINI_H), HORIZONTAL_ALIGNMENT_LEFT))
 	row.add_child(_text(str(r.get("points", r.get("detail", ""))), 34, ink, you, Rect2(430, 0, 190, MINI_H), HORIZONTAL_ALIGNMENT_RIGHT))
 	return row
+
+
+## One place's plate over the 3D podium (`stage`: KartPodium.screen_points): the big place
+## number on its block's face, and the name and points over its kart. One bake per place, sized
+## to hold both, centred on the block.
+func _podium_plate(place: int, r: Dictionary, stage: Dictionary) -> Control:
+	var you := bool(r.get("you", false))
+	var face: Vector2 = stage.faces[place]
+	var head: Vector2 = stage.heads[place]
+	var face_h: float = stage.face_h[place]
+	var w := 460.0
+	var top := head.y - 96.0
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.position = Vector2(face.x - w * 0.5, top)
+	holder.size = Vector2(w, face.y + face_h * 0.5 - top + 12.0)
+	holder.pivot_offset = Vector2(w * 0.5, head.y - top)
+	# The name tag: a slanted badge (gold for the rider) with the name over the points.
+	var tag := PanelContainer.new()
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg := Color(1.0, 0.78, 0.2, 0.96) if you else Color(0.16, 0.1, 0.36, 0.9)
+	var style := KartTheme.badge(bg, 0.12, 16, Color(1, 1, 1, 0.55) if you else Color(0.55, 0.42, 1.0, 0.7))
+	style.content_margin_top = 2
+	style.content_margin_bottom = 6
+	style.content_margin_left = 22
+	style.content_margin_right = 22
+	tag.add_theme_stylebox_override("panel", style)
+	var lines := VBoxContainer.new()
+	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lines.add_theme_constant_override("separation", -8)
+	tag.add_child(lines)
+	var ink := KartTheme.OUTLINE if you else KartTheme.INK
+	var name_label := _text(str(r.get("name", "")), 40 if place == 0 else 36, ink, you, Rect2(), HORIZONTAL_ALIGNMENT_CENTER)
+	name_label.clip_text = false
+	lines.add_child(name_label)
+	var pts := _text(str(r.get("points", "")), 34, ink if you else KartTheme.CHIP, you, Rect2(), HORIZONTAL_ALIGNMENT_CENTER)
+	pts.clip_text = false
+	lines.add_child(pts)
+	holder.add_child(tag)
+	tag.reset_size()
+	tag.position = Vector2((w - tag.size.x) * 0.5, 0.0)
+	# The place number on the block's face.
+	var num := KartTheme.label(str(place + 1), clampi(int(face_h * 0.8), 60, 150), KartTheme.INK)
+	num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	num.size = Vector2(w, face_h + 20.0)
+	num.position = Vector2(0, face.y - top - (face_h + 20.0) * 0.5)
+	num.add_theme_constant_override("outline_size", 24)
+	KartTheme.gradient(num, Color(1, 1, 1), (PODIUM_COLORS[place] as Color).lightened(0.3))
+	holder.add_child(num)
+	return holder
 
 
 ## One podium step: the portrait on top, the name, the block with its number and the points (in

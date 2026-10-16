@@ -58,6 +58,7 @@ const COUNTDOWN_SEC := 3.0
 const FLYOVER_SEC := 3.5
 const RESULTS_SEC := 8.0
 const PODIUM_SEC := 6.0
+const PODIUM_S := 12.0  ## the 3D podium stands this far past the start line (the gate behind it)
 ## Other karts closer to the camera than this (metres) are hidden, so none fills the screen.
 const CAMERA_CLEAR := 4.2
 ## Karts farther than this from the camera (metres) pose at a third of the frame rate, and
@@ -101,12 +102,15 @@ var _board: KartRaceBoard
 var _kart_hud: KartHud
 var _fx: KartFx
 var _item_views: KartItemViews  # race-systems
+var _podium: KartPodium  ## the Grand Prix podium on the track, while it shows (presentation)
+var _podium_ids: Array[int] = []  ## the karts on it, champion first
 var _audio: KartAudio  # presentation
 var _hud_lineup := ""
 var _lights := -1
 var _acc := 0.0
 var _flow_left := 0.0
 var _est_lap := 60.0
+var _race_total := 0  ## the races this GP plans (presentation: "Race 2/4"); 0 when open-ended
 var _built_track := ""
 var _rider_input := KartInput.new()
 var _input_list := []  ## reused every tick
@@ -135,6 +139,10 @@ var _perf_proc_ms := 0.0  ## the engine's process time per frame, summed
 var _perf_render_cpu := 0.0  ## every viewport's measured render time, summed
 var _perf_render_gpu := 0.0
 var _perf_vps: Array[Viewport] = []
+## Each viewport's last measured render time: a viewport that didn't render this frame (an idle
+## bake) keeps reporting its last render's time, so only a changed value counts.
+var _perf_vp_last := {}
+var _perf_vp_renders := 0  ## viewport renders counted since the last perf line
 var _perf_frame_ms := 0.0
 var _perf_frame_max := 0.0
 var _perf_game_max := 0
@@ -444,7 +452,12 @@ func _begin_race() -> void:
 		_lineup_dirty = false
 		lineup = KartRoster.lineup(option("driver"), RACERS)
 		_build_racers()
-	current = gp.next_race(_time_left(), _est_lap)
+	var time_left := _time_left()
+	# The races this GP will run, this one included (a timed ride's plan; 0 when open-ended).
+	_race_total = gp.races_run() + planned_races(time_left, _est_lap) if time_left >= 0.0 else 0
+	current = gp.next_race(time_left, _est_lap)
+	if bool(current.get("is_final", false)):
+		_race_total = gp.races_run() + 1
 	if _tuned and int(_tuning.get_value("world", "laps", 0)) > 0:  # measuring: short races
 		current.laps = int(_tuning.get_value("world", "laps", 0))
 	var key := "%s:%s" % [current.track_id, current.reversed]
@@ -474,12 +487,21 @@ func _begin_race() -> void:
 	race_began.emit(race)
 
 
+## "Race 2/4" (a timed GP's plan), "Race 2" (open-ended); the last is "Final race" on the lap
+## badge (`compact`) and "Final race · 4/4" on the title chip.
+func _race_label(compact := false) -> String:
+	var n := maxi(gp.races_run() + (0 if flow == Flow.RESULTS or flow == Flow.PODIUM else 1), 1)
+	var of := "%d/%d" % [n, _race_total] if _race_total >= n else str(n)
+	if bool(current.get("is_final", false)):
+		return "Final race" if compact else "Final race · " + of
+	return "Race " + of
+
+
 func _start_countdown() -> void:
 	race.start_countdown(COUNTDOWN_SEC + FLYOVER_SEC)
 	flow = Flow.COUNTDOWN
 	_countdown_shown = -1
-	var total := gp.races_run() + 1
-	var chip := "Grand Prix · %s" % ("Final race" if bool(current.get("is_final", false)) else "Race %d" % total)
+	var chip := "Grand Prix · " + _race_label()
 	if _kart_hud:
 		_kart_hud.show_title(chip, track.def.title + (" (reversed)" if track.reversed else ""), FLYOVER_SEC - 0.6)
 
@@ -510,11 +532,14 @@ func _on_race_finished(order: Array) -> void:
 		rows.append({"name": _racer_name(id), "detail": "+%d" % KartGrandPrix.POINTS[i] if i < KartGrandPrix.POINTS.size() else "",
 			"total": _pts(int(totals.get(id, 0))),
 			"racer_id": str(lineup[id].id), "you": id == RIDER,
+			# Still racing when the rider finished: a projected time (KartRaceLogic), shown muted.
+			"projected": k.finish_time > race.time + 0.001,
 			"time": KartTheme.race_time(k.finish_time) if i == 0 else "+%.3f" % maxf(0.0, k.finish_time - race.karts[order[0]].finish_time)})
 	var place := order.find(RIDER) + 1
 	var title := "Victory!" if place == 1 else ("On the podium!" if place <= 3 else "Nice drive!")
-	var subtitle := "Grand Prix · Race %d · %s" % [gp.races_run(), track.def.title]
+	var subtitle := "Grand Prix · %s · %s" % [_race_label(), track.def.title]
 	_board.show_board(title, rows, subtitle, RESULTS_SEC, "Final standings" if bool(current.get("is_final", false)) else "Next race")
+	_status_area(true)  # the camera strip moves under the board's rows
 	_kart_hud.set_gameplay_visible(false)
 	_status.visible = false
 
@@ -532,7 +557,7 @@ func _after_board() -> void:
 		var champ := gp.champion() == RIDER
 		var place := gp.place_of(RIDER)
 		var title := "Champion!" if champ else ("Grand Prix podium!" if place <= 3 else "Grand Prix standings")
-		_board.show_podium(title, rows, "Final standings · %d race%s" % [gp.races_run(), "" if gp.races_run() == 1 else "s"], PODIUM_SEC, "Ride summary")
+		_board.show_podium(title, rows, "Final standings · %d race%s" % [gp.races_run(), "" if gp.races_run() == 1 else "s"], PODIUM_SEC, "Ride summary", _stage_podium())
 		return
 	if flow == Flow.PODIUM:
 		_finish_gp()
@@ -540,9 +565,77 @@ func _after_board() -> void:
 			return
 	# Another race (also when a timed slot refused to end early).
 	_board.hide_board()
+	_clear_podium()
+	_status_area(false)
 	_status.visible = true
 	_begin_race()
 	_start_countdown()
+
+
+func _status_area(board: bool) -> void:
+	var area := KartHud.status_area(board)
+	hud.set_status_area(area[0], area[1])
+
+
+## Presentation: stages the 3D podium on the start straight, the top three's own karts landing
+## on it under a held camera, and returns where its blocks and karts show on screen for the
+## board (KartPodium.screen_points); {} when there's no world to stage it in.
+func _stage_podium() -> Dictionary:
+	if world == null or track == null or camera == null or _view == null or not camera.is_inside_tree():
+		return {}
+	_clear_podium()
+	var standings := gp.standings()
+	for i in mini(3, standings.size()):
+		_podium_ids.append(int(standings[i].kart_id))
+	var s0 := track.wrap(PODIUM_S)
+	var origin := track.position_at(s0, 0.0)
+	var ahead := track.position_at(track.wrap(s0 + 2.0), 0.0) - origin
+	_podium = KartPodium.new()
+	world.add_child(_podium)
+	_podium.stage(world.scenery_mat, origin, ahead)
+	camera.hold = true
+	camera.held = _podium.camera_transform()
+	camera.global_transform = camera.held
+	camera.fov = KartPodium.CAMERA_FOV
+	for v in views:
+		v.visible = false
+	if _item_views:
+		_item_views.visible = false
+	if _fx:
+		_fx.visible = false
+	return _podium.screen_points(camera, Vector2(_view.size))
+
+
+func _clear_podium() -> void:
+	if _podium == null:
+		return
+	_podium.queue_free()
+	_podium = null
+	_podium_ids.clear()
+	camera.hold = false
+	for v in views:
+		v.visible = true
+	if _item_views:
+		_item_views.visible = true
+	if _fx:
+		_fx.visible = not _tuned or bool(_tuning.get_value("world", "fx", true))
+
+
+## The podium's frame: the blocks rise, the karts drop on them and cheer, facing the camera.
+func _sync_podium(delta: float) -> void:
+	_podium.advance(delta)
+	var eye := camera.global_position
+	for j in _podium_ids.size():
+		var v: KartView = views[_podium_ids[j]]
+		var shown := _podium.kart_shown(j)
+		v.visible = shown
+		if shown:
+			v.seen = true
+			v.pose_every = 1
+			v.look_target = eye
+			v.look_weight = 0.6
+			v.sync(_podium.kart_state(j), delta)
+	camera.follow(_draw[RIDER], delta)  # held
 
 
 func _finish_gp() -> void:
@@ -602,13 +695,19 @@ func _on_frame(delta: float) -> void:
 		_perf_frame_max = maxf(_perf_frame_max, frame_ms)
 	for vp: Viewport in _perf_vps:
 		if is_instance_valid(vp):
-			_perf_render_cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp.get_viewport_rid())
-			_perf_render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp.get_viewport_rid())
+			var rid := vp.get_viewport_rid()
+			var cpu := RenderingServer.viewport_get_measured_render_time_cpu(rid)
+			var always := vp == _view or vp == get_viewport()
+			if always or cpu != float(_perf_vp_last.get(rid, -1.0)):
+				_perf_render_cpu += cpu
+				_perf_render_gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+				_perf_vp_renders += 1
+			_perf_vp_last[rid] = cpu
 	_perf_dc_max = maxi(_perf_dc_max, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
 	_perf_left -= delta
 	if _perf_left <= 0.0:
 		var frames := maxi(_perf_frames, 1)
-		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f ticks=%.2f tick_ms=%.2f sync_ms=%.2f hud_ms=%.2f process_ms=%.2f frame_ms=%.2f frame_max_ms=%.1f game_max_ms=%.1f render_cpu_ms=%.2f render_gpu_ms=%.2f viewports=%d fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
+		print("OPENRIDE_GAMES kart_race perf game_ms=%.2f ticks=%.2f tick_ms=%.2f sync_ms=%.2f hud_ms=%.2f process_ms=%.2f frame_ms=%.2f frame_max_ms=%.1f game_max_ms=%.1f render_cpu_ms=%.2f render_gpu_ms=%.2f viewports=%d vp_renders=%.2f fps=%d draw_calls=%d draw_calls_max=%d objects=%d primitives=%d karts=%d track=%s%s flow=%s tracker=%d tier=%d" % [
 			_perf_usec / 1000.0 / frames,
 			float(_perf_ticks) / frames,
 			_perf_tick_usec / 1000.0 / maxi(_perf_ticks, 1),
@@ -621,6 +720,7 @@ func _on_frame(delta: float) -> void:
 			_perf_render_cpu / frames,
 			_perf_render_gpu / frames,
 			_perf_vps.size(),
+			float(_perf_vp_renders) / frames,
 			Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			_perf_dc_max,
@@ -642,6 +742,8 @@ func _on_frame(delta: float) -> void:
 		_perf_frame_max = 0.0
 		_perf_game_max = 0
 		# Every viewport that renders (the 3D view, the bakes, the screen), measured.
+		_perf_vp_renders = 0
+		_perf_vp_last.clear()
 		_perf_vps.clear()
 		_perf_vps.append(get_viewport())
 		for vp: Node in find_children("*", "SubViewport", true, false):
@@ -757,6 +859,11 @@ func _read_rider() -> KartInput:
 
 
 func _sync_views(delta: float) -> void:
+	if _podium:
+		_sync_podium(delta)
+		if _audio:
+			_audio.step(race, Flow.keys()[flow], delta)
+		return
 	# Between the last two ticks: the time since the last one, as a share of a tick.
 	var alpha := clampf(_acc / TICK, 0.0, 1.0)
 	for i in race.karts.size():
@@ -810,7 +917,7 @@ func _sync_screen_fx() -> void:
 
 func _update_hud(delta: float) -> void:
 	var k: KartState = race.karts[RIDER]
-	var race_text := "Final race" if bool(current.get("is_final", false)) else "Race %d" % (int(current.get("index", 0)) + 1)
+	var race_text := _race_label(true)
 	_status.set_state(k.place, race.karts.size(), k.lap, race.laps, race_text)
 	_kart_hud.update(race, delta)
 	var lights := 0

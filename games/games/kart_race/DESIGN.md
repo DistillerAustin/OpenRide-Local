@@ -39,14 +39,15 @@ KartRace (Node2D, KartRace.gd: extends Game)
 │     ├─ ChaseCamera (KartChaseCamera, current)
 │     ├─ Kart_<racer> × 8 (KartView: one skinned mesh + outline, shadow, anchors)
 │     ├─ Items (KartItemViews: pods, pucks, drones, goo, shields, magnet beams, bursts)
-│     └─ Fx (KartFx: puffs, sparks and flames, hit stars: 3 MultiMeshes)
+│     ├─ Fx (KartFx: puffs, sparks and flames, hit stars: 3 MultiMeshes)
+│     └─ Podium (KartPodium, only while the GP podium shows: plinth and three blocks)
 ├─ View3DImage (TextureRect: the viewport scaled to 1920×1080 under the HUD)
-├─ KartHud (CanvasLayer 8: lap badge, clock, racer list, minimap, ride strip, item button,
-│           drift meter, place, countdown, banners, speed lines)
+├─ KartHud (CanvasLayer 8: lap badge, clock, racer list, minimap, ride strip, item button
+│           with the drift arc, place, countdown, banners, speed lines)
 ├─ KartRaceBoard (CanvasLayer 9: the results board and the podium)
 └─ KartAudio (music stems, engine/screech/crowd loops, one-shots)
-(the framework's Hud, CanvasLayer 10, in Kart Race's skin: clock and score, Pause/End,
-Recalibrate; its ride panel is hidden for KartHud's ride strip)
+(the framework's Hud, CanvasLayer 10, in Kart Race's skin: clock and score, Recalibrate |
+Pause | End at the top right; its ride panel is hidden for KartHud's ride strip)
 ```
 
 The 3D view renders into the SubViewport at `RENDER_SCALE` (Dodge Ball's pattern; never set
@@ -415,8 +416,8 @@ when a kart breaks a pod: KartItemViews bursts it.
   tightens the arc. The charge runs at full rate in a corner (× 1.6 with the knob up: the
   resistance at `drift_resistance` or risen 5 since the drift began), a quarter on a straight.
   Tiers at `TIER_SEC`; easing below 0.3 for 0.15 s releases a mini-turbo (`TURBO_SEC` by tier).
-  The views read `slide`, `hop`, `drift_dir`, `drift_tier`; the HUD's drift meter reads the
-  charge and `knob_boosting`.
+  The views read `slide`, `hop`, `drift_dir`, `drift_tier`; the HUD's drift arc (on the item
+  button) reads the charge and `knob_boosting`.
 - **Boosts**: mini-turbo, pad (the track's `boost` zones, once a visit), rocket start (cadence ≥
   70 for 0.3 s while "2" shows), the Turbo Can (`apply_boost` + the items' event). **Climbs**:
   standing on a `climb` zone cuts the drag 20%. **Drafting**: CdA −30% 1.5-8 m behind a kart.
@@ -442,7 +443,7 @@ when a kart breaks a pod: KartItemViews bursts it.
 
 - Pod rows sit on the track's `items` zones; a pod respawns in 3 s. A bot's item lands at once;
   the rider's after a 0.9 s roulette (the button spins through the icons, then lands).
-- The rider fires on the `use_item` edge (the item button, 260 px, top right; a tap during the
+- The rider fires on the `use_item` edge (the item button, 260 px, bottom right; a tap during the
   roulette does nothing), or through the bots' policy with Auto items on.
 - Odds by position (the back gets more turbo, drone and magnet). Effects go only through
   `KartPhysics` (`apply_boost`, `apply_spinout`, `apply_pull`) and out through the race's events.
@@ -571,19 +572,28 @@ behind): results 171 → 76, podium 145 → 60.
 The HUD follows the web slice's layout.
 
 - **Framework skin hook** (`Hud.set_skin`): new keys `ride_panel: false`, `clock_value_size`,
-  `reserve_right` (docs/GAMES.md "HUD kit"). Kart Race's skin is `KartHud.hud_skin()`; the
-  framework ride panel is hidden for this game only and the ride strip replaces it.
+  `reserve_right`, `recalibrate_top`, `recalibrate_button`, `status_width`, `reserve_bottom`, and
+  `Hud.set_status_area` (docs/GAMES.md "HUD kit"). Kart Race's skin is `KartHud.hud_skin()`:
+  the framework ride panel is hidden for this game only (the ride strip replaces it),
+  Recalibrate moves up beside Pause | End as an outline pill (the bottom right is the item
+  button's), and the camera strip sits between the minimap and the item button, above the ride
+  strip; while a board shows (`KartHud.status_area(true)`) it takes the bottom band, under the
+  board's rows and pill.
 - **KartStatus** (the lap badge, `set_state` unchanged) now sits top left in KartHud, not in the
   framework's top-centre slot.
 - `ui/`: `KartHud` (composition: `status`, `racer_list`, `minimap`, `ride_strip`, `item_button`,
-  `drift_meter`; `setup(racers, track)` on a new lineup, `set_track(track)` every race (the
+  `setup(racers, track)` on a new lineup, `set_track(track)` every race (the
   minimap redraws for a new track or direction), `update(race, delta)`, `banner(text, sec, subtitle, final)`, `hud_skin()`,
-  `draft`/`draft_point`), `KartItemButton` (round, 260 px, fires on press, circle hit area,
-  roulette from `KartState.item`/`roulette_time`), `KartItemIcons` (icons by item-id keyword:
-  turbo, puck, drone, goo, shield, magnet: `KartItemLogic.ITEMS`), `KartDriftMeter` (charge in
-  seconds; the tiers are `KartPhysics.TIER_SEC`; knob glyph from `knob_boosting`),
-  `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector drawing: one draw
-  call per widget), `KartRaceBoard.show_podium(title, rows, …)` and `mode`.
+  `draft`/`draft_point`), `KartItemButton` (round, 260 px, bottom right, fires on press, a hit
+  circle 1.25× the disc, roulette from `KartState.item`/`roulette_time`, an idle pulse after 2 s;
+  the drift meter as a three-segment arc on a dark band round its upper-left edge, the tiers
+  `KartPhysics.TIER_SEC`, redrawn in 24 charge steps, the knob glyph from `knob_boosting`), `KartItemIcons` (icons by item-id keyword:
+  turbo, puck, drone, goo, shield, magnet: `KartItemLogic.ITEMS`),   `KartMinimap`, `KartRacerList`, `KartRideStrip`, `KartDraw` (batched vector drawing: one draw
+  call per widget), `KartRaceBoard.show_podium(title, rows, …, stage)` and `mode` (with
+  `stage`, `KartPodium.screen_points()`: plates over the 3D podium; without, 2D blocks).
+  `world/KartPodium`: the GP podium on the start straight (`KartRace._stage_podium`), the top
+  three's `KartView`s landing on its blocks in turn (`kart_state(i)`, a KartState that never
+  races) under a held camera.
   `KartBaked` (a widget moved into its own small transparent SubViewport that renders only when
   something in it redraws, moves or shows/hides, drawn as one premultiplied TextureRect: the lap
   badge, the racer list, the ride strip (at most 5 Hz) and the place badge; the place badge's

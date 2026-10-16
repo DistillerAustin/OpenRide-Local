@@ -40,7 +40,7 @@ item, a track layout, a HUD layout or a logo.
 | Fly-over and grid | Anticipation and showcase | Each track's landmark in frame. Warm sun. The title band low left. |
 | Racing | Flow and speed | Full-saturation world. The HUD sits at the edges. The centre third (the kart and the road ahead) stays clear. |
 | Final lap | Urgency | A red ribbon banner, a music variation and the same world. Don't recolour the world. |
-| Results and podium | Reward | A violet "night" overlay with a sunburst (`ui/shaders/sunburst.gdshader`), gold for the rider and confetti. The world stays visible, dimmed, behind. |
+| Results and podium | Reward | A violet "night" overlay with a sunburst (`ui/shaders/sunburst.gdshader`), gold for the rider and confetti. The world stays visible, dimmed, behind; on the podium it clears over the 3D stage. |
 
 ## 3. Palette
 
@@ -243,7 +243,7 @@ for badges (`KartTheme.display()`), with `spacing_glyph` 1.
 | Lap badge digit | ~110, clock 46 |
 | Racer list numbers, rider name | ≥ 40 |
 | Board rows | ≥ 44 |
-| **Minimum anywhere** | **34** (framework rule). **Correction:** the drift label can shrink to 24 (`KartDriftMeter` font loop). Its floor must be 34. |
+| **Minimum anywhere** | **34** (framework rule). The drift meter has no label (the arc explains itself). |
 
 **Colours** (`KartTheme`): the panel night `#291A57` at 86% alpha with an edge `#8C6BFF` and a
 6 px bottom border; the tile fill `#1A0F3D`; the chip gold `#FFCC29`. Gradients run top → bottom:
@@ -272,22 +272,27 @@ The place badge is gold for 1st-3rd and violet otherwise.
 | Top left | lap badge, clock, racer list |
 | Bottom left | minimap |
 | Bottom centre | ride strip (rpm, W, %, effort) |
-| Right | place |
-| Top right | clock / score, Pause, End |
+| Right (y 336-596) | place |
+| Bottom right | item button with the drift arc |
+| Top right | clock / score, Recalibrate \| Pause \| End |
 
 The kart and the road ahead (the centre third, y 380-880) stay clear.
 
-**Correction: the item button.** The item button belongs **bottom right**, as the spec says
-("a big circle, bottom right, at least 240 px"), and must not sit next to End. Today it's top
-right, about 20 px from the red End button (`hud_race.png`). On a bike, a rushed tap there can
-end the session. Swap it with Recalibrate:
-- item button bottom right, 260 px, with a hit radius of 1.25× the drawn radius;
-- Recalibrate in the top-right reserve.
+**The item button** sits **bottom right** (a 260 px disc whose edge touches the margins), at the
+far end of the screen from End, with a hit circle 1.25× the drawn radius. Recalibrate moved up
+beside Pause | End as a dark outline pill, so End never sits beside a twin.
+`kart_presentation_test` keeps the item's hit circle at least 120 px from End and fires real
+touches over the whole circle. An item held unused for 2 s pulses: the face breathes 1.0 → 1.06
+and a gold rim glow fades in (tweens on a transform and a modulate, never a redraw).
 
-**Correction: the drift meter.** It floats at y 548 on the right with no backing, over the
-barriers and the scenery (`tablet_race_meadow.png`). Wrap the charge around the item button as
-a 3-segment arc in the tier colours, with the knob glyph at the arc's end. Failing that, give it
-a `NIGHT` backing plate like the other tiles.
+**The drift meter** is a three-segment arc round the item button's upper-left edge in the tier
+colours, on a dark `OUTLINE` band (88%) with round ends, so it reads over sky, grass or
+barriers. The unfilled segments show their colour at 30%; the knob glyph sits just past the
+arc's end. No text. It redraws only on 24 charge steps, a tier, the knob or the fade.
+
+**The camera strip** ("Camera steering is off") sits between the minimap and the item button,
+above the ride strip (it wraps to two lines). On a board it takes the bottom band, under the
+rows and the pill.
 
 **Motion.**
 
@@ -298,12 +303,18 @@ a `NIGHT` backing plate like the other tiles.
 - Bakes (`KartBaked`) re-render only on a change. **Animate the baked widget's transform,
   never its contents.**
 
-**Boards.** A violet overlay, a sunburst, a gradient title, rows as slanted tiles, the rider's row
-gold, and an auto-advance pill with a countdown.
-- **Correction:** confetti must draw **behind** the rows and the titles (`hud_results.png`,
-  `hud_podium.png`).
-- **Correction:** the podium shows the top three **3D karts** (`KartView` cheer pose) on shaded,
-  bevelled blocks, not flat rectangles and floating heads.
+**Boards.** A violet overlay, a sunburst, a gradient title over its subtitle, rows as slanted
+tiles, the rider's row gold, and an auto-advance pill with a countdown. Confetti falls
+**behind** the titles and the rows. A bot still racing when the rider finished shows its
+projected gap (timed at its race pace, spread by believable gaps) in a muted lavender.
+
+**The podium** is staged in 3D on the start straight, the gate and the grandstand behind: a
+violet plinth and three vertex-coloured blocks (gold, silver, bronze; painted AO, a lighter
+bevelled cap, a pale stripe, a dark foot) under the world's one light. They rise third, second,
+then the champion, and each racer's own kart drops onto its block and cheers (`KartView`, both
+arms up), facing a held camera that frames the stage in the left two thirds. The sunburst
+clears to a soft window over the stage. Each place's number sits on its block's face and its
+name and points tag over its kart, popping in as the kart lands. The standings stay on the right.
 
 ## 8. VFX language
 

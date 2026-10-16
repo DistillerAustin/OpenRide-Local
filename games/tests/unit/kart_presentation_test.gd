@@ -43,8 +43,8 @@ func _leaves(root: Node, out: Array[Control]) -> void:
 			continue
 		if child is Control:
 			var c := child as Control
-			if c.name == "ReservedRight":
-				continue  # the empty spacer that keeps the item button's corner free
+			if c.name == "ReservedRight" or (c.name == "BottomBar" and c.get_child_count() == 0):
+				continue  # empty spacers (the bottom bar keeps room for the ride strip)
 			var is_leaf := c is Label or c is Button or (c.get_child_count() == 0 and c.size.x > 0.0 and c.size.y > 0.0)
 			if is_leaf and c is Label and (c as Label).text.is_empty():
 				is_leaf = false
@@ -127,19 +127,144 @@ func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 				continue
 			assert_bool(a.intersects(b)).override_failure_message("%s %s overlaps %s %s" % [
 				leaves[i].get_path(), a, leaves[j].get_path(), b]).is_false()
-	# The framework's touch targets stay full size and reachable; the item button is big and in
-	# the top-right corner.
+	# The framework's touch targets stay full size and reachable, Recalibrate up beside Pause |
+	# End; the item button is big and in the bottom-right corner.
 	for b: Button in [hud.pause_button, hud.end_button, hud.recalibrate_button]:
 		assert_bool(b.is_visible_in_tree()).is_true()
 		assert_float(b.size.y).is_greater_equal(HudTheme.BUTTON_HEIGHT * 0.8 - 0.5)
+	assert_object(hud.recalibrate_button.get_parent()).is_same(hud.end_button.get_parent())
+	assert_float(hud.end_button.get_global_rect().end.x).is_greater(hud.pause_button.get_global_rect().end.x)
 	var item := kh.item_button.get_global_rect()
-	assert_float(item.size.x).is_greater_equal(240.0)
-	assert_bool(item.get_center().x > SCREEN.size.x * 0.8 and item.get_center().y < SCREEN.size.y * 0.3).is_true()
+	assert_float(KartItemButton.SIZE).is_greater_equal(240.0)
+	assert_bool(item.get_center().x > SCREEN.size.x * 0.8 and item.get_center().y > SCREEN.size.y * 0.7).is_true()
 	assert_bool(hud.ride_panel.visible).is_false()
 	# The slow widgets are baked (one draw call each), and their bakes don't overlap either.
 	for w: Control in [kh.status, kh.racer_list, kh.ride_strip]:
 		assert_object(w.get_viewport().get_parent()).is_instanceof(KartBaked)
 	Effort.begin_segment(false)
+
+
+## The safety rule (the review's blocking issue): the item button's hit circle and End's rect
+## never come within 120 px, and a touch anywhere on the item button uses the item, never End.
+func test_the_item_button_is_far_from_end_and_no_touch_on_it_reaches_end() -> void:
+	var parts := _hud_with_kart_hud()
+	var hud: Hud = parts[0]
+	var kh: KartHud = parts[1]
+	await _settle()
+	var circle := kh.item_button.hit_circle()
+	var centre: Vector2 = circle[0]
+	var radius: float = circle[1]
+	assert_float(radius).is_equal_approx(KartItemButton.SIZE * 0.5 * 1.25, 0.01)
+	for b: Button in [hud.end_button]:
+		var end := b.get_global_rect()
+		var nearest := Vector2(clampf(centre.x, end.position.x, end.end.x), clampf(centre.y, end.position.y, end.end.y))
+		assert_float(nearest.distance_to(centre) - radius).override_failure_message(
+			"End %s is %.0f px from the item's hit circle" % [end, nearest.distance_to(centre) - radius]).is_greater_equal(120.0)
+		# The item's whole square, grown by 120 px, misses End too (whatever its hit shape).
+		assert_bool(kh.item_button.get_global_rect().grow(120.0).intersects(end)).is_false()
+	# Real touches over the whole hit circle (rings out to its edge): each uses the item; End never fires.
+	var ends := [0]
+	var uses := [0]
+	hud.end_pressed.connect(func(): ends[0] += 1)
+	kh.item_pressed.connect(func(): uses[0] += 1)
+	var points: Array[Vector2] = [centre]
+	for ring in [0.35, 0.7, 0.98]:
+		for i in 16:
+			var a := TAU * i / 16.0
+			points.append(centre + Vector2(cos(a), sin(a)) * radius * ring)
+	for at in points:
+		kh.item_button._last_press_ms = -100000  # past the debounce
+		_touch(at)
+	assert_int(ends[0]).is_equal(0)
+	assert_int(uses[0]).is_equal(points.size())
+	# Beyond the hit circle (the square's corner) is not the item.
+	kh.item_button._last_press_ms = -100000
+	_touch(kh.item_button.get_global_rect().position + Vector2(6, 6))
+	assert_int(uses[0]).is_equal(points.size())
+
+
+## The drift meter is an arc round the item button: the physics' tiers, a dark backing, redrawn
+## only on charge steps, and no text (so nothing under 34 px).
+func test_the_drift_arc_uses_the_physics_tiers_and_redraws_in_steps() -> void:
+	var b: KartItemButton = auto_free(KartItemButton.new())
+	add_child(b)
+	assert_array(b.tiers).is_equal(KartPhysics.TIER_SEC)
+	var full: float = KartPhysics.TIER_SEC[2]
+	var redraws := [0]
+	b.draw.connect(func(): redraws[0] += 1)
+	b.set_drift(1, 0.0, 0, false, 1.0)  # fades fully in
+	await get_tree().process_frame
+	redraws[0] = 0
+	# A tiny charge change inside one step doesn't redraw.
+	b.set_drift(1, full / KartItemButton.CHARGE_STEPS * 3.2, 0, false, 0.016)
+	await get_tree().process_frame
+	var after_step: int = redraws[0]
+	b.set_drift(1, full / KartItemButton.CHARGE_STEPS * 3.4, 0, false, 0.016)
+	await get_tree().process_frame
+	assert_int(redraws[0]).is_equal(after_step)
+	assert_float(b.shown_charge()).is_equal_approx(full / KartItemButton.CHARGE_STEPS * 4.0, 0.001)
+	b.set_drift(1, full, 3, true, 0.016)
+	assert_float(b.shown_charge()).is_equal_approx(full, 0.001)
+
+
+## An item held unused starts the pulse (a transform tween on the face, no redraw); using it stops.
+func test_an_idle_item_pulses_until_used() -> void:
+	var b: KartItemButton = auto_free(KartItemButton.new())
+	add_child(b)
+	b.set_item("turbo", 0.0, 0.0)
+	for i in 10:
+		b.set_item("turbo", 0.0, KartItemButton.IDLE_SEC / 12.0)
+	assert_bool(b.is_pulsing()).is_false()
+	for i in 4:
+		b.set_item("turbo", 0.0, KartItemButton.IDLE_SEC / 12.0)
+	assert_bool(b.is_pulsing()).is_true()
+	assert_bool(b.glow.visible).is_true()
+	b._on_pressed()
+	assert_bool(b.is_pulsing()).is_false()
+	b.set_item("", 0.0, 0.1)
+	for i in 30:
+		b.set_item("", 0.0, 0.1)
+	assert_bool(b.is_pulsing()).is_false()
+
+
+## The camera strip ("Camera steering is off") covers neither the minimap, the item button nor
+## the ride strip while racing, nor the board's rows and pill while a board shows.
+func test_the_camera_strip_clears_the_minimap_the_item_and_the_board() -> void:
+	var parts := _hud_with_kart_hud()
+	var hud: Hud = parts[0]
+	var kh: KartHud = parts[1]
+	var overlay: CalibrationOverlay = auto_free(CalibrationOverlay.new())
+	overlay.strip_host = hud.status_slot
+	add_child(overlay)
+	overlay.set_process(false)  # no session here: its own _process would hide the strip again
+	overlay._show("unavailable")
+	overlay._place_strip()
+	overlay._strip_text.text = "Camera steering is off: no face found. Is the room bright enough?  ·  tap to try again"
+	for i in 3:
+		await _settle()  # the wrapped label's height settles over a few layout passes
+	var strip := overlay.strip().get_global_rect()
+	for c: Control in [kh.minimap, kh.item_button, kh.ride_strip.get_viewport().get_parent()]:
+		assert_bool(strip.intersects(c.get_global_rect().grow(-0.5))).override_failure_message(
+			"the strip %s covers %s %s" % [strip, c.name, c.get_global_rect()]).is_false()
+	# A board: the strip goes to the bottom band, under the rows and the pill.
+	var area := KartHud.status_area(true)
+	hud.set_status_area(area[0], area[1])
+	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
+	add_child(board)
+	var rows := []
+	for i in 8:
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+	board.show_board("Victory!", rows, "Grand Prix · Race 1/4", 8.0, "Next race")
+	await _settle()
+	await get_tree().create_timer(1.2).timeout  # the rows have slid in
+	strip = overlay.strip().get_global_rect()
+	var bottom := 0.0
+	for c in board._content.get_children():
+		if c is KartBaked and not c.is_queued_for_deletion():
+			bottom = maxf(bottom, (c as KartBaked).get_global_rect().end.y - KartBaked.PAD)
+	bottom = maxf(bottom, board._pill_view.get_global_rect().end.y - KartBaked.PAD)
+	assert_float(strip.position.y).override_failure_message("the strip %s starts above the board's bottom %.0f" % [strip, bottom]).is_greater_equal(bottom)
+	assert_float(strip.end.y).is_less_equal(SCREEN.end.y)
 
 
 func test_the_skin_layout_keys_are_opt_in_and_clear() -> void:
@@ -160,6 +285,21 @@ func test_the_skin_layout_keys_are_opt_in_and_clear() -> void:
 	assert_bool(hud.ride_panel.visible).is_true()
 	assert_int(value.get_theme_font_size("font_size")).is_equal(size_before)
 	assert_int(hud.top_bar.get_child_count()).is_equal(bar_children)
+	# Recalibrate up to the top bar, the camera strip narrowed and lifted; all put back.
+	var home := hud.recalibrate_button.get_parent()
+	hud.set_skin({"recalibrate_top": true, "status_width": 1000.0, "reserve_bottom": 120.0})
+	assert_object(hud.recalibrate_button.get_parent()).is_same(hud.end_button.get_parent())
+	assert_int(hud.recalibrate_button.get_index()).is_equal(0)
+	await _settle()
+	assert_float(hud.status_slot.size.x).is_equal_approx(1000.0, 0.5)
+	assert_float(hud.bottom_bar.size.y).is_greater_equal(120.0)
+	hud.set_status_area(1600.0, 0.0)  # a board: the strip moves down, the empty bottom bar folds
+	assert_bool(hud.bottom_bar.visible).is_false()
+	hud.clear_skin()
+	await _settle()
+	assert_object(hud.recalibrate_button.get_parent()).is_same(home)
+	assert_bool(hud.bottom_bar.visible).is_true()
+	assert_float(hud.status_slot.size.x).is_greater(1800.0)
 
 
 # --- Touch ---
@@ -291,11 +431,6 @@ func test_the_hud_icons_cover_every_item_id() -> void:
 	assert_array(KartItemIcons.KINDS).contains_exactly_in_any_order(KartItemLogic.ITEMS)
 
 
-func test_the_drift_meter_uses_the_physics_tiers() -> void:
-	var meter: KartDriftMeter = auto_free(KartDriftMeter.new())
-	assert_array(meter.tiers).is_equal(KartPhysics.TIER_SEC)
-
-
 # --- Flow screens ---
 
 func test_the_results_and_podium_run_without_input_and_advance_on_time() -> void:
@@ -331,6 +466,47 @@ func test_the_results_and_podium_run_without_input_and_advance_on_time() -> void
 	assert_float(game.sim_time - start).is_equal_approx(KartRaceScript.PODIUM_SEC, 0.1)
 
 
+## The podium is 3D: the top three's own karts land on stepped blocks on the track, facing a
+## held camera, and the board places its plates from the stage's screen points.
+func test_the_podium_stages_the_top_three_karts_on_blocks() -> void:
+	var game := _game(SEGMENT.duplicate(true))
+	var inp := KartInput.new()
+	inp.power_w = 320.0
+	inp.cadence = 90.0
+	game.set("test_input", inp)
+	(game.get("race") as KartRaceLogic).laps = 1
+	var frames := 0
+	while game.get("flow") != KartRaceScript.Flow.PODIUM and frames < 60 * 400:
+		game._on_frame(DT)
+		frames += 1
+	assert_int(game.get("flow")).is_equal(KartRaceScript.Flow.PODIUM)
+	var podium: KartPodium = game.get("_podium")
+	assert_object(podium).is_not_null()
+	var cam: KartChaseCamera = game.get("camera")
+	assert_bool(cam.hold).is_true()
+	var ids: Array = game.get("_podium_ids")
+	var gp: KartGrandPrix = game.get("gp")
+	assert_int(ids.size()).is_equal(3)
+	for i in 3:
+		assert_int(ids[i]).is_equal(int(gp.standings()[i].kart_id))
+	for f in roundi(KartPodium.landed_at(0) / DT) + 10:
+		game._on_frame(DT)
+	var views: Array = game.get("views")
+	for i in views.size():
+		var v: KartView = views[i]
+		var j := ids.find(i)
+		assert_bool(v.visible).override_failure_message("kart %d visible=%s" % [i, v.visible]).is_equal(j >= 0)
+		if j >= 0:
+			# On its block (higher for a better place), facing the camera.
+			var top := podium.global_position.y + 0.16 + float(KartPodium.HEIGHTS[j])
+			assert_float(v.global_position.y).is_equal_approx(top, 0.05)
+			var to_cam := (cam.global_position - v.global_position) * Vector3(1, 0, 1)
+			assert_float((-v.global_transform.basis.z).dot(to_cam.normalized())).is_greater(0.75)
+	var board: KartRaceBoard = game.get("_board")
+	var plates := board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
+	assert_int(plates.size()).is_equal(3 + 8)  # three plates and the standings
+
+
 func test_the_board_counts_down_to_what_comes_next() -> void:
 	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
 	add_child(board)
@@ -356,11 +532,32 @@ func test_the_board_bakes_its_rows_title_and_pill() -> void:
 	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
 	var baked := board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
 	assert_int(baked.size()).is_equal(8)
-	assert_object(board._title.get_parent()).is_instanceof(SubViewport)
+	assert_object(board._header.get_parent()).is_instanceof(SubViewport)  # the title and subtitle: one bake
+	assert_object(board._title.get_parent()).is_same(board._header)
 	assert_object(board._pill_box.get_parent()).is_instanceof(SubViewport)
 	board.show_podium("Champion!", rows, "Final standings", 6.0, "Ride summary")
 	baked = board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
 	assert_int(baked.size()).is_equal(8 + 3)  # the standings and the three blocks
+	# Closed, the board holds no viewports at all (the race behind renders none of them).
+	await get_tree().process_frame
+	assert_int(board.viewport_count()).is_equal(8 + 3 + 2)
+	board.hide_board()
+	await get_tree().process_frame
+	assert_int(board.viewport_count()).is_equal(0)
+
+
+func test_projected_times_are_muted_and_confetti_falls_behind_the_text() -> void:
+	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
+	add_child(board)
+	var rows := [{"name": "A (you)", "time": "1:00.000", "you": true},
+		{"name": "B", "time": "+3.200", "projected": true}]
+	board.show_board("Victory!", rows, "", 8.0)
+	var row: Node = board._content.get_child(1).widget
+	var times := row.find_children("*", "Label", true, false).filter(func(l): return (l as Label).text == "+3.200")
+	assert_int(times.size()).is_equal(1)
+	assert_bool((times[0] as Label).get_theme_color("font_color") == KartRaceBoard.PROJECTED_INK).is_true()
+	assert_int(board._confetti.get_index()).is_less(board._content.get_index())
+	assert_int(board._confetti.get_index()).is_less(board._title_view.get_index())
 
 
 
@@ -372,7 +569,7 @@ func test_the_board_renders_one_bake_a_frame() -> void:
 		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
 	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
 	var bakes := _bakes(board)
-	assert_int(bakes.size()).is_equal(8 + 3)
+	assert_int(bakes.size()).is_equal(8 + 2)  # the rows, the header and the pill
 	var before := _renders(bakes)
 	assert_int(before).is_equal(0)  # nothing renders until its turn
 	for f in 30:

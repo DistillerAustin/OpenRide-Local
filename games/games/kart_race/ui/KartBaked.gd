@@ -74,22 +74,38 @@ func keep(seconds := 0.0) -> void:
 	_render()
 
 
+## Whether a render is waiting (for tests).
+func is_pending() -> bool:
+	return _pending
+
+
 func _process(delta: float) -> void:
 	_since += delta
 	if _keep > 0.0:
 		_keep -= delta
 		_pending = true
-	if _pending and _since >= min_interval:
+	# Hidden (a board over the race HUD): the change waits until it shows again.
+	if _pending and _since >= min_interval and is_visible_in_tree():
 		if queue and not queue.grant(self):
 			return
 		_pending = false
 		_since = 0.0
 		renders += 1
 		viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	# Idle (nothing pending, nothing kept, the throttle spent): no _process until a change, so a
+	# quiet bake costs nothing a frame, not even this check.
+	if not _pending and _keep <= 0.0 and _since >= min_interval:
+		set_process(false)
 
 
 func _render() -> void:
 	_pending = true
+	set_process(true)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and _pending:
+		set_process(true)  # shown again with a change waiting
 
 
 ## Every canvas item under the widget: a redraw re-renders the bake (rows added later too).

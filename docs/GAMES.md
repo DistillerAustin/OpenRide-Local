@@ -498,10 +498,17 @@ Dodge Ball, the mode).
   `button_pressed`, `end_button`) and can slim the layout: `ride_panel: false` hides the ride
   panel (the game then shows rpm, watts, resistance and the effort multiplier itself, as Kart
   Race's bottom ride strip does), `clock_value_size` shrinks the time left and the score (not
-  below `MEDIUM`), and `reserve_right` keeps that many pixels free at the top bar's right end
-  (Kart Race's item button), so the clock and Pause | End sit just left of it. Buttons keep
-  their touch size. `clear_skin()` (and `clear_widgets()`, when the game leaves) puts everything
-  back; `hud_layout_test` and `kart_presentation_test` cover both.
+  below `MEDIUM`), and `reserve_right` keeps that many pixels free at the top bar's right end,
+  so the clock and Pause | End sit just left of it. A game that needs the bottom right (Kart
+  Race's item button) moves the touch targets and the camera strip: `recalibrate_top: true`
+  puts Recalibrate in the top bar, left of Pause | End (End keeps the corner), styled by
+  `recalibrate_button`; `status_width` narrows the camera strip's row (centred; its text
+  wraps) and `reserve_bottom` keeps room under it for the game's own bottom widgets. With
+  Recalibrate moved up and no reserve, the empty bottom bar folds away and the strip sits on the
+  bottom margin. `set_status_area(width, reserve_bottom)` moves the strip later without a
+  re-skin (a re-skin re-lays out every label: about 1 ms on the desktop, 25 on the tablet).
+  Buttons keep their touch size. `clear_skin()` (and `clear_widgets()`, when the game leaves)
+  puts everything back; `hud_layout_test` and `kart_presentation_test` cover both.
 
 It is sized for a 1920x1080 canvas read from about 1 m away (`HudTheme`). Numbers are 96 px,
 text is never below 34 px, and buttons are 110 px tall.
@@ -1202,13 +1209,18 @@ module contract (interfaces, the scene tree, the signal map, the handling and bo
   slide; leaning further in tightens the arc. The charge fills in a corner (a quarter as fast
   on a straight) through three spark tiers. Turning the **resistance knob** up during a drift
   charges it 1.6× faster. Easing the lean releases a mini-turbo by tier.
-- **Items.** Rows of pods on each track. The item button (top right, 260 px) spins a 0.9 s
-  roulette, then fires on a tap. The Auto items option uses the bots' policy instead.
+- **Items.** Rows of pods on each track. The item button (bottom right, a 260 px disc with a
+  hit circle 1.25× its radius, at the far end of the screen from End) spins a 0.9 s roulette,
+  then fires on a tap. An item held unused for 2 s pulses (a scale tween and a gold rim glow).
+  The drift meter is an arc round the button's upper-left edge. The Auto items option uses the bots' policy instead.
 - **Grand Prix.** The cup runs Meadow Ring, Canyon Dash, Harbor Lights and Frost Pass in
   order, reversed the second time round. Points per race are 15, 12, 10, 8, 6, 4, 2, 1. A
   timed Just Ride sizes its last race to the time left (1-5 laps), and the game ends the
   segment on that race's finish line (`timed_end_mode = "game"`). An open Just Ride races until
-  the rider ends it. A results board follows each race, and the podium follows the last.
+  the rider ends it. A results board follows each race, and the podium follows the last: the
+  top three's own karts land on stepped blocks built on the start straight (`KartPodium`)
+  under a held camera, with the standings beside them. The title chip and the lap badge read
+  "Race n/N" (a timed GP's plan; "Race n" when open-ended).
 - **Boosts** also come from boost pads, a rocket start (70 rpm or more while "2" shows) and
   the Turbo Can.
 
@@ -1261,8 +1273,12 @@ HUD, with the face tracker running. Here is what holding the frame rate took on 
 - **Baked HUD.** `KartBaked` moves a widget into its own small SubViewport, which renders
   only when something in it changes. On screen it costs one draw call. The lap badge, racer
   list, ride strip and place badge are baked (the HUD went from 74 to 15 draw calls), and so
-  are the results board's and the podium's title, rows, blocks and pill (122 to 13, and 102 to
-  16). Portraits share one atlas and one material.
+  are the results board's and the podium's header, rows, plates and pill (122 to 13, and 102
+  to 16). Portraits share one atlas and one material. A hidden bake (the race HUD under a
+  board) waits until it shows, an idle one doesn't even `_process`, and a board builds its
+  bakes when it opens and frees them all when it closes, so the race runs with 6 viewports
+  (the screen, the 3D view and the HUD's four bakes), not the 17-20 that piled up after the
+  first board.
 - **Staggered bakes.** Bakes that share a `KartBakeQueue` take turns: the results board and
   the podium render one bake a frame, the HUD two. When a board appeared, all eleven of its
   bakes rendered in one frame (about 205 draw calls on the tablet; 186 for the board alone on
@@ -1372,7 +1388,7 @@ cores on a 4-core, throttling SoC, the render's CPU side, and the GDScript left 
 
 For measuring, set `DEV_TUNING` in `KartRace.gd` (off in every build). The game then logs
 `OPENRIDE_GAMES kart_race perf game_ms=… ticks=… tick_ms=… sync_ms=… hud_ms=… process_ms=…
-frame_ms=… frame_max_ms=… game_max_ms=… render_cpu_ms=… render_gpu_ms=… viewports=… fps=…
+frame_ms=… frame_max_ms=… game_max_ms=… render_cpu_ms=… render_gpu_ms=… viewports=… vp_renders=… fps=…
 draw_calls=… draw_calls_max=…
 primitives=… track=… flow=… tracker=… tier=…` every 5 s. `user://kart_tuning.cfg` (strings
 quoted) overrides the render settings (`[render] scale=0.62 msaa=0 outlines=true`), switches
@@ -1381,7 +1397,12 @@ props=false woods=false stand=false clouds=false hud=false fx=false`), forces a 
 count (`[world] track="meadow_ring" laps=1`), and fixes a tier with the governor off
 (`[governor] enabled=false tier=2`). `ticks` is logic ticks per frame and `tick_ms` their
 average; `process_ms` is the whole process step and `frame_ms` the frame (two probe nodes at the
-extremes of `process_priority`); `render_cpu_ms` sums every viewport's measured render time.
+extremes of `process_priority`); `render_cpu_ms` sums the measured render time of every
+viewport that rendered that frame, and `vp_renders` counts those renders a frame (2.0 is the
+screen and the 3D view alone). A viewport that didn't render (an idle bake) keeps reporting its
+last render's time, so before the UX polish pass the sum counted every idle bake's stale time
+every frame. `capture_kart_hud.gd` prints the same split per viewport on the desktop
+(`CAPTURE render …`), with the stale repeats it left out.
 
 **Tests and captures.**
 
@@ -1393,7 +1414,8 @@ extremes of `process_priority`); `render_cpu_ms` sums every viewport's measured 
   - `capture_kart.gd`: `--compose` takes the hero shots; `--play=SECONDS` races for a
     recording, used with `--write-movie FILE.avi --fixed-fps 30`.
   - `capture_world.gd`: every track, the grid, the chase cam and drone views.
-  - `capture_kart_hud.gd`: the HUD and the flow screens, with draw-call counts.
+  - `capture_kart_hud.gd`: the HUD and the flow screens (the race, the drift meter, the
+    results and the 3D podium), with draw-call counts and each viewport's render CPU.
   - `capture_kart_items.gd` and `capture_racers.gd`.
 - Measurements: `measure_kart_hud.gd` and `measure_kart_board.gd` count the HUD's and the
   boards' draw calls (the board's also frame by frame as it opens). `measure_kart_cpu.gd`

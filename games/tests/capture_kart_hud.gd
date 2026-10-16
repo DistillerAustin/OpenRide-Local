@@ -2,7 +2,7 @@ extends SceneTree
 ## Desktop screenshots of Kart Race's HUD and flow screens (#43, the presentation pass); needs a
 ## window, not headless:
 ##   $GODOT_BIN --path games -s res://tests/capture_kart_hud.gd -- --out=DIR [--prefix=hud]
-## Saves PREFIX_countdown, _race (drifting, an item held), _roulette, _lap (the lap banner),
+## Saves PREFIX_countdown, _race (drifting, an item held), _drift (the meter at tier 2), _roulette, _lap (the lap banner),
 ## _final (the final-lap banner), _results and _podium. The drift is a real one (the arrow key
 ## held into a corner); the item is set by hand.
 
@@ -68,6 +68,23 @@ func _run() -> void:
 			break
 	if not shot:
 		_save("%s/%s_race.png" % [out, prefix])
+	# The drift meter mid-charge (tier 2, the knob lit), set on the rider's state with the game
+	# frozen (time scale 0: no tick overwrites it), so the shot doesn't depend on catching a
+	# drift: PREFIX_drift.
+	var full: float = KartPhysics.TIER_SEC[2]
+	Engine.time_scale = 0.0
+	for f in 40:
+		k.drift_dir = 1
+		k.drift_charge = full * 0.62
+		k.drift_tier = 2
+		k.knob_boosting = true
+		game._kart_hud.item_button.set_drift(1, k.drift_charge, 2, true, 1.0 / 60.0)
+		await process_frame
+	_save("%s/%s_drift.png" % [out, prefix])
+	k.drift_dir = 0
+	k.drift_charge = 0.0
+	k.drift_tier = 0
+	Engine.time_scale = 1.0
 	# The HUDs' share of the draw calls.
 	for state in [[true, true], [false, true], [false, false]]:
 		game._kart_hud.visible = state[0]
@@ -81,6 +98,7 @@ func _run() -> void:
 		print("CAPTURE draw_calls kart_hud=%s hud=%s: %.1f (mean of 120 frames)" % [state[0], state[1], total / 120.0])
 	game._kart_hud.visible = true
 	_director.hud.visible = true
+	await _render_probe("race")
 	if OS.get_cmdline_user_args().has("--probe"):
 		var nodes: Array = game._kart_hud._gameplay.get_children() + game._kart_hud._root.get_children()
 		for n in nodes:
@@ -127,11 +145,56 @@ func _run() -> void:
 	Engine.time_scale = 1.0
 	await create_timer(1.6).timeout
 	_save("%s/%s_results.png" % [out, prefix])
+	await _render_probe("results")
 	while game.flow != game.Flow.PODIUM and not game.has_ended():
 		await process_frame
 	await create_timer(2.6).timeout
 	_save("%s/%s_podium.png" % [out, prefix])
+	await _render_probe("podium")
+	# Back to racing after the boards: the boards' viewports should be gone.
+	game._board.hide_board()
+	for i in 12:
+		await process_frame
+	await _render_probe("after boards")
 	quit()
+
+
+## Every viewport's measured render time (CPU), summed and per viewport, over 120 frames: the
+## render's CPU side that the tablet pays for each one (the frame probes' render_cpu_ms).
+func _render_probe(state: String) -> void:
+	var vps: Array = [root]
+	vps.append_array(root.find_children("*", "SubViewport", true, false))
+	for vp in vps:
+		RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
+	var last := {}
+	for i in 6:
+		await process_frame
+		for vp in vps:
+			last[vp] = RenderingServer.viewport_get_measured_render_time_cpu(vp.get_viewport_rid())
+	var per := {}
+	var total := 0.0
+	var stale := 0.0  # what summing every viewport's value would add (an idle one repeats its last)
+	var renders := 0
+	for f in 120:
+		await process_frame
+		for vp in vps:
+			if is_instance_valid(vp):
+				var ms := RenderingServer.viewport_get_measured_render_time_cpu(vp.get_viewport_rid())
+				var always: bool = vp == root or vp.render_target_update_mode == SubViewport.UPDATE_ALWAYS
+				if not always and ms == float(last.get(vp, -1.0)):
+					stale += ms
+					continue
+				last[vp] = ms
+				renders += 1
+				var key := "%s/%s" % [vp.get_parent().name if vp.get_parent() else "-", vp.name]
+				per[key] = per.get(key, 0.0) + ms
+				total += ms
+	var parts := []
+	for key in per:
+		if per[key] / 120.0 >= 0.005:
+			parts.append("%s=%.3f" % [key, per[key] / 120.0])
+	print("CAPTURE render %s: viewports=%d renders/frame=%.2f render_cpu_ms=%.3f (stale repeats not counted: +%.3f) (mean of 120 frames) %s" % [
+		state, vps.size(), renders / 120.0, total / 120.0, stale / 120.0, " ".join(parts)])
 
 
 ## Holds one arrow key (KEY_NONE: none).

@@ -49,6 +49,7 @@ var clock_panel: PanelContainer
 
 var frame: MarginContainer
 var top_bar: HBoxContainer
+var bottom_bar: HBoxContainer
 var circuit_strip: CircuitStrip
 var _widgets: HBoxContainer
 var _message: Label
@@ -128,6 +129,7 @@ func _init() -> void:
 	status_slot.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var bottom := _box(HBoxContainer.new(), rows, "BottomBar")
+	bottom_bar = bottom
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	recalibrate_button = HudTheme.button("Recalibrate", func(): recalibrate_pressed.emit())
 	recalibrate_button.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -174,8 +176,27 @@ func clear_widgets() -> void:
 ## effort multiplier itself); `clock_value_size` (int) shrinks the time left and the score (never
 ## below `HudTheme.MEDIUM`); `reserve_right` (px) keeps that much of the top bar's right end free,
 ## so the clock and Pause | End sit just left of it. Every button keeps its full touch size.
+##
+## Four more keys move the touch targets and the camera strip for a game that needs the bottom
+## right (Kart Race's item button): `recalibrate_top: true` puts Recalibrate in the top bar, left
+## of Pause | End (End keeps the corner), styled by `recalibrate_button` (StyleBox) if given;
+## `status_width` (px) narrows the camera strip's row to that width, centred (its text wraps);
+## `reserve_bottom` (px) keeps that much free under it (the game's own bottom widgets; without
+## it, the emptied bottom bar folds away and the strip sits on the bottom margin). A game can move
+## the strip later with `set_status_area` (Kart Race's boards).
 func set_skin(skin: Dictionary) -> void:
 	clear_skin()
+	if bool(skin.get("recalibrate_top", false)):
+		var buttons := pause_button.get_parent()
+		_skin_saved.append([recalibrate_button, "parent", &"", true, [recalibrate_button.get_parent(), recalibrate_button.get_index()]])
+		recalibrate_button.reparent(buttons, false)
+		buttons.move_child(recalibrate_button, 0)
+		_skin_set(recalibrate_button, "property", "size_flags_vertical", Control.SIZE_FILL)
+		_skin_set(recalibrate_button, "property", "custom_minimum_size", Vector2(0, HudTheme.BUTTON_HEIGHT * 0.8))
+	if float(skin.get("status_width", 0.0)) > 0.0 or float(skin.get("reserve_bottom", 0.0)) > 0.0:
+		set_status_area(float(skin.get("status_width", 0.0)), float(skin.get("reserve_bottom", 0.0)))
+	elif bool(skin.get("recalibrate_top", false)):
+		_skin_set(bottom_bar, "property", "visible", false)  # empty: the strip takes the bottom edge
 	if skin.has("ride_panel") and not bool(skin.ride_panel):
 		_skin_set(ride_panel, "property", "visible", false)
 	if skin.has("clock_value_size"):
@@ -208,11 +229,25 @@ func set_skin(skin: Dictionary) -> void:
 	for b: Button in [pause_button, end_button, recalibrate_button]:
 		if skin.has("font"):
 			_skin_set(b, "font", "font", skin.font)
-		var style: StyleBox = skin.get("end_button") if b == end_button and skin.has("end_button") else skin.get("button")
+		var style: StyleBox = skin.get("button")
+		if b == end_button and skin.has("end_button"):
+			style = skin.end_button
+		elif b == recalibrate_button and skin.has("recalibrate_button"):
+			style = skin.recalibrate_button
 		if style:
 			for state in ["normal", "hover", "disabled"]:
 				_skin_set(b, "stylebox", state, style)
 			_skin_set(b, "stylebox", "pressed", skin.get("button_pressed", style))
+
+
+## Moves the camera strip's row while a skin is on, without re-skinning (a re-skin re-lays out
+## every label): `width` (px, 0 = full) centred, `reserve_bottom` (px) kept free under it; with
+## none and Recalibrate moved up, the emptied bottom bar folds away. `clear_skin` undoes it.
+func set_status_area(width: float, reserve_bottom: float) -> void:
+	_skin_set(status_slot, "property", "size_flags_horizontal", Control.SIZE_SHRINK_CENTER if width > 0.0 else Control.SIZE_FILL)
+	_skin_set(status_slot, "property", "custom_minimum_size", Vector2(maxf(width, 0.0), 0))
+	_skin_set(bottom_bar, "property", "custom_minimum_size", Vector2(0, maxf(reserve_bottom, 0.0)))
+	_skin_set(bottom_bar, "property", "visible", reserve_bottom > 0.0 or recalibrate_button.get_parent() == bottom_bar)
 
 
 func clear_skin() -> void:
@@ -230,6 +265,11 @@ func clear_skin() -> void:
 				c.queue_free()
 			"property":
 				c.set(key, entry[4])
+			"parent":
+				var home: Node = entry[4][0]
+				if is_instance_valid(home):
+					c.reparent(home, false)
+					home.move_child(c, mini(int(entry[4][1]), home.get_child_count() - 1))
 			"font_size":
 				c.remove_theme_font_size_override(key)
 				if had:

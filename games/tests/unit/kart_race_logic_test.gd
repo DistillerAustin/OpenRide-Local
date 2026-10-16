@@ -196,7 +196,29 @@ func test_bots_still_running_are_placed_by_progress_with_projected_times() -> vo
 		var k: KartState = race.karts[id]
 		assert_bool(k.finished).is_true()
 		assert_float(k.finish_time).is_greater(last_time)
+		# Projected karts are spread by believable gaps, never the 0.01 s steps that read as fake.
+		assert_float(k.finish_time - last_time).is_greater_equal(0.25)
 		last_time = k.finish_time
+
+
+func test_a_projected_finish_uses_the_race_pace_not_a_momentary_stall() -> void:
+	var race := _race(Fixtures.circle(60.0), 2, 2)
+	var ended: Array = []
+	race.events.race_finished.connect(func(order: Array): ended.append(order))
+	_start(race)
+	var inputs := _inputs(2, 80.0)
+	inputs[0].power_w = 300.0
+	inputs[1].power_w = 200.0
+	while ended.is_empty():
+		# The bot stalls (a spin, a wall) just as the rider crosses the line.
+		if race.karts[0].lap == race.laps and race.karts[0].s > race.track.length - 3.0:
+			race.karts[1].speed = 0.5
+		race.step(DT, inputs)
+	var bot: KartState = race.karts[1]
+	assert_float(bot.finish_time).is_greater(race.time)  # it was still racing: projected
+	var left := (race.laps + 1) * race.track.length - race.progress(1)
+	# Timed at its race average (about its cruising speed), not at 0.5 m/s or the 3 m/s floor.
+	assert_float(bot.finish_time - race.time).is_less(left / 3.0 * 0.6)
 
 
 func test_hugging_a_wall_never_escapes_the_track_or_breaks_laps() -> void:

@@ -21,6 +21,8 @@ const GRID_GAP := 4.5
 const GRID_D := 2.5
 ## A kart still running when the race ends is timed as if it kept at least this speed.
 const PROJECT_MIN_SPEED := 3.0
+const PROJECT_SPEED_SHARE := 0.3  ## a projected finish's pace: this share of the speed now, the rest the race's average
+const GRID_ALLOWANCE := 10.0  ## metres the grid sits behind the line, roughly (the average pace's start)
 
 var events := KartRaceEvents.new()
 var physics := KartPhysics.new()
@@ -204,7 +206,14 @@ func _end_race() -> void:
 			last = maxf(last, k.finish_time)
 			continue
 		var left := maxf(0.0, (laps + 1) * track.length - progress(id))
-		var projected := maxf(time + left / maxf(k.speed, PROJECT_MIN_SPEED), last + 0.01)
+		# Its pace: the race's average so far (from the grid), leaning a little on its speed now,
+		# so a kart that just spun or hit a wall isn't timed as if it crawls home. Karts that would
+		# tie are spread by a believable gap (a quarter to three quarters of a second, fixed per
+		# kart), not the 0.01 s steps that read as fake on the board.
+		var covered := maxf(progress(id) - track.length + GRID_ALLOWANCE, 1.0)
+		var pace := lerpf(covered / maxf(time, 1.0), k.speed, PROJECT_SPEED_SHARE)
+		var gap := 0.25 + 0.5 * fposmod(float(id) * 0.618034, 1.0)
+		var projected := maxf(time + left / maxf(pace, PROJECT_MIN_SPEED), last + gap)
 		k.finished = true
 		k.finish_time = projected
 		_finish_order.append(id)
