@@ -35,15 +35,29 @@ with Godot's default font.
 
 Tug of War (#40) adds no recorded asset: its trees, bushes and rocks are the Kenney nature-kit
 models listed above (loaded from `games/dodge_ball/models/`), its bots are named from plain
-material and animal words, and its music is the repo's own `heave` style.
+material and animal words, and its music was the repo's own `heave` style (since #55 a rendered theme, below).
 | `games/safe_cracker/sfx/*.tres` (5 `SfxPreset` parameter sets: tumbler_click, proximity_tick, soft_alarm, vault_open, door_creak; synth settings, no samples) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | Every shape in `SafePlaces.gd`, `SafeBody.gd` and `SafeDial.gd` (six rooms, the safe, its dial and the gold, drawn in code) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
 Safe Cracker (#41) adds no recorded or imported asset: it draws everything in code, uses Godot's
-default font and the repo's own `noir` music style.
+default font and, until #55 (below), the repo's own `noir` music style.
 | `games/cadence_karaoke/sfx/*.tres` (4 `SfxPreset` parameter sets: beat_tick, streak_up, band_exit, ease_off_chime; synth settings, no samples) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `games/cadence_karaoke/shaders/grid.gdshader`, `ring.gdshader` and every mesh in `CadenceWorld.gd` (tunnel, beat rings, rail, orb and halo; shaders and primitive meshes, with a gradient texture made at runtime) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
 Cadence Karaoke (#42) adds no recorded or imported asset: it is drawn in code, uses Godot's
-default font and the repo's own `bright` music style.
+default font and, until #55 (below), the repo's own `bright` music style.
 
+## Rendered music and effects (#55)
+
+Every file below is synthesised by code written for this repo (`games/tools/music/`: numpy and
+scipy; drum synthesis, Karplus-Strong strings, FM and additive keys, saw stacks; compositions
+written for this repo). No samples, soundfonts or third-party material.
+
+| Asset | Source | Author | Licence |
+| --- | --- | --- | --- |
+| `games/dodge_ball/music/*.ogg`, `music/sfx/*.ogg` and `DodgeMusic.gd` ("Incoming!" and the game's effects) | Written for this repo (#55), `games/tools/music/songs/dodge_ball.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/tug_of_war/music/*.ogg`, `music/sfx/*.ogg` and `TugMusic.gd` ("Heave Together" and the game's effects) | Written for this repo (#55), `songs/tug_of_war.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/safe_cracker/music/*.ogg`, `music/sfx/*.ogg` and `SafeMusic.gd` ("Night Shift" and the game's effects) | Written for this repo (#55), `songs/safe_cracker.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/cadence_karaoke/music/neon_lines_bank.ogg`, `music/sfx/*.ogg` and `CadenceMusic.gd` ("Neon Lines": a sample bank and a score, and the game's effects) | Written for this repo (#55), `songs/cadence_karaoke.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/demo/music/*.ogg`, `music/sfx/*.ogg` and `DemoMusic.gd` ("Warm Up", `dodge`, `hit`) | Written for this repo (#55), `songs/demo.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `audio/cues/*.ogg` and `audio/CueSounds.gd` (the framework's cues) | Written for this repo (#55), `songs/cues.py` | The OpenRide Authors | Apache-2.0, the repo's licence |
