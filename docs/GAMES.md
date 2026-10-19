@@ -1196,8 +1196,13 @@ exactly where you score. `CadenceLogic` holds the rules (headless-tested by `cad
 `CadenceWorld` the 3D view, `CadenceStatus` the HUD widget and `CadenceAudio` the sounds.
 
 **The gap.** `gap` is -1 (behind the box) to 1 (in front of it), 0 inside the band, and depends
-on the cadence right now and nothing earlier. The target is always a multiple of 5 rpm (60 to start; a circuit's profile moves it in 5-rpm jumps). The HUD shows one speed number, the target rpm, and says "SLOW DOWN" or "SPEED UP" when out
-of the band. While a pace change waits for its boundary, whichever of the old and new targets is
+on the cadence right now and nothing earlier. The target is always a multiple of 5 rpm (60 to start; a circuit's profile moves it in 5-rpm jumps). The HUD widget (`CadenceStatus`) makes the target rpm its hero (96 px, the world's neon
+gradient, popping when it changes), with a chip for a pending change ("125 in 12 s"), "In band" and
+the streak multiplier (gold, popping on each step, "×2!" slammed at the max), and a WARN badge with a
+drawn arrow, "SLOW DOWN" ▼ or "SPEED UP" ▲, when out of the band ("EASE OFF", red and breathing,
+over the power cap). The badge flashes on each beat. The look (`ui_theme()`, the HUD skin, the −5 and
++5 rpm buttons at the bottom centre) is rebuilt per segment from `CadenceWorld.theme_color`, ink
+`#12052A`, and again when the rider changes the colour option. While a pace change waits for its boundary, whichever of the old and new targets is
 nearer the rider's cadence counts, so riding the new pace is never "ahead" of a beat that hasn't
 moved. **The bike reports a new cadence about once a second** (once a pedal revolution): the
 service streams frames at 5 Hz (`REPORT_RATE_MS` 200) but each rpm repeats for about four, so the

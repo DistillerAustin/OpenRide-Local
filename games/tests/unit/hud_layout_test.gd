@@ -226,3 +226,29 @@ func test_a_game_theme_skin_keeps_the_layout() -> void:
 	for b: Button in [hud.pause_button, hud.end_button]:
 		assert_float(b.size.y).is_greater_equal(HudTheme.BUTTON_HEIGHT * 0.8)
 	hud.clear_skin()
+
+
+func test_cadence_karaoke_status_fits_its_budget() -> void:
+	# Cadence Karaoke's widget (UI_STYLE.md §5): the hero target with the longest texts, in its
+	# skin, stays within 850 x 120 px and overlaps nothing.
+	hud.clear_widgets()
+	var look := GameTheme.new(CadenceWorld.THEMES.warmup, Color("12052a"), 0.25, true)
+	hud.set_skin(look.hud_skin())
+	var cadence := CadenceStatus.new(look)
+	hud.add_widget(cadence)
+	cadence.set_target(120)
+	cadence.set_next("125 in 12 s")
+	cadence.set_info(100, 1.75)
+	cadence.set_alert(CadenceStatus.ALERT_SLOW)
+	await _settle()
+	var rect := cadence.get_global_rect()
+	assert_float(rect.size.x).override_failure_message("cadence widget %s" % rect).is_less_equal(850.0)
+	assert_float(rect.size.y).override_failure_message("cadence widget %s" % rect).is_less_equal(120.0)
+	_assert_no_overlaps("cadence", [hud])
+	cadence.set_alert(CadenceStatus.ALERT_EASE)
+	cadence.set_alert(CadenceStatus.ALERT_FAST)
+	cadence.streak_up(2.0)
+	await _settle()
+	assert_float(cadence.get_global_rect().size.x).is_less_equal(850.0)
+	_assert_no_overlaps("cadence speed up", [hud])
+	hud.clear_skin()

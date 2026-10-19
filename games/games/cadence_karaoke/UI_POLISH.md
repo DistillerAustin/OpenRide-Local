@@ -27,7 +27,7 @@ caption.
 
 ## P0: blocking
 
-1. **The target rpm must be the hero.** Replace `CadenceStatus`'s row 1 with a hero badge:
+1. [x] **The target rpm must be the hero.** Replace `CadenceStatus`'s row 1 with a hero badge:
    - The target as `look.hero(str(rpm), HudTheme.BIG)` (accent gradient), with "rpm target" as
      a 34 px caption beside it.
    - The pending change ("→ 90 in 7 s") as a small accent chip after it.
@@ -41,14 +41,14 @@ caption.
 
 ## P1: high impact
 
-1. **Adopt the theme, per segment.** In `_on_prepare`, after `_apply_look()`, set
+1. [x] **Adopt the theme, per segment.** In `_on_prepare`, after `_apply_look()`, set
    `_look = GameTheme.new(world.theme_color, Color("12052a"), 0.25, true)`. Return it from
    `ui_theme()`, call `hud.set_skin(_look.hud_skin())`, and restyle `CadenceStatus`. The
    rider's colour option changes `theme_color` mid-game (`_on_option_changed`): rebuild the
    look and re-skin then. A re-skin re-lays out every label (about 25 ms on the tablet), which
    is fine on the pause screen, where options change. *Verify:* captures in two roles
    (`--role=warmup`, `--role=cooldown`). The HUD edges match the tunnel.
-2. **The −/+ buttons** (`CadenceKaraoke._ready`).
+2. [x] **The −/+ buttons** (`CadenceKaraoke._ready`).
    - Build them with `look.button(…, GameTheme.PRIMARY)`, labelled "−5" and "+5", with a
      34 px "rpm" caption, or "SLOWER" and "FASTER". "− 5" alone doesn't say what moves.
    - Lay them out in an `HBoxContainer` anchored bottom centre
@@ -61,28 +61,44 @@ caption.
    before the look exists). *Verify:* `intro_touch_test`-style taps in a new
    `cadence_scene_test`: a tap on each changes `pending_adjust`, and a tap on the intro card
    over them does nothing.
-3. **Directional alerts.** "SLOW DOWN", "SPEED UP" and "EASE OFF" are 34 px amber words at the
+3. [x] **Directional alerts.** "SLOW DOWN", "SPEED UP" and "EASE OFF" are 34 px amber words at the
    end of row 2. Show them as a WARN badge with an arrow drawn as a shape (▲/▼ polygons, not
    glyphs), and "EASE OFF" as a BAD badge with `GameTheme.pulse` while `logic.frozen`. Pulse
    on the beat: `world.beat` is already computed. A `modulate` flash of the badge's edge on
    each beat costs nothing. *Verify:* tension capture.
-4. **Streak juice.** On the `streak` event, `GameTheme.pop` the "×1.5" streak label (gold,
+4. [x] **Streak juice.** On the `streak` event, `GameTheme.pop` the "×1.5" streak label (gold,
    `TARGET`), and slam "×2!" when the multiplier maxes out. The sound already plays.
    *Verify:* a `--play=45` run shows the pops.
 
 ## P2: nice
 
-1. Copy: `GameInfo.how_to` says "keep the ball on the line", but `how_to_text` says "keep the
+1. [x] Copy: `GameInfo.how_to` says "keep the ball on the line", but `how_to_text` says "keep the
    ball in the box". Pick one ("keep the orb on the beat line"). `how_to_text`'s two branches
    are identical, so drop the `if`. The intro line wraps to an orphan "+ move the target 5
    rpm". Shorten it to "Match the target rpm. − and + change it".
-2. The pace message "Target → 90 rpm at the next phase" is internal jargon ("phase"). Use
+2. [x] The pace message "Target → 90 rpm at the next phase" is internal jargon ("phase"). Use
    "Next: 90 rpm, on the next bar". The chip (P0.1) already shows the countdown.
-3. The −/+ buttons stay visible, dimmed, under the intro card's shade. That's harmless (the
+3. [x] The −/+ buttons stay visible, dimmed, under the intro card's shade. That's harmless (the
    shade takes the touch), but hide them until `_on_start` for a cleaner card.
-4. The HUD panels' navy fill clashes with the black tunnel. The theme's violet ink fixes this
+4. [x] The HUD panels' navy fill clashes with the black tunnel. The theme's violet ink fixes this
    with P1.1.
 
 ## Out of scope
 
 Bands, tolerances, streak timing, music tempo logic and the tunnel's look.
+
+## Done (2026-10-19)
+
+Every P0, P1 and P2 item is done (`[x]` above). Notes:
+
+- P0.1: the hero sits beside its two caption rows, not above them: 96 px of hero plus a 34 px
+  row can't fit 120 px stacked. The face's empty descent is trimmed with a negative margin.
+  Measured with the longest texts in `hud_layout_test` (`test_cadence_karaoke_status_fits_its_budget`).
+- Arrows (the chip's ▶, the alert's ▲/▼) are drawn polygons: Lilita One has no arrow glyphs,
+  and a fallback face would split the HUD's batch. The chip reads "125 in 12 s".
+- P1.1: the pause card keeps the look it got at the segment's start when the colour option
+  changes mid-segment (the session applies `ui_theme()` only in prepare). The HUD, the widget
+  and the buttons follow at once. Logged as a framework request.
+- P1.4 verified by `cadence_scene_test` rather than a `--play=45` movie (no video on this run).
+- Draw calls in play (desktop, `capture_ui_states`): 50 before, 64 after; pause 62 → 81.
+  Within the 120 budget.
