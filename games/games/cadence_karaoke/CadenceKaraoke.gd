@@ -180,6 +180,7 @@ func _restyle() -> void:
 		_status.apply_theme(_look)
 	for b in [_minus, _plus]:
 		_style_pace_button(b)
+	ui_theme_changed.emit()  # the intro card, the pause screen and the summary follow
 
 
 func _on_prepare(seg: Dictionary) -> void:

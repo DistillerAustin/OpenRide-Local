@@ -286,7 +286,7 @@ func test_the_overlay_draws_every_calibration_field() -> void:
 	assert_str(overlay._prompt.text).is_equal("Lean comfortably left")
 	assert_str(overlay._detail.text).is_equal("CALIBRATING  ·  STEP 2 OF 3  ·  TRY 2")
 	assert_str(overlay._retry.text).is_equal("Hold still for a moment")
-	assert_float(overlay._bar.size.x).is_equal(450.0)
+	assert_float(overlay.figure().fraction).is_equal(0.5)  # the progress ring
 	Session._on_calibration_progress("centre", 0.4, 0, 1, 1, "")
 	overlay._process(0.0)
 	assert_str(overlay._detail.text).is_equal("CALIBRATING")  # centre only: no step count

@@ -199,3 +199,18 @@ func test_the_look_follows_the_tunnel() -> void:
 	assert_that(panel.border_color).is_equal(violet.panel_edge)
 	var hud_panel: StyleBoxFlat = game.hud.ride_panel.get_theme_stylebox("panel")
 	assert_that(hud_panel.border_color).is_equal(violet.panel_edge)
+
+
+## The colour option changes the look mid-segment: the game emits `ui_theme_changed`, and the
+## session restyles the pause screen (where the option is picked), the intro card and the
+## calibration with it.
+func test_a_look_changed_mid_segment_reaches_the_pause_screen() -> void:
+	var game := _start_session()
+	var before: GameTheme = director.pause_overlay.theme
+	assert_object(before).is_same(game.ui_theme())
+	game.change_option("look", "violet")
+	var violet: GameTheme = game.ui_theme()
+	assert_object(violet).is_not_same(before)
+	assert_object(director.pause_overlay.theme).is_same(violet)
+	assert_object(director.intro_card.theme).is_same(violet)
+	assert_object(director.calibration.theme).is_same(violet)
