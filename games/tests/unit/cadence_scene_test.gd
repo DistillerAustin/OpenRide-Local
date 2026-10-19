@@ -203,7 +203,7 @@ func test_the_look_follows_the_tunnel() -> void:
 
 ## The colour option changes the look mid-segment: the game emits `ui_theme_changed`, and the
 ## session restyles the pause screen (where the option is picked), the intro card and the
-## calibration with it.
+## calibration with it, and keeps it for the summary.
 func test_a_look_changed_mid_segment_reaches_the_pause_screen() -> void:
 	var game := _start_session()
 	var before: GameTheme = director.pause_overlay.theme
@@ -214,3 +214,4 @@ func test_a_look_changed_mid_segment_reaches_the_pause_screen() -> void:
 	assert_object(director.pause_overlay.theme).is_same(violet)
 	assert_object(director.intro_card.theme).is_same(violet)
 	assert_object(director.calibration.theme).is_same(violet)
+	assert_object(director.looks.get("cadence_karaoke")).is_same(violet)

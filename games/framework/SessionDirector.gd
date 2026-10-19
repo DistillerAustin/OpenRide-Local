@@ -47,6 +47,8 @@ var _pause_screen_up := false
 ## The current pause began (or ran) under a calibration: its resume plays no cue.
 var _calibration_pause := false
 var _last_recalibrate_msec := -1
+## Each game's last look this session (`Game.ui_theme()`), by game_id, for the summary.
+var looks := {}
 
 
 func _ready() -> void:
@@ -122,6 +124,7 @@ func _on_session_started(plan: Dictionary) -> void:
 	results = []
 	segment = {}
 	calibrated_mode = ""
+	looks = {}
 	_close_game()
 	_hide_overlays()
 	summary_screen.visible = false
@@ -237,13 +240,13 @@ func _on_session_finished(summary: Dictionary) -> void:
 	Session.set_tracker_mode("off")
 	AudioDirector.end_session()
 	AudioDirector.play_cue(AudioDirector.CUE_SUMMARY)
-	summary_screen.show_summary(summary, Session.plan)
+	summary_screen.show_summary(summary, Session.plan, looks)
 
 
 # --- Game ---
 
 ## Styles the intro card, the pause screen and the calibration in the game's look, at each
-## segment and whenever the game emits `ui_theme_changed`.
+## segment and whenever the game emits `ui_theme_changed`; remembers it for the summary.
 func _apply_look() -> void:
 	if not game:
 		return
@@ -251,6 +254,8 @@ func _apply_look() -> void:
 	intro_card.apply_theme(look)
 	pause_overlay.apply_theme(look)
 	calibration.apply_theme(look)
+	if look:
+		looks[game.game_id] = look
 
 
 func _on_game_ended() -> void:

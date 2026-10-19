@@ -171,6 +171,19 @@ func test_ending_on_the_intro_card_records_the_game_as_skipped() -> void:
 	assert_bool(Session.summary.results[0].skipped).is_true()
 
 
+func test_the_summary_wears_the_look_of_the_game_it_follows() -> void:
+	_start(_plan([_seg("safe_cracker", "free", 60)], "just_ride"))
+	assert_object(director.looks.get("safe_cracker")).is_same(director.game.ui_theme())
+	_step(LocalSession.INTRO_SEC + 0.1)
+	director.pause_overlay.end_confirmed.emit()
+	assert_bool(director.summary_screen.visible).is_true()
+	assert_str(director.summary_screen.shape).is_equal("single")
+	assert_object(director.summary_screen.theme).is_same(director.looks.safe_cracker)
+	# The game has left: the calibration and the cards are back to the house look / plain.
+	assert_object(director.calibration.theme).is_same(GameTheme.house())
+	assert_object(director.intro_card.theme).is_null()
+
+
 func test_summary_done_exits_and_the_desktop_starts_again() -> void:
 	_start(_plan([_seg("demo", "free", -1)], "just_ride"))
 	Session.request_end()
