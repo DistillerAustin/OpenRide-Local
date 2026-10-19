@@ -54,6 +54,7 @@ var circuit_strip: CircuitStrip
 var _widgets: HBoxContainer
 var _message: Label
 var _score_text := ""
+var _message_pop := false  ## a skin's `message_font`: the message pops in
 ## What `set_skin` overrode, to put back: [Control, kind, name, had_override, old value].
 var _skin_saved: Array = []
 
@@ -184,8 +185,17 @@ func clear_widgets() -> void:
 ## `reserve_bottom` (px) keeps that much free under it (the game's own bottom widgets; without
 ## it, the emptied bottom bar folds away and the strip sits on the bottom margin). A game can move
 ## the strip later with `set_status_area` (Kart Race's boards).
+##
+## Two keys style the centre message (`show_message`): `message_font` (Font; the message then
+## pops in, `GameTheme.pop`, whenever it appears or its text changes) and
+## `message_outline_color` (Color). `GameTheme.hud_skin()` sets both.
 func set_skin(skin: Dictionary) -> void:
 	clear_skin()
+	if skin.has("message_font"):
+		_skin_set(_message, "font", "font", skin.message_font)
+		_message_pop = true
+	if skin.has("message_outline_color"):
+		_skin_set(_message, "color", "font_outline_color", skin.message_outline_color)
 	if bool(skin.get("recalibrate_top", false)):
 		var buttons := pause_button.get_parent()
 		_skin_saved.append([recalibrate_button, "parent", &"", true, [recalibrate_button.get_parent(), recalibrate_button.get_index()]])
@@ -251,6 +261,7 @@ func set_status_area(width: float, reserve_bottom: float) -> void:
 
 
 func clear_skin() -> void:
+	_message_pop = false
 	for i in range(_skin_saved.size() - 1, -1, -1):
 		var entry: Array = _skin_saved[i]
 		var c: Control = entry[0]
@@ -317,9 +328,12 @@ func _skin_set(c: Control, kind: String, key: StringName, value: Variant) -> voi
 
 ## A short centred message over the middle of the screen ("Game over! Next run in 5").
 func show_message(text: String, color := HudTheme.INK) -> void:
+	var fresh := text != _message.text or not _message.visible
 	_message.text = text
 	_message.add_theme_color_override("font_color", color)
 	_message.visible = true
+	if fresh and _message_pop:
+		GameTheme.pop(_message, 1.15)
 
 
 func hide_message() -> void:

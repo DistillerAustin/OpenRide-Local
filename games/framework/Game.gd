@@ -64,6 +64,13 @@ func intro_visual() -> Control:
 	return null
 
 
+## The game's look (framework/ui/UI_STYLE.md), or null for the kit's plain one. Session styles
+## the intro card and the pause screen with it; the game skins the HUD itself in `_on_prepare`
+## (`hud.set_skin(theme.hud_skin())`). Called after `_on_prepare`.
+func ui_theme() -> GameTheme:
+	return null
+
+
 ## The intro card's target line, e.g. "Hold 250 W" or "Keep cadence above 70 rpm".
 func target_text(_segment: Dictionary) -> String:
 	return ""

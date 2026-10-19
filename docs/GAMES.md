@@ -428,6 +428,10 @@ For work games, set the thresholds so that 3 stars needs about 1.3× effort. A p
   (`game_results.variant`, schema 7).
 - Override `how_to_text(segment)` and `intro_visual()` to give the intro card a dynamic how-to
   line and a small picture or animation (Dodge Ball shows its mode).
+- Override `ui_theme()` to return the game's `GameTheme` (see "Game UI kit"). The session then
+  styles the intro card and the pause screen with it; the game skins the HUD itself in
+  `_on_prepare` with `hud.set_skin(theme.hud_skin())`. The default, `null`, keeps the kit's plain
+  look.
 - `end_segment()` ends the segment. It is honoured in `end_mode: game`, in open-ended
   segments, and after `request_finish`. A game that finishes early in a timed slot starts another
   round instead (epic #31, "Short games fill their slot").
@@ -519,6 +523,9 @@ Dodge Ball, the mode).
   Recalibrate moved up and no reserve, the empty bottom bar folds away and the strip sits on the
   bottom margin. `set_status_area(width, reserve_bottom)` moves the strip later without a
   re-skin (a re-skin re-lays out every label: about 1 ms on the desktop, 25 on the tablet).
+  Two more keys style the centre message: `message_font` (it then pops in whenever it appears
+  or its text changes) and `message_outline_color`; `GameTheme.hud_skin()` sets every styling
+  key.
   Buttons keep their touch size. `clear_skin()` (and `clear_widgets()`, when the game leaves)
   puts everything back; `hud_layout_test` and `kart_presentation_test` cover both.
 
@@ -528,7 +535,28 @@ text is never below 34 px, and buttons are 110 px tall.
 Games add their own widgets to the top-centre slot with `hud.add_widget()`. Keep them slim (a
 row or two of small text, as Dodge Ball's status) so they stay above the horizon, for example a
 `TargetBand` (a cadence floor or a power cap) or a `BigNumber`. `StarRow` draws stars as
-shapes, so no font needs the glyph. Everything uses Godot's default font.
+shapes, so no font needs the glyph. The kit's plain look uses Godot's default font; a game with
+a `GameTheme` uses the shared display face.
+
+### Game UI kit
+
+`framework/ui/UI_STYLE.md` is the style guide every game follows: one OFL display face (Lilita
+One, `games/assets/fonts/`), ink outlines, badge panels, pill buttons, shared meaning colours
+(good, warn, bad, target) with an accent and an ink per game, motion rules, touch targets and
+the draw-call budget. `GameTheme` (`framework/ui/GameTheme.gd`) is its kit: labels, gradient hero
+text, panel, badge and card styles, buttons, a HUD skin, and `pop` / `slam` / `flash` / `pulse` /
+`fade` tweens. Kart Race keeps its own `KartTheme`, which follows the same rules.
+
+- A game opts in through `Game.ui_theme()`. `SessionDirector` calls `IntroCard.apply_theme()`
+  and `PauseOverlay.apply_theme()` with it at each segment (the themed countdown slams each 3-2-1
+  in gold), and with `null` when the game leaves. Layout, text and touch behaviour don't change.
+- The summary, the calibration screens and the open-ride "Game over" panel stay neutral.
+- `HudTheme.style_label` and `HudTheme.style_button` put the plain look back on a restyled node.
+- `game_theme_test` covers the kit and the opt-in theming (and that `null` fully undoes it);
+  `hud_layout_test` lays the HUD out with a theme skin too.
+- `tests/capture_ui_states.gd` (needs a window) saves half-size screenshots of any game at its
+  intro, play, a high-tension moment, pause and the summary, with each frame's draw calls:
+  `$GODOT_BIN --path games -s res://tests/capture_ui_states.gd -- --game=tug_of_war --out=DIR`.
 
 ### Calibration UI
 

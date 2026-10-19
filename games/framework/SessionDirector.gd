@@ -162,6 +162,10 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	calibration.camera_game = info.uses_camera()
 	_calibrate_for(info)
 
+	var look := game.ui_theme()
+	intro_card.apply_theme(look)
+	pause_overlay.apply_theme(look)
+
 	var previous: Dictionary = results.back() if not results.is_empty() else {}
 	var previous_info := GameRegistry.info(str(previous.get("game_id", ""))) if not previous.is_empty() else null
 	intro_card.show_segment(info, segment, game.target_text(segment), previous,
@@ -374,6 +378,8 @@ func _close_game() -> void:
 	info = null
 	hud.visible = false
 	hud.clear_widgets()
+	intro_card.apply_theme(null)
+	pause_overlay.apply_theme(null)
 	calibration.camera_game = false
 	var current := get_tree().current_scene
 	if current is Game or current == null:

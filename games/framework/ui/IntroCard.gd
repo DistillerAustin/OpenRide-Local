@@ -26,6 +26,11 @@ var _previous: Label
 var _previous_stars: StarRow
 ## The deliberate way to skip, shown only when skipping leaves a segment to play.
 var skip_button: Button
+## The game's look (`Game.ui_theme()`), or null for the kit's plain card.
+var theme: GameTheme
+
+var _card: PanelContainer
+var _shown_count := -1
 
 
 func _init() -> void:
@@ -41,6 +46,7 @@ func _init() -> void:
 	add_child(shade)
 
 	var card := PanelContainer.new()
+	_card = card
 	card.add_theme_stylebox_override("panel", HudTheme.panel_style(HudTheme.CARD, 32))
 	card.position = (Vector2(HudTheme.W, HudTheme.H) - CARD_SIZE) / 2
 	card.size = CARD_SIZE
@@ -73,6 +79,35 @@ func _init() -> void:
 	skip_button = HudTheme.button("Skip this game", _on_skip_pressed, Color(0.3, 0.3, 0.36))
 	skip_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	box.add_child(skip_button)
+
+
+## Styles the card in a game's look (`Game.ui_theme()`): the card, the display face, the title
+## in the accent's gradient, the target in TARGET gold and the countdown digits slamming in.
+## null puts the kit's plain card back. The layout and every text stay the same.
+func apply_theme(new_theme: GameTheme) -> void:
+	theme = new_theme
+	_shown_count = -1
+	if theme:
+		_card.add_theme_stylebox_override("panel", theme.card_style())
+		theme.style_label(_role, HudTheme.SMALL, null, true)
+		theme.style_label(_title, HudTheme.BIG, GameTheme.INK)
+		theme.set_gradient(_title)
+		theme.style_label(_how_to, HudTheme.BODY, GameTheme.INK, true)
+		theme.style_label(_target, HudTheme.BODY, GameTheme.TARGET, true)
+		theme.style_label(_count, HudTheme.HUGE, GameTheme.INK, true)
+		theme.style_label(_previous, HudTheme.SMALL, GameTheme.MUTED, true)
+		theme.style_button(skip_button, GameTheme.SECONDARY)
+	else:
+		_card.add_theme_stylebox_override("panel", HudTheme.panel_style(HudTheme.CARD, 32))
+		HudTheme.style_label(_role, HudTheme.SMALL, _role.get_theme_color("font_color"))
+		HudTheme.style_label(_title, HudTheme.BIG)
+		HudTheme.style_label(_how_to, HudTheme.BODY)
+		HudTheme.style_label(_target, HudTheme.BODY, HudTheme.GOOD)
+		HudTheme.style_label(_count, HudTheme.HUGE, HudTheme.WARN)
+		HudTheme.style_label(_previous, HudTheme.SMALL, HudTheme.MUTED)
+		HudTheme.style_button(skip_button, Color(0.3, 0.3, 0.36))
+	_count.scale = Vector2.ONE
+	_count.modulate.a = 1.0
 
 
 ## Shows the card for a segment. `previous` is the last result (or empty), with its title.
@@ -117,8 +152,13 @@ func set_time_left(seconds: float) -> void:
 		_count.text = "Get ready"
 		_count.add_theme_font_size_override("font_size", HudTheme.BIG)
 		_count.add_theme_color_override("font_color", HudTheme.MUTED)
+		if theme:
+			theme.set_gradient(_count, [], true)
 		return
 	var whole := ceili(seconds)
+	if theme:
+		_themed_count(whole)
+		return
 	_count.text = str(whole) if whole > 0 else "Go!"
 	_count.add_theme_font_size_override("font_size", HudTheme.HUGE if whole <= 3 else HudTheme.BIG)
 	_count.add_theme_color_override("font_color", HudTheme.WARN if whole <= 3 else HudTheme.MUTED)
@@ -134,3 +174,17 @@ func _centred(box: Container, font_size: int, color := HudTheme.INK) -> Label:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(label)
 	return label
+
+
+## The themed countdown: whole seconds in the accent, then 3-2-1 and "Go!" in gold, each
+## slamming in. Touches the label only when the number changes.
+func _themed_count(whole: int) -> void:
+	if whole == _shown_count:
+		return
+	_shown_count = whole
+	var close := whole <= 3
+	_count.text = str(whole) if whole > 0 else "Go!"
+	theme.style_label(_count, HudTheme.HUGE if close else HudTheme.BIG, GameTheme.INK, true)
+	theme.set_gradient(_count, GameTheme.GOLD_GRADIENT if close else [])
+	if close:
+		GameTheme.slam(_count, 1.8)

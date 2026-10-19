@@ -213,3 +213,16 @@ func test_a_skin_is_opt_in_and_clears() -> void:
 	assert_object(label.get_theme_font("font")).is_same(before_font)
 	assert_object(hud.ride_panel.get_theme_stylebox("panel")).is_same(before_panel)
 	assert_object(hud.pause_button.get_theme_stylebox("normal")).is_same(before_button)
+
+
+func test_a_game_theme_skin_keeps_the_layout() -> void:
+	# GameTheme.hud_skin() (the shared kit's display face, panels and pills) with the longest
+	# texts: still no overlaps, still clear of the road, and the buttons keep their touch size.
+	hud.set_skin(GameTheme.new(Color(0.22, 0.71, 1.0), Color(0.05, 0.1, 0.24)).hud_skin())
+	hud.show_message("Game over! Next run in 5", HudTheme.WARN)
+	await _settle()
+	_assert_no_overlaps("game theme", [hud])
+	_assert_road_clear("game theme", [hud])
+	for b: Button in [hud.pause_button, hud.end_button]:
+		assert_float(b.size.y).is_greater_equal(HudTheme.BUTTON_HEIGHT * 0.8)
+	hud.clear_skin()
