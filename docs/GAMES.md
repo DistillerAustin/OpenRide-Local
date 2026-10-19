@@ -1263,7 +1263,17 @@ their own line, drift, item and aggression personas. Bot power: easy 0.35→0.60
 finish. Stars are points a minute (standard 90, 155, 270): mid-pack earns one star, a podium
 two, and three takes podiums plus effort.
 
-**Options** (per rider): Driver, Assist, Camera (chase or close) and Auto items. **Stats:**
+**The pick.** Gameplay opens on a kart and track picker (`KartPicker`): loading, then
+calibration, then the "Get ready" card, then the picker, then the title fly-over and the grid's
+3-2-1-GO. Eight kart cards, the four tracks with baked thumbnails and a big START!, every
+target at least 180 px and far from End. It preselects the rider's last kart and track and
+starts by itself after 20 s (any tap on a choice restarts the count), so a 5-minute ride is one
+race on the course the rider chose. The GP starts at that track and the others follow in cup
+order. Nothing moves or scores until GO; the session clock runs meanwhile. A track other than
+the one built behind the intro card rebuilds behind a short loading card.
+
+**Options** (per rider): Driver, Assist, Camera (chase or close), Auto items and Starting
+track (the last two picks). The rider's kart carries their profile name (`rider_name`). **Stats:**
 `position`, `races`, `wins`, `podiums`, `best_lap`, `race_time`, `boosts`, `items_hit`,
 `avg_power` and `ghost_trace` (the rider's distance every few seconds, for future ghosts).
 

@@ -13,6 +13,7 @@ const SCRIPTS := {
 }
 
 static var _lengths := {}
+static var _titles: Array = []
 ## Developer aid (KartRace's tuning file, [world] track=...): every race is this track instead.
 static var dev_track := ""
 
@@ -22,6 +23,14 @@ static func build(track_id: String) -> KartTrackDef:
 		track_id = dev_track
 	var path: String = SCRIPTS.get(track_id, SCRIPTS[CUP[0]])
 	return load(path).build()
+
+
+## The cup's track titles, CUP order (the Starting track option's labels).
+static func titles() -> Array:
+	if _titles.is_empty():
+		for id in CUP:
+			_titles.append(load(SCRIPTS[id]).build().title)
+	return _titles.duplicate()
 
 
 ## The track's centre-line length, metres (cached: baking a model takes a few milliseconds).

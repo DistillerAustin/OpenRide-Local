@@ -39,6 +39,15 @@ func _init(duration: float, tracks: Array, racers := 8) -> void:
 		_wins[id] = 0
 
 
+## The cup in its usual order, starting at `first` (the picker's starting track): the others
+## follow round it. An unknown id leaves the order as it is.
+static func cup_from(tracks: Array, first: String) -> Array:
+	var i := tracks.find(first)
+	if i <= 0:
+		return tracks.duplicate()
+	return tracks.slice(i) + tracks.slice(0, i)
+
+
 ## The estimated lap time, seconds: the track's length at the kart speed EST_FTP_SHARE of FTP
 ## holds on the flat.
 static func estimate_lap_sec(track_length: float, ftp_w: float) -> float:
