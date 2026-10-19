@@ -1170,7 +1170,18 @@ between them. Winning hauls the bot off its pier into the river; losing pulls th
 view follows the Dodge Ball recipe for the tablet (a scaled `SubViewport`, no MSAA, unshaded
 water lit by hand, per-vertex lit everything else, MultiMesh rope and crowd, CPUParticles3D for
 the splash). On the tablet it held 59-62 fps (mock build, 2026-10-03). `tests/capture_tug.gd`
-takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording.
+takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording (add
+`--snaps` for half-size stills of each HUD state instead of a video).
+
+**UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
+rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
+leaning 0.12, the face upright. `TugStatus` is the hero tug meter: the watts either side of a
+420 x 40 rope bar, filled from the centre towards the leader in that team's colour (YOU in the
+gloves' blue, BOT in the bot's body colour, lifted for contrast), with a rope knot at `p`; under
+it, best-of pips (a "RUNG n" badge on the ladder, "WON n" in an endless ride) and the bot's
+name. PEDAL!, SURGE! (breathing) and REST n take the pips' place while they hold. At most
+790 x 115 px with the longest texts (`tug_status_layout_test`), no per-frame code, about 14 draw
+calls (99-101 in play on the desktop). The intro card shows the first bot (`TugBotPortrait`).
 
 ## Safe Cracker (#41)
 
