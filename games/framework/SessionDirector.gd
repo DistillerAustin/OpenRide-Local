@@ -146,9 +146,6 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	var camera_mode := next.tracker_mode_for_segment(segment)
 	if camera_mode != info.tracker_mode:
 		info = info.with_tracker_mode(camera_mode)
-	Session.set_tracker_mode(info.tracker_mode)
-	calibration.camera_game = info.uses_camera()
-	_calibrate_for(info)
 	Effort.begin_segment(bool(segment.get("effort", false)))
 	AudioDirector.begin_segment(segment)
 	hud.setup(info, segment)
@@ -157,6 +154,13 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	pause_overlay.set_options(info.options, game.option)
 	game.prepare(segment)
 	game.set_paused(Session.paused)
+	# The camera mode goes to Kotlin only once the game has loaded: the session's first camera
+	# mode starts the calibration, and a game that builds for seconds in prepare() (Kart Race's
+	# world, much longer on a first launch) would otherwise freeze the screen while the
+	# calibration runs and times out unseen behind it. Loading, then calibration, then the game.
+	Session.set_tracker_mode(info.tracker_mode)
+	calibration.camera_game = info.uses_camera()
+	_calibrate_for(info)
 
 	var previous: Dictionary = results.back() if not results.is_empty() else {}
 	var previous_info := GameRegistry.info(str(previous.get("game_id", ""))) if not previous.is_empty() else null

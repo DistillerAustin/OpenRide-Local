@@ -322,13 +322,17 @@ so a game only plays. None of this changes the Bridge contract.
 2. **`segment_started`**: it does the following, in order.
    - It loads `GameRegistry`'s scene for `game_id` and makes it the current scene. An unknown
      `game_id` is reported as skipped.
-   - It calls `set_tracker_mode` with the game's `tracker_mode`. The session's first camera
+   - It starts the segment in `Effort` and `AudioDirector` (`segment.effort`, `segment.audio`).
+   - It calls `game.prepare(segment)`.
+   - Only then, once the game has loaded, it calls `set_tracker_mode` with the game's
+     `tracker_mode`, so the rider sees loading, then the calibration, then the game. (A game that
+     builds for seconds in `prepare`, like Kart Race, used to freeze the screen while the
+     calibration ran and timed out unseen behind it.) The session's first camera
      mode starts the calibration on the Kotlin side (see "Head tracker"), so Godot doesn't
      request one then: a `request_calibration` would force a second, full run. Godot asks only
      when a `lean_2d` game follows a session calibrated for `lean_x` alone (depth needs its own
      extremes), and when the rider taps to recalibrate.
-   - It starts the segment in `Effort` and `AudioDirector` (`segment.effort`, `segment.audio`).
-   - It calls `game.prepare(segment)`, then shows the **intro card** for `intro_sec`. The card
+   - It shows the **intro card** for `intro_sec`. The card
      shows "Up next", the role, the game's `how_to` and `target_text()`, the previous result,
      and a countdown ending 3-2-1. A game whose own start counts down (`GameInfo.own_countdown`, set by
      Kart Race for its grid 3-2-1-GO) gets "Get ready" instead, with no countdown cues, so the

@@ -373,3 +373,21 @@ func test_a_riders_pause_outlasts_the_calibration_under_it() -> void:
 	_step(0.1)
 	assert_bool(Session.paused).is_false()
 	assert_bool(director.pause_overlay.visible).is_false()
+
+
+
+
+func test_the_calibration_starts_only_after_the_game_has_loaded() -> void:
+	# Loading, then calibration, then the game: a game that builds for seconds in prepare()
+	# (Kart Race) must not have the calibration run unseen behind its frozen loading screen.
+	# The demo's prepare adds its cadence band to the HUD, so that node marks "loading".
+	var at_prepare: Array = []
+	var on_added := func(node: Node) -> void:
+		if node is TargetBand and at_prepare.is_empty():
+			at_prepare.append(local.calibrations_started)
+	get_tree().node_added.connect(on_added)
+	var before: int = local.calibrations_started
+	_start(_plan([_seg("demo", "work")]))
+	get_tree().node_added.disconnect(on_added)
+	assert_array(at_prepare).is_equal([before])  # no calibration while the game loads
+	assert_int(local.calibrations_started - before).is_equal(1)  # it starts once loaded
