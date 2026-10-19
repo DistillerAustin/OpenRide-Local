@@ -89,6 +89,7 @@ class GameSessionManagerTest {
         gameResultDao = db.gameResultDao(),
         activeProfileId = { profileId },
         profileFtp = { ftp },
+        profileName = { id -> db.profileDao().getById(id)?.name },
         tracker = tracker,
         catalog = catalog,
         otherMusicActive = otherMusicNow ?: { otherMusic },
@@ -156,6 +157,22 @@ class GameSessionManagerTest {
         assertEquals(70, params.int("cadence_floor"))
         assertTrue(segment["audio"]!!.jsonObject["music"]!!.jsonPrimitive.boolean)
         assertEquals(1200.0, m.segmentTimeLeftSec, 0.0)
+    }
+
+    @Test
+    fun `the plan names the active rider, and has no name without one`() {
+        manager().play(oneMinute)
+        val plan = signals.payload("session_started")
+        assertEquals(riderId, plan["rider_id"]!!.jsonPrimitive.long)
+        assertEquals("Ed", plan.str("rider_name"))
+    }
+
+    @Test
+    fun `a session with no active rider sends a null name`() {
+        manager(profileId = null).play(oneMinute)
+        val plan = signals.payload("session_started")
+        assertEquals(JsonNull, plan["rider_id"])
+        assertEquals(JsonNull, plan["rider_name"])
     }
 
     @Test

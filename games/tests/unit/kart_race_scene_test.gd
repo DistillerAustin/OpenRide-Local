@@ -17,7 +17,7 @@ var _saved_plan := {}
 func before_test() -> void:
 	_rider = "test%d" % Time.get_ticks_usec()
 	_saved_plan = Session.plan
-	Session.plan = {"rider_id": _rider}
+	Session.plan = {"rider_id": _rider, "rider_name": "Ed"}
 
 
 func after_test() -> void:
@@ -58,6 +58,18 @@ func test_the_grid_shows_behind_the_intro_card() -> void:
 		for a in KartView.ANCHORS:
 			assert_object(v.anchor(a)).override_failure_message("missing anchor %s" % a).is_not_null()
 	assert_str(game.target_text(SEGMENT)).contains("race")
+
+
+func test_the_riders_kart_and_rows_carry_their_name() -> void:
+	var game := _game()
+	assert_str(game.get("lineup")[0].name).is_equal("Ed")
+	assert_str(game._racer_name(0)).is_equal("Ed")
+	assert_str(game._racer_name(1)).is_equal(str(game.get("lineup")[1].name))
+	assert_str(game._racer_name(1)).is_not_equal("Ed")
+	# No profile name: "You".
+	Session.plan = {"rider_id": _rider}
+	var other := _game()
+	assert_str(other.get("lineup")[0].name).is_equal("You")
 
 
 func test_the_rider_drives_forward_and_stays_on_the_road() -> void:

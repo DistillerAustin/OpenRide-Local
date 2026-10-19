@@ -66,6 +66,12 @@ GDScript accesses it only through the `InputBus` and `Session` autoloads, never 
   - `rider_id`: the active rider's profile id, or null with no active rider. It was added after
     v1 shipped and is optional; games use it only to remember their options per rider
     (`GameOptions`).
+  - `rider_name`: the active rider's profile name, trimmed, or null with no active rider or a
+    blank name. Also added after v1 and optional (a game must cope with it missing).
+    `Session.rider_name()` returns it ("" when absent); the desktop's `LocalSession` sends
+    "Alex" unless its plan names someone. Kart Race puts it on the rider's kart
+    (`KartRoster.rider_label`: at most 12 characters with an ellipsis, "You" when empty).
+    Kotlin fills it from the active profile (`GameSessionManager`'s `profileName`).
 - `segment_started(segment_json)`: `{index, count, game_id, duration_sec, intro_sec, end_mode, role,
   difficulty, effort, seed, audio:{music, music_volume, sfx_volume}, params:{…}}`.
   - `intro_sec`: Godot shows the intro card for this long (10 s in circuits and at session start),

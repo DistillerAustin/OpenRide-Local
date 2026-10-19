@@ -60,9 +60,32 @@ static func racer(racer_id: String) -> Dictionary:
 	return RACERS[0]
 
 
+## The longest rider name shown; longer ones end in an ellipsis (the boards' name column and the
+## racer list's chip).
+const NAME_MAX := 12
+const RIDER_FALLBACK := "You"
+
+
+## The rider's name as their kart shows it: the profile name trimmed (inner runs of spaces
+## folded), at most NAME_MAX characters with an ellipsis, or "You" when it's empty.
+static func rider_label(profile_name: String) -> String:
+	var n := " ".join(Array(profile_name.strip_edges().split(" ", false)))
+	if n.is_empty():
+		return RIDER_FALLBACK
+	if n.length() > NAME_MAX:
+		n = n.left(NAME_MAX - 1).strip_edges() + "…"
+	return n
+
+
 ## The grid's racers, kart id order: the rider's pick first, then the others in roster order.
-static func lineup(rider_racer_id: String, count := 8) -> Array:
+## With `rider_name` the rider's entry is a copy carrying it as `name` (their animal is the kart
+## they picked: `species` and the rest are the racer's); the bots keep their own names.
+static func lineup(rider_racer_id: String, count := 8, rider_name := "") -> Array:
 	var first := racer(rider_racer_id)
+	if rider_name != "":
+		first = first.duplicate()
+		first["name"] = rider_name
+		first["rider"] = true
 	var out := [first]
 	for r in RACERS:
 		if out.size() >= count:

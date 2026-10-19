@@ -85,6 +85,11 @@ data class SessionPlanMessage(
     val segments: List<PlanSegment>,
     /** The active rider's profile id, or null with no active rider: games remember their options per rider. */
     @SerialName("rider_id") val riderId: Long? = null,
+    /**
+     * The active rider's profile name, trimmed, or null with no active rider (or a blank name).
+     * Added after v1 like [riderId] and optional: Kart Race puts it on the rider's kart.
+     */
+    @SerialName("rider_name") val riderName: String? = null,
 )
 
 @Serializable

@@ -151,6 +151,13 @@ func is_calibrating() -> bool:
 	return InputBus.tracker_state == InputBus.TRACKER_CALIBRATING
 
 
+## The active rider's profile name from `session_started`'s optional `rider_name`, trimmed;
+## "" when there's no active rider, or the payload predates the key.
+func rider_name() -> String:
+	var n = plan.get("rider_name")
+	return "" if n == null else str(n).strip_edges()
+
+
 ## The current segment's gameplay seconds, pauses excluded (the HUD's count-up clock).
 func played_sec() -> float:
 	return director.played_sec() if director else 0.0

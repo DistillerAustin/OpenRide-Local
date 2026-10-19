@@ -105,7 +105,7 @@ world must all say the same colour. A new racer needs a hue at least 30° from e
 | Meaning | Colour | Backup cue (colour-blind safety) |
 | --- | --- | --- |
 | Drift tier 1 / 2 / 3 | `#4CBFFF` / `#FF8C26` / `#D973FF` | Spark size and count grow by tier, the meter has 3 segments, and a ping rises in pitch |
-| The rider (you) | gold chip `#FFCC29`, gradient `#FFF799`→`#FF8C1A` | The name label is shown only for the rider. A "(you)" suffix on the boards. |
+| The rider (you) | gold chip `#FFCC29`, gradient `#FFF799`→`#FF8C1A` | The name label is shown only for the rider: their profile name (`KartRoster.rider_label`, "You" without one), and their board rows are gold. |
 | A gain (points, place up) | green `#D9FF80`→`#33CC59` | A "+" sign, and a scale-up pop |
 | A warning or the final lap | red ribbon `#D92640` (90% alpha), gold edge `#FFD94C`, orange gradient text; normal lap ribbons are violet `#4C2ECC` | The words "FINAL LAP!" and the fanfare |
 | Boost | flame orange → white core | A FOV kick, a whoosh |

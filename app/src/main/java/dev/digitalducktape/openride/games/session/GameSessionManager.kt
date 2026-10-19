@@ -77,6 +77,8 @@ class GameSessionManager(
     private val activeProfileId: () -> Long?,
     /** The rider's FTP, or null if unset (the plan falls back to 150 W). */
     private val profileFtp: suspend (profileId: Long) -> Int?,
+    /** The rider's profile name for `session_started`'s `rider_name`, or null. */
+    private val profileName: suspend (profileId: Long) -> String? = { null },
     /** The camera head tracker's session side; null runs sessions without a camera. */
     private val tracker: TrackerLink? = null,
     private val catalog: GameCatalog = GameCatalog.DEFAULT,
@@ -229,6 +231,7 @@ class GameSessionManager(
         if (gen != generation) return
         val pid = activeProfileId()
         val ftp = FtpBasis.of(pid?.let { runCatching { profileFtp(it) }.getOrNull() })
+        val riderName = pid?.let { runCatching { profileName(it) }.getOrNull() }
         val built = request?.let { SessionPlans.forRequest(it, ftp, catalog) }
         if (built == null) {
             log("can't plan $request: finishing without playing")
@@ -240,7 +243,7 @@ class GameSessionManager(
         recording = startRide(pid, built.planId)
         log("session_started ${built.planId} (${built.difficulty}, FTP ${ftp.watts} W, recording=$recording)")
         tracker?.start()
-        signals.sessionStarted(BridgeMessages.encode(built.toMessage(riderId = pid)))
+        signals.sessionStarted(BridgeMessages.encode(built.toMessage(riderId = pid, riderName = riderName)))
         startSegment(0)
         val sessionScope = CoroutineScope(scope.coroutineContext + sessionJob!!)
         sessionScope.launch { rideSessionManager.state.collect { refreshPaused() } }

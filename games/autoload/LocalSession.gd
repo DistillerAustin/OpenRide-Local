@@ -17,6 +17,9 @@ extends Node
 const INTRO_SEC := 10
 const GRACE_SEC := 5.0
 const DEFAULT_GAME_ID := "demo"
+## The desktop's stand-in profile name (`session_started`'s `rider_name`), for plans that don't
+## carry one.
+const RIDER_NAME := "Alex"
 ## Simulated calibration: seconds per step.
 const CALIBRATION_STEPS := {"centre": 3.0, "left": 2.0, "right": 2.0, "in": 2.0, "back": 2.0}
 const CALIBRATION_REPORT_SEC := 0.1
@@ -88,7 +91,10 @@ func start(plan: Dictionary = {}) -> void:
 	_results = []
 	_calibration_steps = []
 	_session_calibrated = false
-	_session._on_session_started(_wire(_plan))
+	var sent := _plan.duplicate()
+	if not sent.has("rider_name"):
+		sent["rider_name"] = RIDER_NAME
+	_session._on_session_started(_wire(sent))
 	_start_segment(0)
 
 

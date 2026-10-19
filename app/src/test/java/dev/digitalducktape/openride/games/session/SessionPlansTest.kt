@@ -116,6 +116,15 @@ class SessionPlansTest {
     }
 
     @Test
+    fun `the message carries the rider's name trimmed, and null when blank`() {
+        val plan = SessionPlans.justRide(GameCatalog.DEMO, JustRideMode.Open, Difficulty.EASY, ftp200)
+
+        assertEquals("Ed", plan.toMessage(7L, "  Ed ").riderName)
+        assertEquals(null, plan.toMessage(7L, "   ").riderName)
+        assertEquals(null, plan.toMessage().riderName)
+    }
+
+    @Test
     fun `unsupported modes are refused`() {
         assertThrows(IllegalArgumentException::class.java) {
             SessionPlans.justRide(GameCatalog.DEMO, JustRideMode.Rounds(3), Difficulty.EASY, ftp200)

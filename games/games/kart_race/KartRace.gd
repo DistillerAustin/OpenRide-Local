@@ -285,7 +285,7 @@ func _on_prepare(seg: Dictionary) -> void:
 	scoring = KartScoring.new()
 	scoring.rider_id = RIDER
 	scoring.awarded.connect(func(points: float, _why: String): award(points))
-	lineup = KartRoster.lineup(option("driver"), RACERS)
+	lineup = KartRoster.lineup(option("driver"), RACERS, rider_label())
 	_est_lap = KartGrandPrix.estimate_lap_sec(KartTracks.average_length(), ftp_w)
 	_build_world()
 	_build_camera()
@@ -456,7 +456,7 @@ func _build_fx() -> void:
 func _begin_race() -> void:
 	if _lineup_dirty:
 		_lineup_dirty = false
-		lineup = KartRoster.lineup(option("driver"), RACERS)
+		lineup = KartRoster.lineup(option("driver"), RACERS, rider_label())
 		_build_racers()
 	var time_left := _time_left()
 	# The races this GP will run, this one included (a timed ride's plan; 0 when open-ended).
@@ -678,9 +678,15 @@ static func _pts(n: int) -> String:
 	return "%d pt%s" % [n, "" if n == 1 else "s"]
 
 
+## The name on a kart: the rider's is their profile name (KartRoster.rider_label), the bots'
+## their own. The rider's row is told apart by its gold, not a "(you)".
 func _racer_name(kart_id: int) -> String:
-	var n := str(lineup[kart_id].name) if kart_id < lineup.size() else "?"
-	return n + " (you)" if kart_id == RIDER else n
+	return str(lineup[kart_id].name) if kart_id < lineup.size() else "?"
+
+
+## The rider's name as their kart shows it ("You" without a profile name).
+func rider_label() -> String:
+	return KartRoster.rider_label(Session.rider_name())
 
 
 # --- Every frame ---

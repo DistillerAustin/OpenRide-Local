@@ -31,13 +31,21 @@ class BridgeMessagesTest {
 
         val json = parse(BridgeMessages.encode(plan))
 
-        assertEquals(setOf("kind", "plan_id", "difficulty", "total_sec", "segments", "rider_id"), json.keys)
+        assertEquals(setOf("kind", "plan_id", "difficulty", "total_sec", "segments", "rider_id", "rider_name"), json.keys)
         assertEquals("just_ride", json["kind"]!!.jsonPrimitive.content)
         assertEquals("standard", json["difficulty"]!!.jsonPrimitive.content)
         val segment = json["segments"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("game_id", "role", "duration_sec"), segment.keys)
         assertEquals("free", segment["role"]!!.jsonPrimitive.content)
         assertEquals(-1, segment["duration_sec"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `the rider's name is an optional plan key`() {
+        val plan = SessionPlanMessage(SessionKind.JUST_RIDE, "p", Difficulty.STANDARD, -1, emptyList(), riderId = 3L, riderName = "Ed")
+
+        assertEquals("Ed", parse(BridgeMessages.encode(plan))["rider_name"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, parse(BridgeMessages.encode(plan.copy(riderName = null)))["rider_name"])
     }
 
     @Test

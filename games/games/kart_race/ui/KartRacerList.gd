@@ -60,7 +60,9 @@ func setup(racers: Array, portrait: Callable) -> void:
 			chip.position = Vector2(84, (ROW_H - 46) * 0.5)
 			chip.size = Vector2(200, 46)
 			row.add_child(chip)
-			var name_label := KartTheme.label(str(racer.name), 36, KartTheme.INK)
+			# The rider's profile name (up to KartRoster.NAME_MAX characters) shrinks to fit the chip.
+			var font_size := fit_size(str(racer.name), 160.0, 36, 22)
+			var name_label := KartTheme.label(str(racer.name), font_size, KartTheme.INK)
 			name_label.position = Vector2(38, -3)
 			name_label.size = Vector2(160, 50)
 			name_label.clip_text = true
@@ -75,6 +77,15 @@ func setup(racers: Array, portrait: Callable) -> void:
 		_target[i] = row.position.y
 	_numbers.move_to_front()
 	_numbers.queue_redraw()
+
+
+## The biggest font size from `largest` down to `smallest` at which `text` fits `width`.
+static func fit_size(text: String, width: float, largest: int, smallest: int) -> int:
+	var font := KartTheme.display()
+	var font_size := largest
+	while font_size > smallest and font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
+		font_size -= 2
+	return font_size
 
 
 ## The race order (kart ids, first to last). Rows slide only when it changes.

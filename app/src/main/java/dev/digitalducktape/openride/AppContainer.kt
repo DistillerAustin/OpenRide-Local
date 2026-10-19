@@ -261,6 +261,7 @@ class AppContainer(private val applicationContext: Context) {
             gameResultDao = database.gameResultDao(),
             activeProfileId = { activeProfileHolder.activeProfileId.value },
             profileFtp = { profileRepository.getProfile(it)?.ftp },
+            profileName = { profileRepository.getProfile(it)?.name },
             tracker = TrackerLink(headTracker, gameBridge, scope, log),
             otherMusicActive = otherMusicDetector::otherMusicActive,
             audioPrefs = { gamesSettings.settings.value.audio },

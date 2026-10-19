@@ -208,6 +208,29 @@ func test_the_lineup_puts_the_riders_pick_first() -> void:
 	assert_str(KartRoster.lineup("nobody")[0].id).is_equal("fox")
 
 
+func test_the_riders_kart_carries_their_profile_name() -> void:
+	assert_str(KartRoster.rider_label("  Ed ")).is_equal("Ed")
+	assert_str(KartRoster.rider_label("Mary   Jane")).is_equal("Mary Jane")
+	assert_str(KartRoster.rider_label("")).is_equal("You")
+	assert_str(KartRoster.rider_label("   ")).is_equal("You")
+	var long := KartRoster.rider_label("Bartholomew Fitzgerald")
+	assert_int(long.length()).is_less_equal(KartRoster.NAME_MAX)
+	assert_bool(long.ends_with("…")).is_true()
+	assert_str(KartRoster.rider_label("Twelve chars")).is_equal("Twelve chars")
+	# The rider's entry is a copy with their name; the animal is the picked kart's, and the
+	# bots (and the roster) keep their own names.
+	var l := KartRoster.lineup("otter", 8, "Ed")
+	assert_str(l[0].name).is_equal("Ed")
+	assert_str(l[0].id).is_equal("otter")
+	assert_str(l[0].species).is_equal("otter")
+	assert_str(KartRoster.racer("otter").name).is_equal("Ripple")
+	for r in l.slice(1):
+		assert_str(r.name).is_equal(KartRoster.racer(r.id).name)
+	# The longest name fits the racer list's chip.
+	assert_int(KartRacerList.fit_size("Bartholomew…", 160.0, 36, 22)).is_less(36)
+	assert_int(KartRacerList.fit_size("Ed", 160.0, 36, 22)).is_equal(36)
+
+
 func test_every_horn_renders() -> void:
 	for id in KartRoster.ids():
 		var samples := SfxSynth.render_samples(KartRoster.horn_preset(id))
