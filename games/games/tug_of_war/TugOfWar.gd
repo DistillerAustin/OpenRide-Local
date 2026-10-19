@@ -27,6 +27,10 @@ const MSAA := Viewport.MSAA_DISABLED
 const BRACE_LEAN := 0.5  ## lean_depth above this counts as leaning in
 const FALL_SPLASH_DELAY := 0.7  ## the splash sound lands this long after a round ends
 
+## The look (framework/ui/UI_STYLE.md): a rustic riverside fairground. Rope orange on bark
+## brown, badges leaning a little; the display face stays upright (solid, not swooshy).
+static var look := GameTheme.new(Color("ff9f1c"), Color("2a160b"), 0.12)
+
 var logic: TugLogic
 var world: TugWorld
 
@@ -39,6 +43,7 @@ var _mode_name := "match"
 var _endless := false
 var _tension := 0.5
 var _best_rung := 0
+var _results: Array[bool] = []  ## each round's result in order (true: won), for the pips
 
 
 func info() -> GameInfo:
@@ -87,7 +92,7 @@ func tracker_mode_for_segment(_segment: Dictionary) -> String:
 
 func how_to_text(seg: Dictionary) -> String:
 	if _is_endless(seg):
-		return "Pull harder than the bot. Win round after round until time is up"
+		return "Out-pull the bot, round after round"
 	if option("mode") == "ladder":
 		return "Climb the ladder: every win faces a stronger bot"
 	return "Win the match: best of %s rounds" % option("length")
@@ -98,6 +103,15 @@ func target_text(seg: Dictionary) -> String:
 	var ftp := float(p.get("ftp_watts", p.get("ftp", TugLogic.DEFAULT_FTP)))
 	var bot := float(p.get("bot_watts", ftp * TugLogic.BOT_FACTOR))
 	return "Beat the bot's %d W" % roundi(bot)
+
+
+func ui_theme() -> GameTheme:
+	return look
+
+
+## The intro card's picture: the first bot's head, colour and name.
+func intro_visual() -> Control:
+	return TugBotPortrait.new(look, world.bot_name(), world.bot_color(), world.bot_has_horns())
 
 
 func _is_endless(seg: Dictionary) -> bool:
@@ -145,10 +159,13 @@ func _on_prepare(seg: Dictionary) -> void:
 		best_of += 1 - best_of % 2  # best-of needs an odd count
 	logic = TugLogic.new(rng.seed, params, _mode_name, best_of)
 	_best_rung = 0
+	_results = []
 	_apply_options()
-	_status = TugStatus.new()
+	hud.set_skin(look.hud_skin())
+	_status = TugStatus.new(look)
 	hud.add_widget(_status)
-	world.set_bot(0)
+	_set_bot(0)
+	_update_rounds()
 	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM, int(seg.get("seed", 0)))
 	AudioDirector.set_intensity(0.5)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, TugAudioScript.music_effects())
@@ -225,57 +242,69 @@ func _handle(event: Dictionary) -> void:
 	match event.type:
 		"telegraph":
 			AudioDirector.play_sfx("surge_drumroll", -2.0)
-			_show_message("Surge coming!", 1.0, HudTheme.WARN)
+			_show_message("Surge coming!", 1.0, GameTheme.WARN)
 		"surge_start":
 			AudioDirector.play_sfx("rope_creak", -2.0, 0.7)
 		"surge_end":
 			if event.answered:
-				_show_message("Held it!", 1.2, HudTheme.GOOD)
+				_show_message("Held it!", 1.2, GameTheme.GOOD)
 				AudioDirector.play_sfx("crowd_swell", -8.0)
 		"round_end":
 			world.excitement = 1.0
+			_results.append(bool(event.won))
+			_update_rounds()
 			if event.won:
 				award(event.points)
 				_best_rung = maxi(_best_rung, logic.rung + 1)
 				world.fall(true)
 				AudioDirector.play_sfx("win_sting")
 				AudioDirector.play_sfx("crowd_swell")
-				_show_message("Round won!", TugLogic.ROUND_END_SEC, HudTheme.GOOD)
+				_show_message("Round won! +%d" % roundi(event.points), TugLogic.ROUND_END_SEC, GameTheme.GOOD)
+				GameTheme.pop(hud.score, 1.2)
 			else:
 				world.fall(false)
 				AudioDirector.play_sfx("lose_sting")
 				_flash_rect.color = Color(0.1, 0.35, 0.55, 0.9)
 				_flash_rect.visible = true
-				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, HudTheme.BAD)
+				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, GameTheme.BAD)
 			get_tree().create_timer(FALL_SPLASH_DELAY).timeout.connect(func(): AudioDirector.play_sfx("splash"))
 		"recovery_start":
 			world.reset_round()
-			world.set_bot(logic.rung + (1 if _mode_name == "ladder" and logic.round_won else 0))
-			_show_message("Recover. Next: %s, %d W" % [world.bot_name(), roundi(event.next_bot_watts)], 4.0)
+			_set_bot(logic.rung + (1 if _mode_name == "ladder" and logic.round_won else 0))
+			_show_message("NEXT: %s %d W" % [world.bot_name(), roundi(event.next_bot_watts)], 4.0, _status.bot_color)
 		"round_start":
 			world.reset_round()
-			world.set_bot(logic.rung)
-			_show_message("Round %d: %s, %d W" % [event.round, world.bot_name(), roundi(event.bot_watts)], 2.5)
+			_set_bot(logic.rung)
+			_update_rounds()
+			_show_message("Round %d: %s %d W" % [event.round, world.bot_name(), roundi(event.bot_watts)], 2.5, _status.bot_color)
 		"match_end":
 			_show_message("Match won!" if event.won else "Match over", 2.5,
-				HudTheme.GOOD if event.won else HudTheme.WARN)
+				GameTheme.GOOD if event.won else GameTheme.WARN)
 			get_tree().create_timer(2.5).timeout.connect(end_segment)
 
 
 
 func _update_status() -> void:
-	var round_info := "Round %d · %d-%d · %s" % [logic.round_index, logic.wins, logic.losses, world.bot_name()]
 	var alert := ""
 	if logic.keep_pedaling:
-		alert = "Keep pedaling"
-	elif logic.surge_state == "telegraph":
-		alert = "SURGE!"
+		alert = "pedal"
 	elif logic.phase == TugLogic.Phase.RECOVERY:
-		alert = "Recover %ds" % ceili(logic.phase_left)
+		alert = "rest"
 	_status.set_state(logic.rider_power, logic.bot_power_now(), logic.p if logic.phase != TugLogic.Phase.RECOVERY else 0.0,
-		logic.surge_state, round_info, alert)
+		logic.surge_state, alert, ceili(logic.phase_left) if alert == "rest" else 0)
 
 
-func _show_message(text: String, seconds: float, color := HudTheme.INK) -> void:
+## The status widget's round line: pips in a match, the rung on the ladder, wins when endless.
+func _update_rounds() -> void:
+	_status.set_rounds(_mode_name, logic.best_of, _results, logic.rung + 1)
+
+
+## A new bot in the world and on the status widget.
+func _set_bot(rung: int) -> void:
+	world.set_bot(rung)
+	_status.set_bot(world.bot_name(), world.bot_color())
+
+
+func _show_message(text: String, seconds: float, color := GameTheme.INK) -> void:
 	hud.show_message(text, color)
 	_message_left = seconds
