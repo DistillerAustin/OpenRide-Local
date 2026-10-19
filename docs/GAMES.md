@@ -1146,7 +1146,20 @@ takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recordi
 A recovery game played with the resistance knob: dial it to each number of a combination and
 hold it there to click a tumbler. `SafeLogic` holds the rules (headless-tested by
 `safe_logic_test`); the picture is 2D shapes drawn in code (`SafePlaces` for the six rooms,
-`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget and `SafeAudio` the sounds.
+`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget, `SafeBanner` the game's
+callouts and `SafeAudio` the sounds.
+
+**Look** (`framework/ui/UI_STYLE.md`, punch list `games/safe_cracker/UI_POLISH.md`): a noir heist
+in brass `#E8B04A` and soot `#14110D`, upright (`SafeCracker.look`, a `GameTheme`, also styles
+the HUD, the intro card and the pause screen). The dial's reading is the hero (96 px, green on a
+shown target) in the bottom gap the needle never sweeps; the target is on a brass-edged plate
+above the bezel; the tumbler lights are a column right of the bezel, and the newest pops. The
+status widget is a "VAULT n" badge, a brass pip per safe cracked and "MAX 120 W" ("OVER 120 W"
+in amber). The alarm ("ALARM: EASE OFF", breathing, with the safe glowing red) and "CRACKED!
++n" (a gold hero) show in `SafeBanner`, a layer under the HUD between its top bar and the safe,
+never in the HUD's centre message, which would cover the dial. `safe_scene_test` checks the
+layout (no overlaps, the needle's sweep, the status budget) and the events. In play: 88 draw
+calls on the desktop (105 before the polish: the dial's text is now two batches).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click
