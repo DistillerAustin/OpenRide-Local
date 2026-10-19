@@ -72,6 +72,20 @@ func _run() -> void:
 	game._dial.refresh()
 	await process_frame
 	_shot(out, "safe_door_half")
+	# On the target (the reading turns green), a tumbler's light popping, then a crack's banner.
+	game._dial.door_open = 0.0
+	game.logic.reading = float(game.logic.target())
+	for i in 3:
+		await process_frame
+	_shot(out, "safe_on_target")
+	game.logic.tumbler = 1
+	game._handle({"type": "tumbler", "index": 0})
+	for i in 4:
+		await process_frame
+	_shot(out, "safe_tumbler_pop")
+	game._handle({"type": "vault_open", "points": 1150.0})
+	await create_timer(0.5).timeout
+	_shot(out, "safe_cracked")
 	quit()
 
 
