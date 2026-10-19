@@ -19,6 +19,7 @@ extends Node3D
 const DodgeTimeOfDayRes := preload("res://games/dodge_ball/TimeOfDay.gd")
 
 const RIDER_LINE_Z := -1.4  ## where balls reach the bike (just ahead of the camera)
+const POPUP_INK := Color("0e1b3d")  ## the floating points' outline: Dodge Ball's ink (DodgeStatus.look)
 const EYE_HEIGHT := 1.45
 const CAMERA_PITCH := -7.0
 const ROLL_MAX_DEG := 3.0
@@ -254,7 +255,7 @@ func catch_fx(ball: Dictionary, points: float, bonus: bool) -> void:
 	p.color = Color(1.0, 0.85, 0.3)
 	p.restart()
 	_shield_flash = maxf(_shield_flash, 0.35)
-	_popup(ball.x1, points, true if bonus else false, Color(1.0, 0.85, 0.3))
+	_popup(ball.x1, points, bonus, GameTheme.TARGET if bonus else Color.WHITE)
 
 
 ## Catch: a missed ball rolls on past the bike.
@@ -288,7 +289,7 @@ func dodge_fx(ball: Dictionary, points: float, bonus: bool) -> void:
 	p.color = Color(0.6, 0.95, 1.0)
 	p.restart()
 	_ghost(ball)
-	_popup(ball.x1, points, bonus, Color(1.0, 0.82, 0.25) if bonus else Color(1, 1, 1))
+	_popup(ball.x1, points, bonus, GameTheme.TARGET if bonus else Color.WHITE)
 
 
 func _ghost(ball: Dictionary) -> void:
@@ -304,7 +305,6 @@ func _popup(x_at: float, points: float, _bonus: bool, color: Color) -> void:
 	_next_popup = (_next_popup + 1) % _popups.size()
 	label.text = "+%d" % roundi(points)
 	label.modulate = color
-	label.outline_modulate = Color(0, 0, 0, 0.8)
 	var x := clampf(lerpf(x_at, _rig.position.x, 0.5), _rig.position.x - 1.2, _rig.position.x + 1.2)
 	label.position = Vector3(x, 0.9, RIDER_LINE_Z - 3.0)
 	label.visible = true
@@ -667,8 +667,11 @@ func _build_fx() -> void:
 	for i in 4:
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		# The shared display face with the game's navy ink (framework/ui/UI_STYLE.md).
+		label.font = GameTheme.display_font()
 		label.font_size = 96
 		label.outline_size = 18
+		label.outline_modulate = POPUP_INK
 		label.pixel_size = 0.004
 		label.no_depth_test = true
 		label.visible = false
