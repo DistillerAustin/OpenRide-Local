@@ -221,9 +221,9 @@ class SessionPlansTest {
         assertTrue(standard.effort)
         assertEquals(200, standard.params.int("ftp_watts"))
         for ((difficulty, range) in mapOf(
-            Difficulty.EASY to (0.35 to 0.60),
-            Difficulty.STANDARD to (0.45 to 0.75),
-            Difficulty.HARD to (0.55 to 0.90),
+            Difficulty.EASY to (0.40 to 0.85),
+            Difficulty.STANDARD to (0.50 to 1.00),
+            Difficulty.HARD to (0.60 to 1.15),
         )) {
             val pcts = shares(difficulty)
             assertEquals(7, pcts.size)

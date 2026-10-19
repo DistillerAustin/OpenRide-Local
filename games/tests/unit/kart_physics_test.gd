@@ -19,8 +19,15 @@ func _kart(track: KartTrackModel, s := 0.0, d := 0.0) -> KartState:
 func _in(power := 150.0, lean := 0.0) -> KartInput:
 	var inp := KartInput.new()
 	inp.power_w = power
-	inp.cadence = 85.0
+	inp.cadence = 85.0 if power > 0.0 else 0.0  # no watts: not pedalling
 	inp.lean = lean
+	return inp
+
+
+## A drive of exactly `watts` (no cadence term): for the virtual bike's own numbers.
+func _watts(watts: float) -> KartInput:
+	var inp := KartInput.new()
+	inp.power_w = watts
 	return inp
 
 
@@ -44,7 +51,7 @@ func test_from_rest_the_kart_reaches_its_steady_speed_quickly() -> void:
 	var track := KartTrackModel.new(Fixtures.oval())
 	var physics := KartPhysics.new()
 	var k := _kart(track)
-	var target := KartPhysics.steady_bike_speed(150.0, 0.0) * KartPhysics.SPEED_SCALE
+	var target := KartPhysics.steady_bike_speed(KartPhysics.drive_power(150.0, 85.0), 0.0) * KartPhysics.SPEED_SCALE
 	var t := 0.0
 	while k.speed < 0.95 * target and t < 20.0:
 		physics.step(k, _in(), track, DT)
@@ -53,6 +60,48 @@ func test_from_rest_the_kart_reaches_its_steady_speed_quickly() -> void:
 	# And settles there, not above.
 	_run(physics, k, _in(), track, 20.0)
 	assert_float(k.speed).is_equal_approx(target, 0.03 * target)
+
+
+## Rider feedback 2026-10-19: "100 rpm barely moved the kart" (the bike read 16-20 W at 0-8%
+## resistance). The drive is watts plus a cadence term: spinning alone cruises, resistance adds
+## on top, both monotonic, and nothing moves without pedalling.
+func test_the_drive_power_rewards_cadence_and_resistance() -> void:
+	assert_float(KartPhysics.drive_power(0.0, 0.0)).is_equal(0.0)
+	assert_float(KartPhysics.drive_power(0.0, 25.0)).is_equal(0.0)
+	var last_rpm := -1.0
+	for rpm in range(0, 141, 5):
+		var d := KartPhysics.drive_power(20.0, float(rpm))
+		assert_float(d).is_greater_equal(last_rpm)
+		last_rpm = d
+	# Resistance raises the watts, and the drive with them.
+	for rpm in [60.0, 80.0, 100.0]:
+		var last := -1.0
+		for res in [0.0, 20.0, 40.0, 60.0]:
+			var d := KartPhysics.drive_power(preload("res://autoload/InputBus.gd").sim_power(rpm, res), rpm)
+			assert_float(d).is_greater(last)
+			last = d
+	# The ride that reported the problem: 100 rpm at 18 W now cruises at about twice the old pace,
+	# within reach of the reference cruise the field races around.
+	var spin := KartPhysics.steady_bike_speed(KartPhysics.drive_power(18.0, 100.0), 0.0) * KartPhysics.SPEED_SCALE
+	var old := KartPhysics.steady_bike_speed(18.0, 0.0) * KartPhysics.SPEED_SCALE
+	assert_float(spin).is_greater(2.0 * old)
+	assert_float(spin).is_greater(0.75 * KartPhysics.reference_speed(150.0))
+
+
+func test_spinning_with_no_watts_still_drives_and_stopping_coasts() -> void:
+	var track := KartTrackModel.new(Fixtures.oval())
+	var physics := KartPhysics.new()
+	var k := _kart(track)
+	var spin := KartInput.new()
+	spin.cadence = 100.0
+	_run(physics, k, spin, track, 15.0)
+	assert_float(k.speed).is_greater(14.0)
+	# Stop pedalling: it coasts down and stops, and never creeps on by itself.
+	_run(physics, k, KartInput.new(), track, 40.0)
+	assert_float(k.speed).is_less(0.05)
+	var s := k.s
+	_run(physics, k, KartInput.new(), track, 5.0)
+	assert_float(k.s).is_equal(s)
 
 
 func test_without_pedalling_the_kart_coasts_to_a_stop_and_never_reverses() -> void:
@@ -265,12 +314,12 @@ func test_a_60_w_rider_still_crawls_up_a_7_percent_climb() -> void:
 	assert_float(track.grade(60.0)).is_equal_approx(0.07, 0.005)
 	var physics := KartPhysics.new()
 	var k := _kart(track, 10.0)
-	_run(physics, k, _in(60.0), track, 40.0)
+	_run(physics, k, _watts(60.0), track, 40.0)
 	assert_float(track.grade(k.s)).is_greater(0.06)  # still on the climb
 	assert_float(k.speed).is_greater(4.0)  # m/s: a crawl, not a stall
 	assert_float(k.s).is_greater(10.0 + 150.0)
 	# The floor doesn't help anyone who doesn't need it: 150 W climbs at its own pace.
 	var strong := _kart(track, 10.0)
-	_run(physics, strong, _in(150.0), track, 20.0)
+	_run(physics, strong, _watts(150.0), track, 20.0)
 	var v := KartPhysics.steady_bike_speed(150.0, 0.07 * KartPhysics.GRADE_EFFECT) * KartPhysics.SPEED_SCALE
 	assert_float(strong.speed).is_equal_approx(v, 0.6)

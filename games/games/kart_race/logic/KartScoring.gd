@@ -16,16 +16,22 @@ extends RefCounted
 ## tier-2 or tier-3 mini-turbo: the cup's average barely moved (standard mid-pack 141 → 138,
 ## winning 240 → 237), but Meadow Ring, the old calibration track, rose from 114 to 141 (it had
 ## no drift corners before), and the cup average had always sat above the old Meadow-based
-## thresholds. Points a minute at 1.0× now:
+## thresholds.
 ##
-## | field    | mid-pack (4th-5th)          | podium (1st-2nd at 75% FTP) | winning at 1.0×   |
-## | easy     | (0.6 FTP places 2nd: 163-214) | 163-214                   | Meadow 226-253, Harbor 248-271 |
-## | standard | Meadow 138-147, cup 110-196 | Meadow 179-181, cup 177-218 | Meadow 224-257, cup 200-277 |
-## | hard     | (0.6 FTP places 5th-7th: 104-182) | -                     | Meadow 205-246, Harbor 255-282 |
+## Re-validated 2026-10-19 for the drive power (watts plus a cadence term, KartPhysics) and the
+## retuned fields (easy 0.40-0.85, standard 0.50-1.00, hard 0.60-1.15 of FTP): the karts run
+## faster, so laps and points come quicker, and every place earns about 1.3× the points a minute
+## it used to. The thresholds rose with it. A bot-driven rider at a share of a 150 W FTP, the
+## whole cup (4 tracks × 2 seeds), points a minute at 1.0× (place):
+##
+## | field    | mid-pack                  | podium                     | winning at 1.0×           |
+## | easy     | 0.60: 160-199 (4th-5th)   | 0.75: 199-235 (3rd)        | 1.15: 247-294             |
+## | standard | 0.75: 155-208 (3rd-5th)   | 0.90: 208-230 (3rd)        | 1.15: 236-300 (1st-2nd)   |
+## | hard     | 0.75: 172-199 (4th-5th)   | 1.15: 214-270 (2nd-3rd)    | -                         |
 ##
 ## So a mid-pack ride earns one star, a podium ride two, and three take podiums plus effort
-## (the effort multiplier is up to 1.5×): a win at 1.0× stays under the third star (unless far
-## above the field), a strong podium at full effort clears it. Provisional until the bike.
+## (the effort multiplier is up to 1.5×): a win at 1.0× stays under the third star, a strong
+## podium at full effort clears it. Provisional until the bike.
 
 signal awarded(points: float, reason: String)
 
@@ -39,9 +45,9 @@ const GHOST_MAX_POINTS := 3600
 const MINI_TURBO_GAP_SEC := 4.0
 ## Points per minute for one, two and three stars, by difficulty.
 const STAR_THRESHOLDS := {
-	"easy": [80, 140, 275],
-	"standard": [90, 155, 270],
-	"hard": [100, 165, 300],
+	"easy": [110, 195, 330],
+	"standard": [120, 205, 330],
+	"hard": [130, 215, 350],
 }
 
 var rider_id := 0

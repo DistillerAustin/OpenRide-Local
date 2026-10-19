@@ -105,9 +105,10 @@ func test_lap_estimates_stay_sensible_from_60_to_400_w() -> void:
 	var low := KartGrandPrix.estimate_lap_sec(length, 60.0)
 	var mid := KartGrandPrix.estimate_lap_sec(length, 150.0)
 	var high := KartGrandPrix.estimate_lap_sec(length, 400.0)
-	assert_float(low).is_between(70.0, 130.0)
-	assert_float(mid).is_between(55.0, 80.0)
-	assert_float(high).is_between(35.0, 60.0)
+	# The reference cruise includes the cadence term (KartPhysics.drive_power at 85 rpm).
+	assert_float(low).is_between(55.0, 90.0)
+	assert_float(mid).is_between(45.0, 70.0)
+	assert_float(high).is_between(35.0, 55.0)
 	assert_float(low).is_greater(mid)
 	assert_float(mid).is_greater(high)
 	# The Grand Prix still lands near the ride's length for either rider.

@@ -3,7 +3,14 @@ extends RefCounted
 ## Kart Race's arcade physics (#43, DESIGN.md "Physics"), stepped at a fixed 60 Hz in track space.
 ## Every kart, the rider's and the bots', goes through the same model, so the race is honest:
 ##
-## - **A virtual bike** turns watts into speed: P/max(v, 2) − (rolling + climbing + air) = m·a,
+## - **Drive power** (rider feedback 2026-10-19: "100 rpm barely moved the kart"; the bike read
+##   16-20 W at 100 rpm and 0-8% resistance): the bike is driven by the measured watts plus a
+##   cadence term, `drive_power = watts + spin_watts(cadence)`. Spinning alone gets a lively
+##   cruise (SPIN_W at SPIN_FULL_RPM), and resistance, through the watts, adds speed on top. Both
+##   rise with cadence and with resistance; no pedalling is 0 W, so the kart coasts to a stop.
+##   The bots feed the same model (their watts and cadence), and the bike's inertia smooths the
+##   sensors' jitter.
+## - **A virtual bike** turns the drive power into speed: P/max(v, 2) − (rolling + climbing + air) = m·a,
 ##   with the issue's numbers (85 kg, Crr 0.005, CdA 0.32 m², ρ 1.2). The steady speed matches
 ##   the power balance exactly; only the inertia is lighter than a real bike's (INERTIA_KG), so
 ##   the kart answers the pedals in seconds rather than half a minute. With no pedalling a gentle
@@ -77,6 +84,17 @@ const PAD_SEC := 1.0
 const PAD_PUSH := 4.0
 const PAD_GRACE := 0.6  ## metres beyond a pad's half-width that still count (the kart's half-width)
 const STAND_DRAG_CUT := 0.2  ## standing on a climb
+
+# Drive power: the cadence term, 0 below SPIN_FROM_RPM, rising linearly to SPIN_W at
+# SPIN_FULL_RPM, and on to SPIN_MAX_SHARE × SPIN_W (115 rpm) for the sprinters.
+const SPIN_W := 80.0
+const SPIN_FROM_RPM := 30.0
+const SPIN_FULL_RPM := 100.0
+const SPIN_MAX_SHARE := 1.15
+## The cadence the reference cruise (`reference_speed`) assumes, rpm.
+const REF_CADENCE := 85.0
+## The reference cruise's share of FTP (the drift thresholds and the GP's lap estimate).
+const REF_FTP_SHARE := 0.6
 
 # The rocket start: cadence at least ROCKET_CADENCE for ROCKET_HOLD while "2" shows.
 const ROCKET_CADENCE := 70.0
@@ -157,7 +175,7 @@ var assist := 1.0
 ## Drift charges faster while resistance is at least this.
 var drift_resistance := 40.0
 ## The kart speed (m/s) the drift thresholds are shares of: about a kart's cruise at the rider's
-## race power (KartRace sets it from the FTP; 20 is 150 W on the flat).
+## race power (KartRace sets it to `reference_speed(ftp)`; about 21 at 150 W FTP).
 var top_speed := 20.0
 ## When set (KartRaceLogic does), the physics emits wall bumps (and, in Phase 2, drift and boost
 ## events) into it.
@@ -166,6 +184,25 @@ var events: KartRaceEvents = null
 ## Scratch for update_drafts (each kart's forward x and z), reused every tick.
 static var _fx_scratch := PackedFloat64Array()
 static var _fz_scratch := PackedFloat64Array()
+
+
+## The cadence term of the drive power, watts: 0 up to SPIN_FROM_RPM, SPIN_W at SPIN_FULL_RPM,
+## capped at SPIN_MAX_SHARE × SPIN_W. Monotonic.
+static func spin_watts(cadence: float) -> float:
+	var x := (cadence - SPIN_FROM_RPM) / (SPIN_FULL_RPM - SPIN_FROM_RPM)
+	return SPIN_W * clampf(x, 0.0, SPIN_MAX_SHARE)
+
+
+## What drives the virtual bike, watts: the measured watts plus the cadence term. 0 when not
+## pedalling (no watts, no cadence).
+static func drive_power(power_w: float, cadence: float) -> float:
+	return maxf(power_w, 0.0) + spin_watts(cadence)
+
+
+## The kart speed (m/s) of the reference cruise on the flat: REF_FTP_SHARE of `ftp_w` at
+## REF_CADENCE. The drift thresholds (`top_speed`) and the GP's lap estimate use it.
+static func reference_speed(ftp_w: float) -> float:
+	return steady_bike_speed(drive_power(REF_FTP_SHARE * maxf(ftp_w, 1.0), REF_CADENCE), 0.0) * SPEED_SCALE
 
 
 ## The bike speed (m/s) that `power_w` holds on `grade` (dy/ds) in a `draft` (0..1): the root
@@ -263,17 +300,18 @@ func step(k: KartState, inp: KartInput, track: KartTrackModel, dt: float) -> voi
 	var grade := track.grade(k.s) * GRADE_EFFECT
 	var crr := OFFROAD_CRR if offroad else 1.0
 	var resist := bike_resistance(k.v_bike, grade, k.draft, crr)
-	if grade > 0.0 and inp.power_w > 0.0:
+	var drive := drive_power(inp.power_w, inp.cadence)
+	if grade > 0.0 and drive > 0.0:
 		# The climb's floor: the climbing force never exceeds what the rider's watts can push at
 		# CLIMB_CRAWL, so a weak rider crawls up a steep climb instead of stalling. Riders who
 		# can climb at their own pace never feel it.
 		var flat := bike_resistance(k.v_bike, 0.0, k.draft, crr)
-		var cap := maxf(0.0, inp.power_w / CLIMB_CRAWL - bike_resistance(CLIMB_CRAWL, 0.0, k.draft, crr))
+		var cap := maxf(0.0, drive / CLIMB_CRAWL - bike_resistance(CLIMB_CRAWL, 0.0, k.draft, crr))
 		resist = flat + minf(resist - flat, cap)
 	if k.standing_bonus:
 		resist *= 1.0 - STAND_DRAG_CUT
-	var brake := COAST_BRAKE_N * clampf(1.0 - inp.power_w / COAST_BRAKE_FADE_W, 0.0, 1.0)
-	var force := inp.power_w / maxf(k.v_bike, MIN_FORCE_SPEED) - resist - brake
+	var brake := COAST_BRAKE_N * clampf(1.0 - drive / COAST_BRAKE_FADE_W, 0.0, 1.0)
+	var force := drive / maxf(k.v_bike, MIN_FORCE_SPEED) - resist - brake
 	k.v_bike = maxf(0.0, k.v_bike + force / INERTIA_KG * dt)
 
 	# The kart's speed eases toward the bike's, scaled by surface, boost and drift.

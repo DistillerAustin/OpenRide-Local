@@ -75,12 +75,14 @@ const POSE_CLOSE := 18.0
 const BEHIND_CLEAR := 3.0
 const GO_SEC := 0.8
 const DEFAULT_FTP := 150.0
-## The bots' shares of the rider's FTP, weakest to strongest, by difficulty (forgiving: rider
-## feedback 2026-10-04). Kotlin sends `params.bot_pcts`; these are the fallback.
+## The bots' shares of the rider's FTP, weakest to strongest, by difficulty. Each bot's drive
+## adds its cadence's spin watts like the rider's (KartPhysics.drive_power). Retuned 2026-10-19
+## with the drive power so an ordinary ride (80-90 rpm at 30-40%, about 100-150 W) sits
+## mid-pack at the default 150 W FTP. Kotlin sends `params.bot_pcts`; these are the fallback.
 const BOT_PCTS := {
-	"easy": [0.35, 0.60],
-	"standard": [0.45, 0.75],
-	"hard": [0.55, 0.90],
+	"easy": [0.40, 0.85],
+	"standard": [0.50, 1.00],
+	"hard": [0.60, 1.15],
 }
 const BOT_LINES := [-1.5, 1.5, -0.5, 0.5, -2.0, 2.0, 0.0]
 const ASSIST := {"off": 0.0, "low": 0.5, "high": 1.0}
@@ -386,7 +388,7 @@ func _build_camera() -> void:
 	camera.current = true
 	race_began.connect(func(r: KartRaceLogic):
 		camera.watch(r.events, RIDER)
-		r.physics.top_speed = KartPhysics.steady_bike_speed(0.6 * ftp_w, 0.0) * KartPhysics.SPEED_SCALE)
+		r.physics.top_speed = KartPhysics.reference_speed(ftp_w))
 
 
 ## Racers agent (views) and race-systems agent (bots): a KartView per kart, a KartBotDriver per

@@ -8,6 +8,10 @@ const FTP := 150.0
 ## The framework's time around each race that counts as played: the fly-over, the countdown and
 ## the results board (KartRace: FLYOVER_SEC + COUNTDOWN_SEC + RESULTS_SEC).
 const RACE_AROUND_SEC := 14.5
+## The simulated rider's share of FTP for a mid-pack ride and a strong one, against the
+## standard field (KartRace.BOT_PCTS: 0.50-1.00 since the drive power, 2026-10-19).
+const MID_PCT := 0.75
+const STRONG_PCT := 1.15
 
 
 func _race(n := 3) -> KartRaceLogic:
@@ -157,7 +161,8 @@ func _simulated_ride(rider_pct: float, seed_base: int) -> Array:
 	var bots := []
 	bots.append(KartBotDriver.new(KartBotDriver.profile_for(3, rider_pct), FTP, seed_base))
 	for i in range(1, 8):
-		var pct := lerpf(0.45, 0.75, float(7 - i) / 6.0)  # kart 1 on pole is the strongest
+		var span: Array = preload("res://games/kart_race/KartRace.gd").BOT_PCTS.standard
+		var pct := lerpf(span[0], span[1], float(7 - i) / 6.0)  # kart 1 on pole is the strongest
 		bots.append(KartBotDriver.new(KartBotDriver.profile_for(i - 1, pct), FTP, seed_base * 10 + i))
 	var items := KartItemLogic.new(race, seed_base)
 	for b in bots:
@@ -186,7 +191,7 @@ func test_a_mid_pack_ride_earns_about_one_star() -> void:
 	var ppm := 0.0
 	var places := []
 	for run in 3:
-		var r := _simulated_ride(0.6, run + 1)
+		var r := _simulated_ride(MID_PCT, run + 1)
 		ppm += float(r[0]) / 3.0
 		places.append(r[1])
 	print("mid-pack ride: %.0f points/min, places %s" % [ppm, places])
@@ -195,7 +200,7 @@ func test_a_mid_pack_ride_earns_about_one_star() -> void:
 
 func test_a_strong_ride_beats_a_mid_pack_one_but_three_stars_take_more() -> void:
 	var t: Array = KartScoring.STAR_THRESHOLDS.standard
-	var r := _simulated_ride(0.95, 4)
+	var r := _simulated_ride(STRONG_PCT, 4)
 	print("strong ride: %.0f points/min, place %d" % [r[0], r[1]])
 	assert_int(int(r[1])).is_less_equal(3)
 	assert_float(float(r[0])).is_greater_equal(float(t[1]))

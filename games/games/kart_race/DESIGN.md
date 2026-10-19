@@ -220,7 +220,9 @@ const TIER_SEC := [0.9, 2.0, 3.4]; const TURBO_SEC := [0.5, 0.9, 1.4]   # spark 
 const ROCKET_CADENCE := 70.0; const ROCKET_WINDOW := Vector2(1.0, 2.0); const ROCKET_HOLD := 0.3
 var assist := 1.0        # 0 off, 0.5 low, 1 high (curvature feed-forward and alignment share)
 var drift_resistance := 40.0
-var top_speed := 20.0    # m/s the drift thresholds are shares of (KartRace: the rider's 0.6 FTP cruise)
+var top_speed := 20.0    # m/s the drift thresholds are shares of (KartRace: reference_speed(ftp))
+static func drive_power(power_w: float, cadence: float) -> float   # watts + spin_watts(cadence)
+static func reference_speed(ftp_w: float) -> float   # kart m/s: 0.6 FTP at 85 rpm, flat
 var events: KartRaceEvents = null                  # set by KartRaceLogic
 static func steady_bike_speed(power_w: float, grade: float, draft := 0.0) -> float   # m/s
 static func bike_resistance(v: float, grade: float, draft := 0.0, crr_mult := 1.0) -> float
@@ -265,7 +267,7 @@ const POINTS := [15, 12, 10, 8, 6, 4, 2, 1]
 const RACE_OVERHEAD_SEC := 25.0
 var results: Array                                    # each race's order
 func _init(duration_sec: float, track_ids: Array, racer_count := 8) -> void   # -1 = open-ended
-static func estimate_lap_sec(track_length: float, ftp_w: float) -> float     # at 0.6 FTP, flat
+static func estimate_lap_sec(track_length: float, ftp_w: float) -> float     # at reference_speed
 func next_race(time_left_sec: float, est_lap_sec: float) -> Dictionary       # {track_id, reversed, laps, is_final, index}
 func record(order: Array) -> void
 func races_run() -> int
@@ -302,7 +304,7 @@ func think(k: KartState, race: KartRaceLogic, dt: float) -> KartInput  # may ret
 
 class_name KartScoring extends RefCounted
 signal awarded(points: float, reason: String)        # KartRace passes it to Game.award()
-const STAR_THRESHOLDS := {"easy": [80, 140, 275], "standard": [90, 155, 270], "hard": [100, 165, 300]}  # points/min
+const STAR_THRESHOLDS := {"easy": [110, 195, 330], "standard": [120, 205, 330], "hard": [130, 215, 350]}  # points/min
 var rider_id := 0
 func begin_race(race: KartRaceLogic) -> void
 func step(dt: float, power_w: float) -> void
@@ -437,16 +439,40 @@ when a kart breaks a pod: KartItemViews bursts it.
     track's look changes.
 - **GP**: `next_race(time_left, est_lap)` before each race. The cup starts at the picked track
   (`KartGrandPrix.cup_from`), the others following in cup order. Timed: the final race is the one
-  that starts with under 1.5 × (3 laps + 25 s) left, with `clamp(round(time_left / est_lap), 1,
+  that starts with under 1.6 × (3 laps + 25 s) left, with `clamp(round(time_left / est_lap), 1,
   5)` laps. Open-ended: 3-lap races until the rider ends. The cup goes in order, reversed the
   second time round (a one-track cup alternates). The estimate uses the cup's average length at
-  0.6 × FTP on the flat.
+  `KartPhysics.reference_speed` (0.6 × FTP at 85 rpm) on the flat.
 - **`request_finish`** (Kotlin's 1.5× hard stop, or End): the race in progress counts as it
   stands, and the game ends at once.
 
 ## Handling (KartPhysics)
 
-- **The bike → the kart**: watts drive a virtual bike (85 kg, Crr 0.005, CdA 0.32, half the
+- **Drive power** (rider feedback 2026-10-19: "100 RPM barely moved the kart"; the bike read
+  16-20 W at 93-105 rpm and 0-8% resistance, a crawl, while the bots rode at 68-113 W). The
+  rider chose cadence plus resistance: the bike is driven by `drive_power(watts, cadence) =
+  watts + spin_watts(cadence)`, where `spin_watts` is 0 below 30 rpm, rises linearly to 80 W at
+  100 rpm and stops at 92 W (115 rpm). Spinning alone cruises; resistance adds on top through the
+  watts; both are monotonic; no pedalling is 0 W and coasts to a stop. The bots feed the same
+  model (their watts and their own cadence, 74-96 rpm), the bike's inertia smooths the sensors'
+  jitter, and `KartScoring`'s `avg_power` and `Effort` still use the measured watts.
+  `reference_speed(ftp)` (0.6 FTP at 85 rpm on the flat) sets `top_speed` (the drift
+  thresholds; speed lines from 1.15×) and the GP's lap estimate. The fields were retuned so an
+  ordinary ride (80-90 rpm at 30-40%, 100-150 W) sits mid-pack at the default 150 W FTP: easy
+  0.40→0.85, standard 0.50→1.00, hard 0.60→1.15 of FTP. Steady speeds on the flat, standard
+  field at a 150 W FTP (69-85 km/h), a Peloton-like watts curve (100 rpm at 5% ≈ 19 W, the
+  ride's reading):
+
+  | rpm \ resistance | 0% | 20% | 40% | 60% |
+  | --- | --- | --- | --- | --- |
+  | 60 | 43 km/h, 8th (was 18) | 52, 8th (36) | 69, 7th (61) | 87, 1st (82) |
+  | 80 | 53, 8th (22) | 62, 8th (42) | 79, 3rd (69) | 98, 1st (92) |
+  | 100 | 61, 8th (25) | 69, 7th (47) | 87, 1st (75) | 107, 1st (99) |
+
+  Places are steady-state only: drafting, items (which favour the back) and mini-turbos keep a
+  spinning rider in the pack. A 5-minute ride stays one race (`FINAL_FACTOR` 1.5 → 1.6 for the
+  quicker laps).
+- **The bike → the kart**: the drive power drives a virtual bike (85 kg, Crr 0.005, CdA 0.32, half the
   road's grade, light inertia, a coast brake; on a climb the climbing force is capped at what the
   watts push at `CLIMB_CRAWL` (2.5 m/s), so a 60 W rider crawls up 7% instead of stalling).
   The kart's target speed is the bike's × `SPEED_SCALE`, times surface (off-road 55%), boost
@@ -510,7 +536,18 @@ when a kart breaks a pod: KartItemViews bursts it.
   cup, after every track gained corners that pay tier-2 and tier-3 mini-turbos: the cup's
   average barely moved (standard mid-pack 141 → 138, a win 240 → 237), but Meadow Ring, the old
   calibration track, rose from 114 to 141, and the cup had always sat above the old
-  Meadow-only thresholds (Harbor's mid-pack took two stars). The thresholds rose to match:
+  Meadow-only thresholds (Harbor's mid-pack took two stars). The thresholds rose to match.
+  Re-validated again on 2026-10-19 for the drive power and the retuned fields (the whole cup,
+  4 tracks × 2 seeds, a 150 W FTP): every place now earns about 1.3× the points a minute (the
+  laps are quicker), and the thresholds rose with it:
+
+| difficulty | thresholds (1, 2, 3 stars) | mid-pack | podium | winning at 1.0× |
+| --- | --- | --- | --- | --- |
+| easy | 110, 195, 330 | 0.60 FTP, 4th-5th: 160-199 | 0.75, 3rd: 199-235 | 1.15: 247-294 |
+| standard | 120, 205, 330 | 0.75, 3rd-5th: 155-208 | 0.90, 3rd: 208-230 | 1.15, 1st-2nd: 236-300 |
+| hard | 130, 215, 350 | 0.75, 4th-5th: 172-199 | 1.15, 2nd-3rd: 214-270 | - |
+
+  Before the drive power (2026-10-16):
 
 | difficulty | thresholds (1, 2, 3 stars) | mid-pack (0.6 FTP) | podium (0.75 FTP, 1st-2nd) | winning at 1.0× (0.95 FTP) |
 | --- | --- | --- | --- | --- |
@@ -527,7 +564,8 @@ when a kart breaks a pod: KartItemViews bursts it.
 - `GameCatalog.KART_RACE` mirrors `info()`: `minutes` and `open`, 300-3600 s, no roles, camera
   on, effort in Just Rides, `timedEndMode = GAME` (`GameInfo.timed_end_mode = "game"`).
 - `params`: `ftp_watts` (default 150), `bot_pcts` (seven ascending FTP shares: easy
-  0.35→0.60, standard 0.45→0.75, hard 0.55→0.90; the bots' power wanders ±4% over time),
+  0.40→0.85, standard 0.50→1.00, hard 0.60→1.15 since the drive power; the bots' power wanders
+  ±4% over time),
   `drift_resistance` (35 / 40 / 45).
 - **Tracker mode `lean_stand`.** The head tracker reports `standing` in every camera mode
   (`HeadTrackingEngine` runs `StandingDetector` whatever the mode; 0.5 s to stand, 1.5 s to sit),

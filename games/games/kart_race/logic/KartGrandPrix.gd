@@ -4,7 +4,7 @@ extends RefCounted
 ## points carried over. A timed GP picks its final race by the time left, so the ride lands near
 ## the chosen length; an open-ended one runs 3-lap races until the rider ends the session.
 ##
-## - Before each race, `next_race(time_left, est_lap)`: when the time left is under 1.5 × an
+## - Before each race, `next_race(time_left, est_lap)`: when the time left is under 1.6 × an
 ##   estimated race (3 laps + RACE_OVERHEAD_SEC), this is the final race, with
 ##   clamp(round(time_left / est_lap), 1, 5) laps. Otherwise a normal 3-lap race.
 ## - Tracks go in cup order; the second time round they're reversed, then forward again.
@@ -15,8 +15,9 @@ const NORMAL_LAPS := 3
 const MAX_LAPS := 5
 ## The fly-over, countdown, results board and finishing spread around each race's laps, seconds.
 const RACE_OVERHEAD_SEC := 25.0
-## A race is the last when the time left is under this many estimated races.
-const FINAL_FACTOR := 1.5
+## A race is the last when the time left is under this many estimated races. 1.6 (was 1.5,
+## 2026-10-19): with the drive power's quicker laps, a 5-minute ride stays one race (5 laps).
+const FINAL_FACTOR := 1.6
 ## The estimated lap assumes this share of FTP.
 const EST_FTP_SHARE := 0.6
 
@@ -48,10 +49,10 @@ static func cup_from(tracks: Array, first: String) -> Array:
 	return tracks.slice(i) + tracks.slice(0, i)
 
 
-## The estimated lap time, seconds: the track's length at the kart speed EST_FTP_SHARE of FTP
-## holds on the flat.
+## The estimated lap time, seconds: the track's length at the reference cruise
+## (KartPhysics.reference_speed: EST_FTP_SHARE of FTP at 85 rpm) on the flat.
 static func estimate_lap_sec(track_length: float, ftp_w: float) -> float:
-	var v := KartPhysics.steady_bike_speed(EST_FTP_SHARE * maxf(ftp_w, 1.0), 0.0) * KartPhysics.SPEED_SCALE
+	var v := KartPhysics.reference_speed(ftp_w)
 	return track_length / maxf(v, 0.5)
 
 

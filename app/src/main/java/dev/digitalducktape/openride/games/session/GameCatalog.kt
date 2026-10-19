@@ -201,8 +201,10 @@ class GameCatalog(games: List<GameDeclaration>) {
          * Kart Race (#43), `games/games/kart_race/`: a Grand Prix against seven bots, driven by
          * pedalling and steered by leaning. A timed Just Ride ends on the final race's finish
          * line ([EndMode.GAME]), with Kotlin's usual hard stop at 1.5 ×. No circuit roles.
-         * `bot_pcts` are the bots' shares of the rider's FTP, weakest first (forgiving on
-         * purpose: rider feedback 2026-10-04); `drift_resistance` is the resistance at which
+         * `bot_pcts` are the bots' shares of the rider's FTP, weakest first. The kart is driven
+         * by watts plus a cadence term (rider feedback 2026-10-19), the bots' too, so these are
+         * tuned for an ordinary ride (80-90 rpm at 30-40%) to sit mid-pack at a 150 W FTP;
+         * `drift_resistance` is the resistance at which
          * the knob speeds up a drift's charge.
          */
         val KART_RACE = GameDeclaration(
@@ -216,9 +218,9 @@ class GameCatalog(games: List<GameDeclaration>) {
             timedEndMode = EndMode.GAME,
             params = { _, difficulty, _ ->
                 val (weakest, strongest, knob) = when (difficulty) {
-                    Difficulty.EASY -> Triple(0.35, 0.60, 35)
-                    Difficulty.STANDARD -> Triple(0.45, 0.75, 40)
-                    Difficulty.HARD -> Triple(0.55, 0.90, 45)
+                    Difficulty.EASY -> Triple(0.40, 0.85, 35)
+                    Difficulty.STANDARD -> Triple(0.50, 1.00, 40)
+                    Difficulty.HARD -> Triple(0.60, 1.15, 45)
                 }
                 val shares = (0 until KART_BOTS).map { i ->
                     val share = weakest + (strongest - weakest) * i / (KART_BOTS - 1)

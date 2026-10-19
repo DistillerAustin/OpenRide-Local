@@ -1210,7 +1210,10 @@ module contract (interfaces, the scene tree, the signal map, the handling and bo
 
 **How it plays.**
 
-- **Pedal.** Watts drive a virtual bike (85 kg, the road's grade at half strength), and the
+- **Pedal.** Cadence plus resistance drive a virtual bike (85 kg, the road's grade at half
+  strength): the measured watts plus a cadence term (0 below 30 rpm, 80 W at 100 rpm), so
+  spinning alone cruises and resistance adds speed on top (rider feedback 2026-10-19: 100 rpm
+  at low resistance read 18 W and barely moved the kart). Not pedalling coasts to a stop. The
   kart runs at the bike's speed × 2.4. Nothing is rubber-banded: the bots ride at fixed shares
   of the rider's FTP. On a climb the climbing force is capped at what the watts push at
   2.5 m/s, so a weak rider crawls up instead of stalling. Standing on a climb cuts the drag
@@ -1255,12 +1258,13 @@ the pack.
 **Racers:** eight original animal drivers in light, medium and heavy karts. Juniper (fox),
 Tofu (panda), Pip (frog), Clover (rabbit), Bramble (bear), Ripple (otter), Pebble (penguin) and
 Scout (raccoon). The rider picks one (the Driver option), and the other seven become bots with
-their own line, drift, item and aggression personas. Bot power: easy 0.35→0.60 of FTP, standard
-0.45→0.75, hard 0.55→0.90.
+their own line, drift, item and aggression personas. Bot power (plus the same cadence term): easy
+0.40→0.85 of FTP, standard 0.50→1.00, hard 0.60→1.15, so an ordinary ride (80-90 rpm at 30-40%)
+sits mid-pack.
 
 **Scoring.** Live awards go through `award()`, so the effort multiplier applies: an overtake
 +15, a mini-turbo +10/20/35, an item hit +25, a lap +30, and the race's points × 20 at each
-finish. Stars are points a minute (standard 90, 155, 270): mid-pack earns one star, a podium
+finish. Stars are points a minute (standard 120, 205, 330): mid-pack earns one star, a podium
 two, and three takes podiums plus effort.
 
 **The pick.** Gameplay opens on a kart and track picker (`KartPicker`): loading, then
