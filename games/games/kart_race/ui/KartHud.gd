@@ -216,8 +216,8 @@ func update(race: KartRaceLogic, delta := 0.0) -> void:
 		if text != _shown_clock:
 			_shown_clock = text
 			_clock.text = text
-	elif _shown_clock != "0:00.000":
-		_shown_clock = "0:00.000"
+	elif _shown_clock != "0:00":
+		_shown_clock = "0:00"
 		_clock.text = _shown_clock
 	_set_place(k.place)
 	racer_list.set_order(race.order())
@@ -377,7 +377,7 @@ func _build_clock() -> void:
 	plate.size = CLOCK_RECT.size
 	plate.position = CLOCK_RECT.position
 	_gameplay.add_child(plate)
-	_clock = KartTheme.label("0:00.000", 46, KartTheme.INK, true)
+	_clock = KartTheme.label("0:00", 46, KartTheme.INK, true)
 	_clock.name = "Clock"
 	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

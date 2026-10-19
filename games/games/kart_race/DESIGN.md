@@ -639,5 +639,9 @@ The HUD follows the web slice's layout.
   worker thread at load; plus each racer's horn as `horn_<racer id>`, the rider's at their
   finish).
   `tests/render_kart_audio.gd` renders all of it offline to WAVs with a timeline, for analysis.
+- **Times are whole seconds** (rider feedback 2026-10-19: the milliseconds were distracting).
+  `KartTheme.race_time` gives `m:ss`, rounded down like a stopwatch, for the HUD clock and the
+  winner's time; `KartTheme.race_gap` gives `+m:ss`, rounded up so a racer behind never reads
+  "+0:00". Nothing the rider sees shows milliseconds.
 - HUD draw calls: see "Desktop draw calls after the Phase 2 merge" under the tablet budget.
 - Tests: `tests/unit/kart_presentation_test.gd`; screenshots: `tests/capture_kart_hud.gd`.

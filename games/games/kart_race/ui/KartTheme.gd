@@ -117,7 +117,15 @@ static func ordinal_suffix(n: int) -> String:
 	return suffix
 
 
-## Race time as 0:12.345.
+## Race time in whole seconds, as 1:05 (rider feedback 2026-10-19: milliseconds on the clock
+## were distracting). Rounded down, like a stopwatch: the clock reads 0:00 until a full second.
 static func race_time(t: float) -> String:
-	var ms := int(round(maxf(t, 0.0) * 1000.0))
-	return "%d:%02d.%03d" % [ms / 60000, (ms / 1000) % 60, ms % 1000]
+	var sec := floori(maxf(t, 0.0) + 0.0005)  # 59.9999 from float sums still reads 0:59
+	return "%d:%02d" % [sec / 60, sec % 60]
+
+
+## A gap behind the leader in whole seconds, as +0:03, rounded up: any real gap reads at least
+## +0:01, so a board never shows a racer behind with "+0:00" (a dead heat does).
+static func race_gap(gap: float) -> String:
+	var sec := ceili(maxf(gap, 0.0) - 0.0005)
+	return "+%d:%02d" % [sec / 60, sec % 60]

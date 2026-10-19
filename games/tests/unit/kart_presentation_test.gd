@@ -254,7 +254,7 @@ func test_the_camera_strip_clears_the_minimap_the_item_and_the_board() -> void:
 	add_child(board)
 	var rows := []
 	for i in 8:
-		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+0:01", "you": i == 2})
 	board.show_board("Victory!", rows, "Grand Prix · Race 1/4", 8.0, "Next race")
 	await _settle()
 	await get_tree().create_timer(1.2).timeout  # the rows have slid in
@@ -513,7 +513,7 @@ func test_the_board_counts_down_to_what_comes_next() -> void:
 	add_child(board)
 	var rows := []
 	for i in 8:
-		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+0:01", "you": i == 2})
 	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
 	assert_bool(board.visible).is_true()
 	board._process(3.0)
@@ -529,7 +529,7 @@ func test_the_board_bakes_its_rows_title_and_pill() -> void:
 	add_child(board)
 	var rows := []
 	for i in 8:
-		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+0:01", "you": i == 2})
 	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
 	var baked := board._content.get_children().filter(func(c): return c is KartBaked and not c.is_queued_for_deletion())
 	assert_int(baked.size()).is_equal(8)
@@ -550,11 +550,11 @@ func test_the_board_bakes_its_rows_title_and_pill() -> void:
 func test_projected_times_are_muted_and_confetti_falls_behind_the_text() -> void:
 	var board: KartRaceBoard = auto_free(KartRaceBoard.new())
 	add_child(board)
-	var rows := [{"name": "A (you)", "time": "1:00.000", "you": true},
-		{"name": "B", "time": "+3.200", "projected": true}]
+	var rows := [{"name": "A (you)", "time": "1:00", "you": true},
+		{"name": "B", "time": "+0:04", "projected": true}]
 	board.show_board("Victory!", rows, "", 8.0)
 	var row: Node = board._content.get_child(1).widget
-	var times := row.find_children("*", "Label", true, false).filter(func(l): return (l as Label).text == "+3.200")
+	var times := row.find_children("*", "Label", true, false).filter(func(l): return (l as Label).text == "+0:04")
 	assert_int(times.size()).is_equal(1)
 	assert_bool((times[0] as Label).get_theme_color("font_color") == KartRaceBoard.PROJECTED_INK).is_true()
 	assert_int(board._confetti.get_index()).is_less(board._content.get_index())
@@ -567,7 +567,7 @@ func test_the_board_renders_one_bake_a_frame() -> void:
 	add_child(board)
 	var rows := []
 	for i in 8:
-		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+1.000", "you": i == 2})
+		rows.append({"name": "Racer %d" % i, "detail": "+%d" % i, "total": "%d pts" % i, "time": "+0:01", "you": i == 2})
 	board.show_board("Victory!", rows, "Grand Prix · Race 1", 8.0, "Next race")
 	var bakes := _bakes(board)
 	assert_int(bakes.size()).is_equal(8 + 2)  # the rows, the header and the pill
@@ -844,3 +844,25 @@ func test_kart_draw_builds_valid_triangles() -> void:
 	for id in ["turbo_can", "bumper_puck", "seeker_drone", "goo_puddle", "shield_bubble", "draft_magnet"]:
 		assert_str(KartItemIcons.kind(id)).is_not_empty()
 	assert_str(KartItemIcons.kind("mystery")).is_empty()
+
+
+## Rider feedback (2026-10-19): the clock, the splits and the boards show whole seconds, never
+## milliseconds; a gap behind the leader rounds up so it never reads "+0:00".
+func test_race_times_show_whole_seconds() -> void:
+	assert_str(KartTheme.race_time(0.0)).is_equal("0:00")
+	assert_str(KartTheme.race_time(0.99)).is_equal("0:00")
+	assert_str(KartTheme.race_time(65.4)).is_equal("1:05")
+	assert_str(KartTheme.race_time(599.999)).is_equal("9:59")
+	assert_str(KartTheme.race_time(3600.0)).is_equal("60:00")
+	assert_str(KartTheme.race_gap(0.0)).is_equal("+0:00")
+	assert_str(KartTheme.race_gap(0.2)).is_equal("+0:01")
+	assert_str(KartTheme.race_gap(1.0)).is_equal("+0:01")
+	assert_str(KartTheme.race_gap(61.3)).is_equal("+1:02")
+	for t in [0.001, 12.345, 59.5, 123.456]:
+		assert_str(KartTheme.race_time(t)).not_contains(".")
+		assert_str(KartTheme.race_gap(t)).not_contains(".")
+	# The HUD clock reads m:ss from the grid on.
+	var kh: KartHud = auto_free(KartHud.new())
+	add_child(kh)
+	var clock: Label = kh.find_child("Clock", true, false)
+	assert_str(clock.text).is_equal("0:00")

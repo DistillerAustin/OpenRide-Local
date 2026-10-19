@@ -542,7 +542,7 @@ func _on_race_finished(order: Array) -> void:
 			"racer_id": str(lineup[id].id), "you": id == RIDER,
 			# Still racing when the rider finished: a projected time (KartRaceLogic), shown muted.
 			"projected": k.finish_time > race.time + 0.001,
-			"time": KartTheme.race_time(k.finish_time) if i == 0 else "+%.3f" % maxf(0.0, k.finish_time - race.karts[order[0]].finish_time)})
+			"time": KartTheme.race_time(k.finish_time) if i == 0 else KartTheme.race_gap(k.finish_time - race.karts[order[0]].finish_time)})
 	var place := order.find(RIDER) + 1
 	var title := "Victory!" if place == 1 else ("On the podium!" if place <= 3 else "Nice drive!")
 	var subtitle := "Grand Prix · %s · %s" % [_race_label(), track.def.title]

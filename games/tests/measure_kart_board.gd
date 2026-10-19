@@ -28,7 +28,7 @@ func _run() -> void:
 	for i in 8:
 		rows.append({"name": str(lineup[i].name), "detail": "+%d" % KartGrandPrix.POINTS[i], "points": "%d pts" % (40 - i * 4),
 			"total": "%d pts" % (40 - i * 4), "racer_id": str(lineup[i].id), "you": i == 2,
-			"time": "1:42.315" if i == 0 else "+%.3f" % (i * 1.37)})
+			"time": KartTheme.race_time(102.3) if i == 0 else KartTheme.race_gap(i * 1.37)})
 	await create_timer(0.5).timeout  # the HUD's portrait atlas renders first
 	var out := {}
 	for which in ["results", "podium"]:
