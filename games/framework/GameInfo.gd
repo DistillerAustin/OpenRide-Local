@@ -28,6 +28,9 @@ var effort_in_just_ride := false
 ## game ends on its own terms, like a race finishing on a lap line ("game"; Kotlin still
 ## hard-stops at 1.5 × the length). Kotlin's `GameDeclaration.timedEndMode` must match.
 var timed_end_mode := "timer"
+## The game counts its own start down (Kart Race's grid 3-2-1-GO), so the intro card shows
+## "Get ready" instead of a 3-2-1 and plays no countdown cues: one countdown, not two.
+var own_countdown := false
 ## Score → stars, per difficulty: {"easy": [one, two, three], "standard": […], "hard": […]}.
 ## Each list holds the minimum score for 1, 2 and 3 stars.
 var star_thresholds := {}

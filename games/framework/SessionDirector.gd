@@ -276,7 +276,7 @@ func _process(delta: float) -> void:
 				var count := ceili(_intro_left)
 				if count < _last_count:
 					_last_count = count
-					if count >= 1 and count <= COUNTDOWN_CUES:
+					if count >= 1 and count <= COUNTDOWN_CUES and not intro_card.own_countdown:
 						AudioDirector.play_cue(AudioDirector.CUE_COUNTDOWN)
 				if _intro_left <= 0.0:
 					_start_gameplay()

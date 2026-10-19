@@ -330,7 +330,9 @@ so a game only plays. None of this changes the Bridge contract.
    - It starts the segment in `Effort` and `AudioDirector` (`segment.effort`, `segment.audio`).
    - It calls `game.prepare(segment)`, then shows the **intro card** for `intro_sec`. The card
      shows "Up next", the role, the game's `how_to` and `target_text()`, the previous result,
-     and a countdown ending 3-2-1.
+     and a countdown ending 3-2-1. A game whose own start counts down (`GameInfo.own_countdown`, set by
+     Kart Race for its grid 3-2-1-GO) gets "Get ready" instead, with no countdown cues, so the
+     rider sees one countdown, not two.
 3. **Skipping**: the card's "Skip this game" button skips the game (`segment_finished` with
    `skipped: true`). It shows only when another segment follows: skipping the last one would end
    the session, so a one-segment Just Ride never offers it. Any other touch on the card does

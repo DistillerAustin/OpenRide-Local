@@ -178,6 +178,7 @@ func info() -> GameInfo:
 	# Lean steers; standing (reported in every camera mode) is for the climbs.
 	i.tracker_mode = "lean_stand"
 	i.effort_in_just_ride = true
+	i.own_countdown = true  # the grid's 3-2-1-GO is the only countdown
 	i.timed_end_mode = "game"  # a timed GP ends on the final race's finish line
 	i.stars_per_minute = true
 	# Points a minute, tuned in simulation (race-systems: KartScoring): about 1 star mid-pack at

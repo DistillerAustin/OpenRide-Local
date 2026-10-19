@@ -13,6 +13,7 @@ const LAYER := 20
 const CARD_SIZE := Vector2(1320, 760)
 
 var can_skip := false
+var own_countdown := false  ## the game counts its own start down: no 3-2-1 here
 
 var _title: Label
 var _role: Label
@@ -86,6 +87,7 @@ func show_segment(info: GameInfo, segment: Dictionary, target: String, previous:
 		_role.text += "  ·  %d OF %d" % [int(segment.get("index", 0)) + 1, count]
 	_role.add_theme_color_override("font_color", HudTheme.role_color(role))
 	_title.text = "Up next: %s" % info.title
+	own_countdown = info.own_countdown
 	_how_to.text = how_to if not how_to.is_empty() else info.how_to
 	for child in _visual_slot.get_children():
 		child.queue_free()
@@ -109,8 +111,13 @@ func show_segment(info: GameInfo, segment: Dictionary, target: String, previous:
 	visible = true
 
 
-## The countdown: whole seconds, then a big 3-2-1.
+## The countdown: whole seconds, then a big 3-2-1 ("Get ready" when the game counts down itself).
 func set_time_left(seconds: float) -> void:
+	if own_countdown:
+		_count.text = "Get ready"
+		_count.add_theme_font_size_override("font_size", HudTheme.BIG)
+		_count.add_theme_color_override("font_color", HudTheme.MUTED)
+		return
 	var whole := ceili(seconds)
 	_count.text = str(whole) if whole > 0 else "Go!"
 	_count.add_theme_font_size_override("font_size", HudTheme.HUGE if whole <= 3 else HudTheme.BIG)
