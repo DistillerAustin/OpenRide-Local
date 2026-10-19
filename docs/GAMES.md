@@ -969,6 +969,11 @@ Dodge Ball (#39):
   shield drain and refill, the power bonus, lives and runs, circuit penalties, waves, streaks,
   the stars and the time of day.
 - `dodge_ball_scene_test` covers pause, per-rider options and the result's stats.
+- `dodge_ball_status_test` covers the themed status widget (`DodgeStatus.look`, UI polish
+  2026-10-19): with the longest texts it fits the 850 x 120 top-centre budget, its parts don't
+  overlap and it keeps the road clear; nothing moves when the caption (SHIELD, PEDAL UP!, NO
+  SHIELD) or the ×2 POINTS badge changes; an empty shield throbs without a redraw every frame;
+  every label is the display face at 34 px or more.
 - `tests/capture_dodge.gd` takes desktop screenshots in each lighting (it needs a window). With
   `--play=SECONDS`, add `--write-movie FILE.avi --fixed-fps 30` to record the game's own mix,
   bus effects included, without playing a sound.
