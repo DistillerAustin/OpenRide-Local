@@ -1,6 +1,7 @@
 class_name StarRow
 extends Control
-## Three stars, `stars` of them lit. Drawn as shapes, so no font needs the glyph.
+## Three stars, `stars` of them lit. Drawn as shapes, so no font needs the glyph, and as one
+## triangle array, so a row of them is one draw call (a summary lists many).
 
 var stars := 0:
 	set(value):
@@ -20,9 +21,11 @@ func _init(lit := 0, size_px := 56.0) -> void:
 
 
 func _draw() -> void:
+	var batch := ShapeBatch.new()
 	for i in 3:
 		var centre := Vector2(star_size * (0.5 + i * 1.2), star_size * 0.5)
-		draw_colored_polygon(_star(centre, star_size * 0.5), HudTheme.STAR_ON if i < stars else HudTheme.STAR_OFF)
+		batch.star(centre, star_size * 0.5, HudTheme.STAR_ON if i < stars else HudTheme.STAR_OFF)
+	batch.draw(self)
 
 
 static func _star(centre: Vector2, radius: float) -> PackedVector2Array:
