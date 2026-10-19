@@ -63,8 +63,13 @@ func apply_theme(new_theme: GameTheme) -> void:
 			var heading: bool = l.get_meta(&"heading", false)
 			if theme:
 				theme.style_label(l, HudTheme.BIG if heading else HudTheme.BODY, GameTheme.INK if heading else GameTheme.MUTED, true)
+				# On the solid card: no drop shadow on the heading and no outline on the line
+				# under it. Each is another text pass; together they cost 3 draw calls a frame.
 				if heading:
 					theme.set_gradient(l)
+					l.remove_theme_color_override("font_shadow_color")
+				else:
+					l.add_theme_constant_override("outline_size", 0)
 			else:
 				HudTheme.style_label(l, HudTheme.BIG if heading else HudTheme.BODY, HudTheme.INK if heading else HudTheme.MUTED)
 		for node in card.find_children("*", "Button", true, false):
