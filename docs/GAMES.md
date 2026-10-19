@@ -369,9 +369,10 @@ so a game only plays. None of this changes the Bridge contract.
    `request_pause`/`request_resume`. Its End button, and the pause screen's, ask for
    confirmation, then call `request_end`.
 8. **`session_finished`**: it goes back to the idle scene, sets the tracker off, and shows the
-   **summary**: each segment's result and stars, the totals, and any bests. Its **Done** button
-   (or Android back) calls `request_exit`. Circuit mode (#37) adds its sections with
-   `SummaryScreen.add_section()`.
+   **summary** over an opaque backdrop: each segment's result and stars, the totals, and any
+   bests. Its **Done** button (or Android back) calls `request_exit`. Circuit mode (#37) adds
+   its sections with `SummaryScreen.add_section()` (under the list on a circuit, in the column
+   on a one-game summary).
 
 ### Adding a game
 
@@ -547,33 +548,58 @@ the draw-call budget. `GameTheme` (`framework/ui/GameTheme.gd`) is its kit: labe
 text, panel, badge and card styles, buttons, a HUD skin, and `pop` / `slam` / `flash` / `pulse` /
 `fade` tweens. Kart Race keeps its own `KartTheme`, which follows the same rules.
 
-- A game opts in through `Game.ui_theme()`. `SessionDirector` calls `IntroCard.apply_theme()`
-  and `PauseOverlay.apply_theme()` with it at each segment (the themed countdown slams each 3-2-1
-  in gold), and with `null` when the game leaves. Layout, text and touch behaviour don't change.
-- The summary, the calibration screens and the open-ride "Game over" panel stay neutral.
+- A game opts in through `Game.ui_theme()`. `SessionDirector` calls `IntroCard.apply_theme()`,
+  `PauseOverlay.apply_theme()` and `CalibrationOverlay.apply_theme()` with it at each segment
+  (the themed countdown slams each 3-2-1 in gold), again whenever the game emits
+  `Game.ui_theme_changed` (Cadence Karaoke's colour option), and with `null` when the game
+  leaves. Layout, text and touch behaviour don't change.
+- **The session summary** takes the look of the game it follows: `SessionDirector.looks` keeps
+  each game's last `ui_theme()` by game_id, and `SummaryScreen.show_summary(summary, plan,
+  looks)` uses it. One game (a Just Ride) is centred in that game's look: its chip, the title,
+  its three stars slamming in one by one, points and time as tiles, the best as a badge (gold
+  for a new best, a quiet panel for the one to beat), and Done (560 x 120) at the bottom. A
+  circuit is in the house look, `GameTheme.house()`: the title across the top, tiles (points,
+  stars, time, games played), the best and a full-width Done on the left, and a card per
+  planned game on the right, edged and numbered in its game's accent; the list scrolls when
+  it's long. A game with no `ui_theme()` (Kart Race, the demo) gets the house look, a
+  periwinkle on deep indigo that sits next to Kart's violet night.
+- **The calibration screens** take the game's look too (the house look without one): see
+  "Calibration UI".
+- The open-ride "Game over" panel stays neutral.
 - `HudTheme.style_label` and `HudTheme.style_button` put the plain look back on a restyled node.
 - `game_theme_test` covers the kit and the opt-in theming (and that `null` fully undoes it);
-  `hud_layout_test` lays the HUD out with a theme skin too.
+  `hud_layout_test` lays the HUD out with a theme skin too. `summary_screen_test` lays out
+  both summary shapes (no overlaps, Done's size and place, long names, a list that scrolls,
+  the opaque backdrop, the entrance), and `calibration_overlay_test` every calibration step,
+  the strips, the taps and the look.
 - `tests/capture_ui_states.gd` (needs a window) saves half-size screenshots of any game at its
   intro, play, a high-tension moment, pause and the summary, with each frame's draw calls:
   `$GODOT_BIN --path games -s res://tests/capture_ui_states.gd -- --game=tug_of_war --out=DIR`.
+  `tests/capture_framework_screens.gd` does the same for the framework's own screens: every
+  calibration step and strip, and the summary in its shapes (one game, a new best, no stars, a
+  circuit, one ended early, a long one, Kart Race's house look).
 
 ### Calibration UI
 
-`CalibrationOverlay` shows only in camera games:
+`CalibrationOverlay` shows only in camera games, in the game's look:
 
 - **While calibrating** (`tracker_state` 2, or `calibration_progress` in the last second), it
-  prompts each step: centre, with a 3-2-1 from `fraction`, then left, right, and in / back for
-  `lean_2d`. It shows a progress bar.
+  prompts each step on a card: centre, with a 3-2-1 from `fraction`, then left, right, and in /
+  back for `lean_2d`. A drawn rider shows the pose (leaning, or bigger for "lean in" and smaller
+  for "sit back", with gold arrows) inside a ring that fills with `fraction`; a dot per step
+  turns green with a tick as each is done, and a finished step says "Got it!".
   The header reads "Step 2 of 3" (`step_index`, `step_count`; left out for a centre-only
   run), and "Try 2" from `attempt`. `retry_reason` becomes a hint: "Hold still for a moment",
   "Can't see you. Face the screen: is the room bright enough?" (on the bike, a dark room was
   the usual cause), "Lean a little further" or "Other way!". For `used_default` it shows "Using
   your usual range; recalibrate later if steering feels off" (no 3-2-1 over it).
-- **When the tracker needs calibration** (`tracker_state` 1), it offers "Tap to calibrate".
-- **When the face is lost** (`tracker_state` 4), it shows a slim "Can't see you" strip.
+- **When the tracker needs calibration** (`tracker_state` 1), it offers "Tap to calibrate" with
+  a "Tap anywhere to start" pill.
+- **When the face is lost** (`tracker_state` 4), it shows a slim amber strip with a camera icon:
+  "Can't see you: face the camera, and check the room is lit", and "TAP TO RECALIBRATE".
 - **When a calibration ended in `tracker_state` 0** (no face found after two tries), it shows
-  a slim "Camera steering is off" strip.
+  a slim strip with a crossed-out camera: "Camera steering is off: no face found. Turn a light
+  on and face the camera", and "TAP TO TRY AGAIN".
 
 Tapping "tap to calibrate", "can't see you" or "camera off" calls `request_calibration`, and so
 does the HUD's Recalibrate button; both run every step. A tap during a running calibration is

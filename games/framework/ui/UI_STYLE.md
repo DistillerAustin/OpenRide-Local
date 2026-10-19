@@ -42,7 +42,7 @@ it between pedal strokes, sweating, and tap with one finger. Design for a half-s
 | Shape | Use | Kit |
 | --- | --- | --- |
 | Panel | HUD panels, status widgets | `panel_style()`: ink fill at 86%, accent edge 3 px with a 6 px bottom edge, soft shadow (4, 6), radius 22, upright |
-| Badge | chips, banners, callouts ("WAVE 3", "SURGE!") | `badge_style()`: accent (or a meaning colour) fill, leaning by the theme's `skew`, white edge |
+| Badge | chips, banners, callouts ("WAVE 3", "SURGE!") | `badge_style()`: accent (or a meaning colour) fill, leaning by the theme's `skew`, white edge; `badge_style(fill, true)` is the slim chip for a tight row |
 | Card | intro and pause cards | `card_style()`: radius 32, 10 px bottom edge |
 | Pill button | every touch target | `button(text, action, kind)`: PRIMARY (accent), SECONDARY (dark, accent outline), GO (green), DANGER (red) |
 
@@ -75,6 +75,7 @@ it between pedal strokes, sweating, and tap with one finger. Design for a half-s
 | Tug of War | rope orange `#FF9F1C` | bark `#2A160B` | 0.12 | rustic fairground, heavy |
 | Safe Cracker | brass `#E8B04A` | soot `#14110D` | 0, upright | noir heist, precise and quiet |
 | Cadence Karaoke | the world's neon (`CadenceWorld.theme_color`) | deep violet `#12052A` | 0.25, italic | synthwave stage, on the beat |
+| House (`GameTheme.house()`) | periwinkle `#7A7CFF` | deep indigo `#17143A` | 0.12 | the app's own: a circuit's summary, and the summary and calibration of a game without a look |
 
 ## 5. Hierarchy and layout
 
@@ -117,12 +118,17 @@ re-layout** (no size, text or theme change every frame) and never per-frame GDSc
 | Loss (a life, a hit) | pop down to 0.8, or a flash | `pop(c, 0.8)`, `flash(c)` |
 | Countdown digit, banner, result | slam in from 1.8x, 0.35 s | `slam(c)` |
 | A state that holds (alarm, empty shield, surge) | breathe 1.0-1.06, 0.9 s period, stopped when it ends | `pulse(c, on)` |
-| A widget comes or goes | fade 0.2 s | `fade(c, show)` |
+| A widget comes or goes | fade 0.2 s (`keep_layout` keeps its place at alpha 0) | `fade(c, show, sec, keep_layout)` |
 | Brief message | pops in when it appears or changes, gone within 1.5-2.5 s | `hud.show_message` with a theme skin |
 
 - Durations are 0.2-0.5 s. Nothing loops forever except a held state, and that stops with it.
 - In a container, animate `scale` around the centre (the kit sets the pivot). Scale is visual
   only, so neighbours don't move. Don't tween `position` inside a container.
+- `GameTheme.stop(c, motion)` stops one of the kit's motions ("pop", "flash", "pulse", "fade")
+  or all of them, without settling.
+- A screen's entrance (the summary) staggers its parts: the title slams, then each star in
+  turn, then the tiles and the best. It is done within about 1.5 s, and its button works from
+  the first frame.
 - Juice goes on the events the rider caused: a dodge, a catch, a tumbler, a round won, a streak
   step. Pair it with the sound that already plays.
 
@@ -137,7 +143,12 @@ re-layout** (no size, text or theme change every frame) and never per-frame GDSc
 - Labels change only when their values change. Keep the existing "only on change" checks when
   you restyle.
 - `_draw` widgets redraw only on a change (`queue_redraw` on a new value), not every frame. A
-  pulsing drawn element animates `modulate`, not a redraw.
+  pulsing drawn element animates `modulate` or `scale`, not a redraw.
+- On GL Compatibility each `draw_circle`, `draw_line`, `draw_arc` and `draw_colored_polygon`
+  is its own draw call. Gather a drawn widget's shapes in a `ShapeBatch` (`framework/hud/`):
+  one triangle array, one call (the calibration figure, the star rows).
+- Text on a solid card or pill (not over the 3D scene) may skip the outline and the drop
+  shadow: each is another text pass. The summary's rows and the pause card's line do.
 - Don't add full-screen overlays. A flash uses the game's existing FX layer and hides itself
   when idle (Dodge's `_fx_rect`).
 - 3D views keep their SubViewport scale (0.62-0.67). UI work never changes it.
@@ -148,7 +159,8 @@ re-layout** (no size, text or theme change every frame) and never per-frame GDSc
 
 - Make one `GameTheme` per game (or per segment, if the accent follows the world), return it
   from `Game.ui_theme()`, and call `hud.set_skin(theme.hud_skin())` in `_on_prepare`. The intro
-  card and the pause screen then take the look by themselves.
+  card, the pause screen, the calibration screens and the summary then take the look by
+  themselves. If the look changes mid-segment, emit `ui_theme_changed`.
 - Restyle existing widgets with `theme.style_label(l)` and `theme.style_button(b, kind)`. Keep
   their "only on change" logic.
 - Say things in a few words: "SLOW DOWN", "SURGE!", "Held it!". Use one spelling throughout
@@ -188,14 +200,19 @@ func _on_prepare(seg: Dictionary) -> void:
 | `display_font(upright := true)` (static), `font(upright := false)` | the shared face |
 | `label(text, size, color := INK, upright := false)`, `style_label(l, size := 0, color = null, upright := false)` | outlined labels; restyle an existing one |
 | `hero(text, size, gradient := [])`, `set_gradient(l, gradient := [], clear := false)` | gradient hero text |
-| `panel_style(fill = null, lean := 0.0, radius := 22)`, `badge_style(fill = null)`, `card_style()` | StyleBoxes |
+| `panel_style(fill = null, lean := 0.0, radius := 22)`, `badge_style(fill = null, slim := false)`, `card_style()` | StyleBoxes |
 | `button(text, action, kind := PRIMARY)`, `style_button(b, kind)`, `button_style(kind, pressed)` | pill buttons |
 | `hud_skin()` | a `Hud.set_skin` dictionary (add layout keys to it) |
-| `pop`, `slam`, `flash`, `pulse`, `fade` (static) | motion |
+| `pop`, `slam`, `flash`, `pulse`, `fade`, `stop` (static) | motion |
+| `house()` (static) | the app's own look, for framework screens without a game's |
 | `INK`, `MUTED`, `GOOD`, `WARN`, `BAD`, `TARGET`, `*_GRADIENT`, `outline_for(size)` | meaning colours |
 
 `Hud.set_skin` also takes `message_font` and `message_outline_color` (set by `hud_skin()`).
-`IntroCard.apply_theme(theme)` and `PauseOverlay.apply_theme(theme)` are called by the session
-from `Game.ui_theme()`. `null` gives the kit's plain look, which is what Kart Race and the demo
-get. The session summary, the calibration screens and the open-ride "Game over" panel stay
-neutral: they're the app's, not a game's. `tests/unit/game_theme_test.gd` covers the kit.
+`IntroCard.apply_theme(theme)`, `PauseOverlay.apply_theme(theme)` and
+`CalibrationOverlay.apply_theme(theme)` are called by the session from `Game.ui_theme()`, at
+each segment and on `Game.ui_theme_changed`. For the intro and pause cards `null` gives the
+kit's plain look, which is what Kart Race and the demo get; the calibration screens and the
+summary use the house look instead. The summary takes the look of the game it follows (a
+circuit: the house look, each row in its game's accent). The open-ride "Game over" panel stays
+neutral. `tests/unit/game_theme_test.gd` covers the kit; `tests/capture_framework_screens.gd`
+captures the summary and calibration screens.
