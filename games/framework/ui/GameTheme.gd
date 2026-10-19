@@ -44,6 +44,8 @@ const DANGER := "danger"  ## End, End session: only ever one per screen, far fro
 const POP_SEC := 0.35
 const FLASH_SEC := 0.3
 const FADE_SEC := 0.2
+## The tween each motion keeps on its node, by the name `stop` takes.
+const MOTIONS := {"pop": &"_ui_pop", "flash": &"_ui_flash", "pulse": &"_ui_pulse", "fade": &"_ui_fade"}
 
 ## The game's identity colour: panel edges, primary buttons, hero gradients.
 var accent: Color
@@ -62,6 +64,7 @@ var italic := false
 
 static var _fonts := {}
 static var _gradient_shader: Shader
+static var _house: GameTheme
 var _hero_materials := {}
 
 
@@ -74,6 +77,16 @@ func _init(accent_color: Color, ink_color: Color, badge_skew := 0.0, italic_face
 	panel_edge = Color(accent, 0.9)
 	skew = badge_skew
 	italic = italic_face
+
+
+## The app's own look, for the framework's screens (the summary, calibration) when a game has
+## no `ui_theme()` (Kart Race, the demo) and for a circuit's summary, which spans several
+## games: a periwinkle accent on a deep indigo ink, upright. Close to Kart Race's violet night,
+## so a Kart session ends in a look that matches it, and far from every meaning colour.
+static func house() -> GameTheme:
+	if _house == null:
+		_house = GameTheme.new(Color("7a7cff"), Color("17143a"), 0.12)
+	return _house
 
 
 ## The shared display face: heavy, and leaning unless `upright`.
@@ -187,12 +200,17 @@ func panel_style(fill = null, lean := 0.0, radius := 22) -> StyleBoxFlat:
 	return s
 
 
-## A slanted badge (a chip, a banner, a callout) in `fill` (default: the accent).
-func badge_style(fill = null) -> StyleBoxFlat:
+## A slanted badge (a chip, a banner, a callout) in `fill` (default: the accent). `slim` trims
+## its padding for a chip in a tight row (two rows of chips fit a 120 px widget).
+func badge_style(fill = null, slim := false) -> StyleBoxFlat:
 	var s := panel_style(fill if fill != null else Color(accent, 0.95), skew, 14)
 	s.border_color = Color(Color.WHITE, 0.55)
-	s.content_margin_left = 26
-	s.content_margin_right = 26
+	s.content_margin_left = 18 if slim else 26
+	s.content_margin_right = 18 if slim else 26
+	if slim:
+		s.content_margin_top = 1
+		s.content_margin_bottom = 3
+		s.border_width_bottom = 4
 	return s
 
 
@@ -323,17 +341,26 @@ static func pulse(c: Control, on: bool, peak := 1.06, period := 0.9) -> void:
 	c.set_meta(&"_ui_pulse", t)
 
 
-## Fades `c` in (or out, and hides it) over FADE_SEC.
-static func fade(c: CanvasItem, show: bool, sec := FADE_SEC) -> Tween:
+## Fades `c` in (or out, and hides it) over FADE_SEC. With `keep_layout`, a fade-out leaves it
+## visible at alpha 0, so it keeps its place in a container and its neighbours don't move.
+static func fade(c: CanvasItem, show: bool, sec := FADE_SEC, keep_layout := false) -> Tween:
 	_kill(c, &"_ui_fade")
 	if show:
 		c.visible = true
 	var t := c.create_tween()
 	t.tween_property(c, "modulate:a", 1.0 if show else 0.0, sec)
-	if not show:
+	if not show and not keep_layout:
 		t.tween_callback(c.hide)
 	c.set_meta(&"_ui_fade", t)
 	return t
+
+
+## Stops the kit's motion on `c`: one of "pop" (pop and slam), "flash", "pulse" or "fade", or
+## every one with "". It stops where it is: nothing settles (`pulse(c, false)` settles a pulse).
+static func stop(c: Object, motion := "") -> void:
+	for key in MOTIONS:
+		if motion.is_empty() or motion == key:
+			_kill(c, MOTIONS[key])
 
 
 static func _kill(c: Object, key: StringName) -> void:

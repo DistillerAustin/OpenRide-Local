@@ -182,3 +182,48 @@ func test_motion_helpers_settle() -> void:
 	GameTheme.fade(c, false)
 	await get_tree().create_timer(GameTheme.FADE_SEC + 0.1).timeout
 	assert_bool(c.visible).is_false()
+
+
+func test_a_fade_can_keep_its_place_in_the_layout() -> void:
+	var c: Control = auto_free(Control.new())
+	add_child(c)
+	GameTheme.fade(c, false, 0.05, true)
+	await get_tree().create_timer(0.15).timeout
+	assert_bool(c.visible).is_true()  # still laid out, so its neighbours don't move
+	assert_float(c.modulate.a).is_equal(0.0)
+	GameTheme.fade(c, true, 0.05)
+	await get_tree().create_timer(0.15).timeout
+	assert_float(c.modulate.a).is_equal(1.0)
+
+
+func test_stop_ends_one_motion_or_all() -> void:
+	var c: Control = auto_free(Control.new())
+	add_child(c)
+	GameTheme.pulse(c, true)
+	GameTheme.fade(c, false)
+	GameTheme.stop(c, "fade")
+	assert_bool(c.has_meta(&"_ui_fade")).is_false()
+	assert_bool(c.has_meta(&"_ui_pulse")).is_true()  # the other motion runs on
+	GameTheme.flash(c)
+	GameTheme.stop(c)
+	for key in GameTheme.MOTIONS.values():
+		assert_bool(c.has_meta(key)).is_false()
+	await get_tree().create_timer(GameTheme.FADE_SEC + 0.1).timeout
+	assert_bool(c.visible).is_true()  # the stopped fade-out never hid it
+
+
+func test_a_slim_badge_trims_only_its_padding() -> void:
+	var full := theme.badge_style(GameTheme.WARN)
+	var slim := theme.badge_style(GameTheme.WARN, true)
+	assert_float(slim.content_margin_top).is_less(full.content_margin_top)
+	assert_float(slim.content_margin_left).is_less(full.content_margin_left)
+	assert_int(slim.border_width_bottom).is_less(full.border_width_bottom)
+	assert_that(slim.bg_color).is_equal(full.bg_color)
+	assert_float(slim.skew.x).is_equal(full.skew.x)
+
+
+func test_the_house_look_is_shared_and_no_meaning_colour() -> void:
+	var house := GameTheme.house()
+	assert_object(house).is_same(GameTheme.house())
+	for meaning in [GameTheme.GOOD, GameTheme.BAD, GameTheme.WARN, GameTheme.TARGET]:
+		assert_float(absf(house.accent.h - meaning.h)).is_greater(0.08)

@@ -57,7 +57,7 @@ func set_alarm(on: bool) -> void:
 	_alarm_on = on
 	if on:
 		_hide_hero()
-		GameTheme._kill(alarm_badge, &"_ui_fade")  # a fade-out still running
+		GameTheme.stop(alarm_badge, "fade")  # a fade-out still running
 		alarm_badge.visible = true
 		GameTheme.slam(alarm_badge).finished.connect(func():
 			if _alarm_on:
@@ -77,7 +77,7 @@ func show_hero(text: String, seconds: float) -> void:
 	if _alarm_on:
 		return
 	hero.text = text
-	GameTheme._kill(hero, &"_ui_fade")
+	GameTheme.stop(hero, "fade")
 	hero.visible = true
 	if _hero_tween and _hero_tween.is_valid():
 		_hero_tween.kill()
@@ -90,5 +90,5 @@ func show_hero(text: String, seconds: float) -> void:
 func _hide_hero() -> void:
 	if _hero_tween and _hero_tween.is_valid():
 		_hero_tween.kill()
-	GameTheme._kill(hero, &"_ui_fade")
+	GameTheme.stop(hero, "fade")
 	hero.visible = false

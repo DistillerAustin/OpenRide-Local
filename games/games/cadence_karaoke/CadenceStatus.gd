@@ -181,13 +181,7 @@ func _style_alert() -> void:
 
 ## A slim badge: the theme's lean, a white edge, little vertical padding (two rows fit 120 px).
 func _chip_style(fill: Color) -> StyleBoxFlat:
-	var s := _look.badge_style(fill)
-	s.content_margin_top = 1
-	s.content_margin_bottom = 3
-	s.content_margin_left = 18
-	s.content_margin_right = 18
-	s.border_width_bottom = 4
-	return s
+	return _look.badge_style(fill, true)
 
 
 func _chip(parent: Control) -> PanelContainer:
