@@ -266,7 +266,7 @@ starts).
 | --- | --- | --- |
 | `start_plan(request_json)` | hub | Builds and runs the plan (`session_started` …), or sends `plan_rejected` |
 | `update_setting(key, value_json)` | any | `camera_games` (bool), `music` (`"auto"`/`"on"`/`"off"`), `music_volume`, `sfx_volume` (0..1, clamped); stores it, then `hub_state`. Unknown keys and bad values are logged and ignored. |
-| `hub_calibrate(mode, full)` | hub | Camera on, calibrate (`force = full`), camera off when it ends; `calibration_progress`, then `hub_state` |
+| `hub_calibrate(mode, full)` | hub | Camera on, calibrate (`force = full`), camera off when it ends; `calibration_progress`, then `hub_state`. The hub sends `lean_x`, with `full` false until the visit is calibrated (centre only with today's extremes) and true after (Recalibrate). |
 | `cancel_calibration()` | hub | Stops a hub calibration; the visit's earlier calibration stays |
 | `request_camera_permission()` | hub | The host shows Android's prompt, then `hub_state` |
 | `exit_hub(next)` | hub | `app` or `edit_profile`: ends the visit, saves, `visit_ended`, task to back |
@@ -290,7 +290,7 @@ locally and must **not** call it.
 - No Godot splash (#45). `games/project.godot` turns the boot splash image off and sets its
   colour and the default clear colour to the app background (`#0C0C0E`). The host's theme
   (`Theme.OpenRide.GameHost`) uses the same window background. On the engine's first start,
-  `GameHostActivity` covers it with a plain "Loading game…" view, which it removes in
+  `GameHostActivity` covers it with a plain "Loading games…" view, which it removes in
   `onGodotMainLoopStarted` (the main scene is loaded and about to draw). Re-entry skips it,
   because the engine is already running. Cold entry on the bike takes about 4.8–5 s from tap to
   the main scene, with or without the view.
@@ -325,10 +325,11 @@ sensor binding and ride session.
 `GameVisitManager.begin` and attaches the visit to the bridge. A visit still live when the host
 comes forward again (the rider never reached the app) is kept, and its `hub_state` resent.
 
-- `intent(context, request)` is the Compose Games tab's entry until the hub replaces its picker
-  (plan phases B and F): the `SessionRequest` autostarts as the visit's first plan.
-- `EXTRA_AUTOSTART` (dev, adb and headless checks) does the same with a `start_plan` request's
-  snake_case JSON.
+- The app's only way in is `launchGames(context)` (`ui/games/GamesLauncherScreen.kt`), from
+  the Games tab and the Home card. It carries no request: the rider picks in the hub.
+- `EXTRA_AUTOSTART` (dev, adb and headless checks) starts a `start_plan` request (its
+  snake_case JSON) as soon as the hub is up. Nothing else outside `games/` builds a
+  `SessionRequest`.
 - `request_camera_permission` shows Android's prompt from the host
   (`requestPermissions` → `GameVisitManager.onPermissionResult` → `hub_state`). A refusal
   Android won't ask again reads as `denied`.
@@ -521,7 +522,9 @@ scene and `SessionDirector.IDLE_SCENE`. A visit's first `hub_state` shows it
 ```
 Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Session
 ├ Backdrop                   one gradient (HubTheme.backdrop)
-├ Screens                    HubNav's top screen only: HomeScreen, GameScreen, CircuitScreen, SettingsScreen
+├ Screens                    HubNav's top screen only: HomeScreen, GameScreen, CircuitScreen,
+│                            MyCircuitsScreen, BuilderScreen, SettingsScreen
+├ Calibration                CalibrationOverlay in hub mode (CanvasLayer 25), built on the first calibration
 ├ ConfirmDialog, Toast       CanvasLayers 35 and 36
 ├ Saved                      CanvasLayer 37: "Saving…", and "We saved your ride · Tap to keep playing" (idle guard)
 └ HubMusic                   the hub's theme through AudioDirector
@@ -537,7 +540,7 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   `Hub.gd` acts. Home has the header (`HubHeader`: avatar, name, ride so far, live rpm · W at
   2 Hz, the camera's state, Settings, Exit games), the FTP nudge, a card per game (the catalog
   intersected with `GameRegistry`; a camera game is dimmed when the camera is unavailable and
-  explains on a tap) and a card per preset circuit. A game's screen: its options on the left
+  explains on a tap), a card per preset circuit, then "My circuits" and "+ Build your own". A game's screen: its options on the left
   (`GameInfo.options` with `where` hub or both, saved in `GameOptions` per rider at each tap;
   see "Game options"), Length (the catalog's modes and `minute_steps` or rounds), Difficulty
   and Start on the right (it waits for `session_started` or `plan_rejected`). A game with
@@ -546,11 +549,37 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   then its options as rows. Grouped options sit under "More options" (top right), a panel over
   the left column with Done (Android back closes it too). A circuit's screen: its lineup, Difficulty, its best and
   Start. Settings: camera games, game music, and the volumes as 10% steppers (heard at once).
+- **The circuit builder** (`BuilderScreen`, rules in `CircuitBuilder`, plan phase D): "Add a
+  game" tiles (an `OptionCards` grid, flatter through `slot_aspect`; a tap adds the game), the
+  lineup as `SlotRow`s in a `ScrollContainer` (the role colour and "2 · Work", the length on a
+  `Stepper`, move up and down, remove; drag the names or the thick bar to scroll), Difficulty
+  (an `OptionRow`), and on the right the total and lineup (one bake), the best for this lineup
+  and difficulty, Save, Delete (a saved one) and Start. A new slot takes the game's minimum or
+  1:30; steps are 30 s to 5 min, then 1 min; 12 games and 90 minutes at most. Roles, rounding
+  and the plan id mirror `SessionPlans.custom` (`custom:<game>.<sec>,…`), and with the camera
+  off a slot plays its camera-free stand-in or, with none (Kart Race), Start greys out and says
+  why. Save keeps it as "My circuit 1-3" (no keyboard, so no names); with three saved it asks
+  which to replace. Replacing, deleting and leaving with unsaved changes are confirmed; ✕ isn't.
+  The lineup being built lives in the nav args, so it survives playing it. `MyCircuitsScreen`
+  shows the three places as baked cards (lineup, time, games, best); a tap opens one in the
+  builder, an empty one builds into it.
+- **Calibrating in the hub** (plan phase E, `HubCalibration`, an enum FSM: idle, asking,
+  running): the header's camera chip is a button. It reads "Calibrate" (permission granted, not
+  calibrated yet), "CAMERA READY · Recalibrate", "Allow" (permission `ask`: a tap calls
+  `request_camera_permission` and calibrates once `hub_state` says granted; still `ask` means
+  refused), "NOT ALLOWED · How to allow" (explains Android's settings), "CAMERA OFF · Turn on"
+  (offers to turn camera games on) or "CAN'T SEE YOU · Try again". A calibration shows the
+  framework's `CalibrationOverlay` in hub mode (full screen, Cancel, no strips), ducks the
+  music, and ends at the next `hub_state` once the tracker has stopped calibrating (looked at
+  again 0.4 s later if the tracker state lags). Taps within 1 s, or mid-run, are ignored;
+  Android back cancels. Camera games of the visit then start tracking at once; one never
+  calibrated from the hub calibrates by itself on its first camera mode, as before.
 - **Confirmations:** Exit games ("Your ride (12:30, 2 games) will be saved", or "Nothing's
   been recorded yet"), Set FTP (it leaves games) and the camera explanations use
   `ConfirmDialog`: the safe button left, the acting one right, far apart.
 - **Picks:** `HubPrefs` (`user://hub_prefs.cfg`, section `<rider>/hub`) keeps the last mode,
-  length and difficulty per game and the difficulty per circuit.
+  length and difficulty per game, the difficulty per circuit, and the saved custom circuits
+  (`custom.1`-`custom.3`: `{v, slots, difficulty}`). Not in OpenRide's backup.
 - **Look:** the shared kit's house look (`HubTheme` on `GameTheme.house()`), each game's card in
   its accent (`HubTheme.LOOKS`, from UI_STYLE.md §4). Cards show `res://games/<id>/hub_card.png`
   (512x288, rendered from the game's own world by `tests/capture_hub_cards.gd`; re-run it when
@@ -572,10 +601,8 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   intensity that follows pedalling (0 still, 0.5 at 60 rpm, 1 at 90 rpm). It honours
   `hub_state.audio` (`AudioDirector.set_volumes`), puts `GameMix.master_effects()` on Master,
   ducks while a dialog shows and under messages, and crossfades with the games' themes.
-- **Hooks for later phases:** the camera chip is display-only until phase E (`HubHeader.
-  camera_pressed` is declared for it); a game's options column is where phase C's `cards`,
-  `segmented` and "More options" go (`GameScreen`); circuits get "My circuits" and the builder
-  in phase D (`HubNav` takes new screen ids).
+- **Measured (phase D, desktop):** the builder 35 draw calls empty and about 147 with a full
+  view of rows (its rows aren't baked: they change on every tap), My circuits 13, home 23.
 
 ### Adding a game
 
@@ -824,7 +851,8 @@ Each game's look is in its `ART_BIBLE.md`, and the planned graphics work in its 
 
 ### Calibration UI
 
-`CalibrationOverlay` shows only in camera games, in the game's look:
+`CalibrationOverlay` shows only in camera games, in the game's look (and, in hub mode, while
+the hub calibrates: see "The Games hub on screen"):
 
 - **While calibrating** (`tracker_state` 2, or `calibration_progress` in the last second), it
   prompts each step on a card: centre, with a 3-2-1 from `fraction`, then left, right, and in /
@@ -1348,13 +1376,13 @@ Dodge Ball (#39):
 
 1. Install with `adb install -r app/build/outputs/apk/debugReal/app-debugReal.apk`. The `-r`
    keeps the rider's data, so never uninstall.
-2. On the tablet, open **Profile → Mini-games (preview)** and pick a Just Ride of the demo
-   (20 minutes or open-ended). Both record a ride for the active rider. The Games hub (#38)
-   replaces this entry point.
-3. The demo is a `lean_x` game, so the camera starts and calibrates during the first intro
-   card. The camera needs the CAMERA permission. Until the hub asks
-   for it (#38), grant it with
-   `adb shell pm grant dev.digitalducktape.openride.real android.permission.CAMERA`.
+2. On the tablet, tap **Enter Games** (the Games tab, or the Games card on Home). The Games hub
+   opens; everything is picked there, and the whole visit records as one ride on Exit games.
+3. The hub asks for the CAMERA permission the first time the rider taps the camera chip
+   ("Allow") or a camera game's "Allow camera". To skip the prompt in a test, grant it with
+   `adb shell pm grant dev.digitalducktape.openride.real android.permission.CAMERA`. A
+   permission refused before the process started reads as "Allow" (`ask`) until the host has
+   asked once; Android then answers at once and the chip says "Not allowed".
 
 ### Capturing logs on the bike
 
@@ -1934,19 +1962,20 @@ warm-up, N blocks of Tug of War 1:00, Safe Cracker 1:30, Dodge Ball 1:30 and Cad
 - **The summary.** A circuit lists every planned game: the ones the session never reached say "not played", and the heading reads "Session ended early" instead of "Circuit complete". The best line says "New personal best!" (with the best before it) or "Your best: 5400 points, 2 stars"; Kotlin sends `previous_score` and `previous_stars` alongside the beaten flags. A Just Ride shows its one game.
 - **Not built yet:** time in each role's target zone and average effort on the circuit summary.
 
-**The Games tab (beta).** A tab in the bottom bar (and a "Games · BETA" card on Home) that holds:
-circuit cards with a difficulty picker and the rider's best; a Just Ride card per game in
-`GameCatalog` (without the demo), so a new game appears without UI changes, with the modes the
-game supports, a length (5-60 min, or rounds) and a difficulty, and the rider's best for that
-plan and difficulty; an FTP nudge linking to the profile editor; and the settings: camera games
-on or off, game music (auto, on or off) and the music and effects volumes
-(`GamesSettings`, stored in SharedPreferences and read by the session manager at each segment).
-`GamesViewModel` (tested by `GamesViewModelTest`) holds the logic; `GamesScreen` draws it. Starting
-asks for the camera permission first when a camera game is involved (once); if it is refused,
-circuits play without camera games and Just Rides of camera games are not started.
+**The Games tab (beta) is a launcher.** The tab stays in the bottom bar, but it only opens the
+hub: `GamesLauncherScreen` shows the title, the BETA badge, one line and a big **Enter Games**
+button, and "Saving your last games ride…" while `GameVisitManager.saving` is true. The Home
+card's button reads "Enter Games" too; both call `launchGames(context)`. Everything the old tab
+held (circuits, a Just Ride card per game, difficulty, bests, the FTP nudge, the settings and
+the camera permission) lives in the hub. `GamesViewModel`, `GamesScreen` and their test are gone;
+what they computed moved to `HubStateBuilder` (the minute steps), `GameVisitManager.updateSetting`
+and the hub.
 
-- **Not built yet:** the household leaderboard per game (the DAO has `leaderboard`), and the
-  camera explainer as a separate first-run card (the Games card describes it in the settings).
+**Custom circuits.** Built in the hub (see "The Games hub on screen"), sent as `start_plan`
+`{kind: "custom"}`, planned by `SessionPlans.custom` and recorded like a preset (its own plan id,
+so bests follow the lineup). They are saved on the Godot side only.
+
+- **Not built yet:** the household leaderboard per game (the DAO has `leaderboard`).
 
 ## Originality and licensing
 

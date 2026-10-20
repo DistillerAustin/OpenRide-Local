@@ -129,6 +129,11 @@ class GameVisitManager(
     /** The ride the last visit saved, once `visit_ended` is sent: the app opens its summary (consume once). */
     val finishedRideId: StateFlow<Long?> = _finishedRideId.asStateFlow()
 
+    private val _saving = MutableStateFlow(false)
+
+    /** A visit's ride is being saved (from the end of the visit until `visit_ended`): the Games launcher says so. */
+    val saving: StateFlow<Boolean> = _saving.asStateFlow()
+
     /** The app has shown [finishedRideId]'s summary. */
     fun consumeFinishedRide() {
         _finishedRideId.value = null
@@ -500,8 +505,13 @@ class GameVisitManager(
         if (recording && outcome is SaveOutcome.Keep) {
             rideSessionManager.setGamePlan(plans.singleOrNull() ?: GameLabels.VISIT_PLAN)
         }
+        _saving.value = true
         savingJob = scope.launch {
-            val rideId = if (outcome is SaveOutcome.Keep) saveRide(keepRows) else null
+            val rideId = try {
+                if (outcome is SaveOutcome.Keep) saveRide(keepRows) else null
+            } finally {
+                _saving.value = false
+            }
             val message = VisitEndedMessage(
                 visitId = id,
                 rideId = rideId,

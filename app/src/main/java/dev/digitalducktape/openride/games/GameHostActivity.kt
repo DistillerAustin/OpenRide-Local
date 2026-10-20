@@ -24,8 +24,6 @@ import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.GameBridge
 import dev.digitalducktape.openride.games.bridge.OpenRideBridgePlugin
 import dev.digitalducktape.openride.games.session.GameVisitManager
-import dev.digitalducktape.openride.games.session.SessionRequest
-import dev.digitalducktape.openride.games.session.toPlanRequest
 import org.godotengine.godot.Godot
 import org.godotengine.godot.GodotActivity
 import org.godotengine.godot.plugin.GodotPlugin
@@ -36,10 +34,9 @@ import org.godotengine.godot.plugin.GodotPlugin
  * connects it to the app through the `OpenRideBridge` plugin.
  *
  * Kotlin owns each visit: the app-scoped [GameVisitManager] runs the Games hub visit (one
- * ride, any number of plans). Until the hub ships (plan phases B and F) the Compose Games tab
- * still picks: the [SessionRequest] this activity was started with autostarts as the visit's
- * first plan, and when the game calls `request_exit()` after its summary the visit is saved
- * and the rider goes back to the Compose app.
+ * ride, any number of plans). The rider picks everything in the Godot hub; the app only opens
+ * it (`launchGames`). Exit games saves the visit and the rider goes back to the Compose app.
+ * Only dev runs and the headless checks start a plan from outside the hub ([EXTRA_AUTOSTART]).
  *
  * **This activity lives as long as the app process.** Godot runs one engine per process and
  * cannot restart it: destroying the host terminates the engine, after which Godot force-quits
@@ -150,7 +147,6 @@ class GameHostActivity : GodotActivity() {
 
     private fun startSession(intent: Intent) {
         val autostart = intent.getStringExtra(EXTRA_AUTOSTART)?.let(BridgeMessages::parsePlanRequest)
-            ?: SessionRequest.fromJson(intent.getStringExtra(EXTRA_REQUEST))?.toPlanRequest()
         Log.i(TAG, "games visit${autostart?.let { ", autostart $it" } ?: ""}")
         // A live visit (the rider left without Exit, and the app never came forward) is kept.
         visit.begin(autostart = autostart, onExit = ::exitToApp)
@@ -185,8 +181,6 @@ class GameHostActivity : GodotActivity() {
         /** Exported by the `exportGamesPack` Gradle task into the APK's assets. */
         private const val GAMES_PACK = "res://games.pck"
 
-        private const val EXTRA_REQUEST = "dev.digitalducktape.openride.games.SESSION_REQUEST"
-
         /**
          * Dev and the headless checks: a `start_plan` request (its snake_case JSON) that starts
          * as soon as the hub is up, e.g. `adb shell am start -n <pkg>/dev.digitalducktape.openride.games.GameHostActivity
@@ -196,13 +190,7 @@ class GameHostActivity : GodotActivity() {
 
         private const val REQUEST_CAMERA = 0x0CA4
 
-        /** Opens the Games hub: a new visit, or the live one. */
+        /** Opens the Games hub: a new visit, or the live one (`launchGames`, the app's one way in). */
         fun intent(context: Context): Intent = Intent(context, GameHostActivity::class.java)
-
-        /**
-         * The Compose Games tab, until the hub replaces its picker (plan phase F): the hub with
-         * [request] autostarted as the visit's first plan.
-         */
-        fun intent(context: Context, request: SessionRequest): Intent = intent(context).putExtra(EXTRA_REQUEST, request.toJson())
     }
 }

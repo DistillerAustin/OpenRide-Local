@@ -35,10 +35,10 @@ It's installed using a free tool called [OpenPelo](https://github.com/doudar/Ope
 > [!IMPORTANT]
 > **The mini-games are in BETA.** They are new, they have only had a little time on a real bike, and difficulty and scoring are still being tuned, so expect rough edges. **Feedback, ideas and pull requests are very welcome** — they are how we make this better. See [Help us make it better](#help-us-make-it-better) below.
 
-Workouts that play like games. Open the **Games** tab (or the *Games BETA* card on Home), pick a game or a circuit, and ride. The bike's cadence, resistance and power are the controller: pedal to move, turn the resistance knob to score more, and the game keeps track of the rest. Every session is saved to your history like any other ride.
+Workouts that play like games. Tap **Enter Games** (the **Games** tab, or the *Games BETA* card on Home) and the Games hub opens: pick a game, a circuit or build your own, calibrate the camera once, and play as many as you like. The whole visit is saved as one ride. The bike's cadence, resistance and power are the controller: pedal to move, turn the resistance knob to score more, and the game keeps track of the rest. Each visit shows in your history like any other ride.
 
 <p align="center">
-  <img src="docs/screenshots/games_hub.png" width="49%" alt="The Games tab: circuits and games to pick from" />
+  <img src="docs/screenshots/games_hub.png" width="49%" alt="The Games hub: games and circuits to pick from" />
   <img src="docs/screenshots/circuit_progress.png" width="49%" alt="A game circuit, with its progress strip along the top" />
 </p>
 
@@ -64,14 +64,14 @@ Each game can be played on its own as a **Just Ride** — for a set time, open-e
 
 ### Circuits
 
-A circuit strings the games into a structured interval workout — warm-up, work and recovery segments, each with its own game — in **20, 30 or 45 minutes**. A progress strip shows where you are, and the summary at the end lists every game and its result.
+A circuit strings the games into a structured interval workout — warm-up, work and recovery segments, each with its own game — in **20, 30 or 45 minutes**, or one you build yourself (up to 12 games and 90 minutes, saved as *My circuit 1-3*). A progress strip shows where you are, and the summary at the end lists every game and its result.
 
 ### Good to know
 
 - **Resistance scores more.** In the effort games (Dodge Ball and Tug of War), points get a multiplier from 1.0× at light resistance (30% or less) up to 1.5× at 60% and above — but only while you're pedaling at 60 rpm or more, so grinding at a standstill doesn't count.
 - **Targets follow your FTP.** Games scale their power targets to your FTP. Set it in **Profile → Edit profile**; until you do, they assume 150 W.
 - **The camera is optional, and private.** Only Dodge Ball needs it (and Tug of War's optional *brace lean*), to find where your head is. It looks for a head position, and nothing is recorded or saved. If you don't allow the camera, circuits swap Dodge Ball for a camera-free game. A well-lit room helps.
-- **Music and sound effects are generated on the device.** Game music turns itself off while you're playing your own music (you can set it to always on or off, and set volumes, at the bottom of the Games tab).
+- **Music and sound effects are generated on the device.** Game music turns itself off while you're playing your own music (you can set it to always on or off, and set volumes, in the hub's settings).
 - **Stars and personal bests.** Each game awards up to three stars and remembers your best.
 
 ### Help us make it better

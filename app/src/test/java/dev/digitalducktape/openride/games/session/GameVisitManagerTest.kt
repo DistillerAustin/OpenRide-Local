@@ -17,8 +17,11 @@ import dev.digitalducktape.openride.games.bridge.PlanRequestKind
 import dev.digitalducktape.openride.games.bridge.PlanRequestMessage
 import kotlin.random.Random
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.serialization.json.JsonNull
@@ -474,6 +477,19 @@ class GameVisitManagerTest {
 
         v.enter()
         assertNotEquals(firstVisit, hub().str("visit_id"))
+    }
+
+    @Test
+    fun `saving is true while a visit's ride is saved, for the Games launcher`() {
+        val v = visit().enter().playQuickMinute()
+        val seen = mutableListOf<Boolean>()
+        scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { v.saving.toList(seen) }
+        assertEquals(listOf(false), seen)
+
+        v.call { endIfLive("app_resumed") }
+
+        assertEquals(listOf(false, true, false), seen)
+        assertFalse(v.saving.value)
     }
 
     @Test

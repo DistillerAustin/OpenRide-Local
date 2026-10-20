@@ -222,9 +222,9 @@ fun PlanRequestMessage.toSessionRequest(cameraGames: Boolean, catalog: GameCatal
 }
 
 /**
- * The hub's `start_plan` request for this app-side request, for the host's autostart (the
- * Compose Games tab until phase F, and dev intents). `cameraGames` isn't carried: the visit
- * applies its own.
+ * The hub's `start_plan` request for this app-side request: the inverse of
+ * [PlanRequestMessage.toSessionRequest] (SessionPlansTest pins the round trip). `cameraGames`
+ * isn't carried: the visit applies its own.
  */
 fun SessionRequest.toPlanRequest(): PlanRequestMessage = when (this) {
     is SessionRequest.JustRide -> when (val m = mode) {
