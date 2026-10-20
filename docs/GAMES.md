@@ -150,18 +150,26 @@ playable this way.
 
 - Fields 6-9 always show the tracker's latest state. They read `0`, with `tracker_state` 0 (off),
   whenever the camera isn't running.
-- Every session starts by forgetting the last session's centre. The centre is re-taken in every
-  session, because a silently off-centre calibration was the camera spike's worst failure.
-- The first `set_tracker_mode` with a camera mode in a session starts a calibration at once
+- Every **visit** starts by forgetting the last visit's centre (`TrackerLink.startVisit`). The
+  centre is re-taken once per visit, because a silently off-centre calibration was the camera
+  spike's worst failure; plans within a visit share it (the Games hub, spec §6).
+- The first `set_tracker_mode` with a camera mode in a visit starts a calibration at once
   (`tracker_state` 2). It re-takes only the centre (3 s) if the rider's lean extremes were
   measured earlier the same day, otherwise every step (about 8 s for `lean_x`). Later camera
-  games in the session track straight away.
+  games in the visit, in this plan or a later one, track straight away.
+- From the hub, `hub_calibrate(mode, full)` turns the camera on and calibrates (`full` forces
+  every step); the camera turns off again when that calibration ends, however it ends, or on
+  `cancel_calibration`. Between plans the camera is off too (`TrackerLink.planEnded`, which
+  keeps the centre). `hub_state.camera.calibrated` and `session_started.calibrated` say what
+  the visit's calibration covers: `""`, `lean_x`, or `lean_2d` once a depth calibration has
+  completed.
 - `lean_2d` games that want depth call `request_calibration("lean_2d")`, unless depth was
   calibrated earlier. Without depth extremes `lean_depth` reads 0 and left/right still work.
 - A calibration can't run away: each step gets at most 3 attempts before it falls back
   (`used_default`). The worst case for `lean_x` is about 28 s. The fallback values are used but
   never saved as the rider's.
-- The camera stops when the session finishes or the rider leaves games.
+- The camera stops between plans and when the visit ends (`TrackerLink.endVisit`, which also
+  forgets the centre).
 - Face lost: the lean holds for 0.5 s, then eases to centre, and `tracker_state` becomes 4 after 3 s.
 - Looking away counts as face lost. The detector often keeps the face when the rider turns the head
   from the screen. So a face frame counts as turned away when either:

@@ -183,7 +183,8 @@ class GameVisitManager(
         if (gen != generation || phase != Phase.WAITING) return@launch
         rider = activeProfileId()?.let { loadProfile(it) }
         avatarPng = rider?.let { runCatching { avatar(it) }.getOrNull() }
-        tracker?.start()
+        tracker?.startVisit()
+        tracker?.onHubCalibrationEnded = ::requestHubState
         enterHub()
         sendHubState()
         runAutostart()
@@ -225,12 +226,14 @@ class GameVisitManager(
 
     override fun onHubCalibrate(mode: String, full: Boolean) = post {
         touched()
-        log("hub_calibrate $mode full=$full: not wired yet (A6)")
+        if (phase != Phase.HUB) return@post log("hub_calibrate outside the hub: ignored")
+        log("hub_calibrate $mode full=$full")
+        tracker?.hubCalibrate(mode, full)
     }
 
     override fun onCancelCalibration() = post {
         touched()
-        log("cancel_calibration: not wired yet (A6)")
+        if (phase == Phase.HUB) tracker?.cancelCalibration()
     }
 
     override fun onRequestCameraPermission() = post {
@@ -349,7 +352,7 @@ class GameVisitManager(
         if (gen != generation) return
         // Menu time isn't riding: a manual pause, so pedalling in the hub doesn't resume it.
         if (recording) rideSessionManager.pause()
-        tracker?.setTrackerMode("off")
+        tracker?.planEnded()
         val plan = outcome.plan
         val difficulty = wire(Difficulty.serializer(), plan.difficulty)
         val previousRuns = visitPlans.toList()
@@ -460,7 +463,7 @@ class GameVisitManager(
         lastEnd = ending
         stopIdleGuard()
         hubJob?.cancel()
-        tracker?.stop()
+        tracker?.endVisit()
         val gen = generation
         val id = visitId
         val keepRows = rows.toList()
@@ -592,8 +595,8 @@ class GameVisitManager(
     private fun cameraAvailable(): Boolean =
         HubStateBuilder.cameraAvailable(cameraPermission(), settings.settings.value.cameraGames, cameraFailed())
 
-    /** What this visit's calibration covers: `""`, `lean_x` or `lean_2d` (A6). */
-    private fun calibrated(): String = ""
+    /** What this visit's calibration covers: `""`, `lean_x` or `lean_2d`. */
+    private fun calibrated(): String = tracker?.calibratedMode() ?: ""
 
     // --- The idle guard ---------------------------------------------------------------------
 

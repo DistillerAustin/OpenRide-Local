@@ -61,21 +61,27 @@ fun HeadTrackerState.toTrackerReading(): TrackerReading = TrackerReading(
 )
 
 /**
- * One game session's use of the app's [HeadTracker]: the contract's tracker methods, and
- * `calibration_progress` while a calibration runs. Fields 6-9 of the input frame don't go through
- * here; [GameBridge] reads the tracker's state directly, session or not.
+ * One Games hub visit's use of the app's [HeadTracker] (spec §6, "calibrate once per visit"):
+ * the contract's tracker methods, the hub's calibration, and `calibration_progress` while a
+ * calibration runs. Fields 6-9 of the input frame don't go through here; [GameBridge] reads the
+ * tracker's state directly, visit or not.
  *
- * - [start] (`session_started`) forgets the last session's centre: the centre is re-taken every
- *   session, because a silently off-centre calibration was the spike's worst failure.
+ * - [startVisit] forgets the last visit's centre: the centre is re-taken once per visit (a
+ *   silently off-centre calibration was the spike's worst failure), not per plan, so a later
+ *   plan's camera game tracks at once.
  * - `set_tracker_mode(mode)` switches the camera on or off. A camera mode that has no
- *   calibration this session starts one at once, reusing the rider's same-day extremes, so
- *   the first camera game of a session only re-takes the centre (3 s).
+ *   calibration this visit starts one at once, reusing the rider's same-day extremes, so the
+ *   visit's first camera game only re-takes the centre (3 s).
  * - `request_calibration(mode)` (the rider asked to recalibrate) runs every step.
- * - [stop] turns the camera off when the session ends or the rider leaves games.
- * - [calibrating] is true while any calibration runs (automatic, requested or for depth); the
- *   session pauses on it, so a game never plays on while the rider holds still for the camera.
+ * - [hubCalibrate] calibrates from the hub (`full` forces every step); the camera turns off
+ *   again when that calibration ends, however it ends, or on [cancelCalibration]. The camera is
+ *   the tablet's biggest CPU cost, so it never runs idle in the menu.
+ * - [planEnded] turns the camera off between plans, keeping the centre; [endVisit] also forgets it.
+ * - [calibratedMode] is what this visit's calibration covers (`""`, `lean_x`, `lean_2d`).
+ * - [calibrating] is true while any calibration runs (automatic, requested or for depth); a
+ *   plan pauses on it, so a game never plays on while the rider holds still for the camera.
  *
- * Not thread-safe: the session calls it from one thread. [HeadTracker] itself is thread-safe.
+ * Not thread-safe: the visit calls it from one thread. [HeadTracker] itself is thread-safe.
  */
 class TrackerLink(
     private val tracker: HeadTracker,
@@ -84,6 +90,18 @@ class TrackerLink(
     private val log: (String) -> Unit = {},
 ) {
     private var progressJob: Job? = null
+    private var watchJob: Job? = null
+    private var calibrated = ""
+
+    /** A calibration this link started hasn't been seen to end yet. */
+    private var calibrationRunning = false
+
+    /** A hub calibration is running ([hubCalibrate]). */
+    var hubCalibrating = false
+        private set
+
+    /** Called when a hub calibration ends (completed, failed or cancelled): the visit resends `hub_state`. */
+    var onHubCalibrationEnded: () -> Unit = {}
 
     /**
      * Whether a calibration is running: true from its start until it completes (`used_default`
@@ -93,9 +111,14 @@ class TrackerLink(
         .map { it.trackerState == CameraTrackerState.CALIBRATING }
         .distinctUntilChanged()
 
-    fun start() {
+    /** A new visit: forget the last visit's centre, and follow this visit's calibrations. */
+    fun startVisit() {
         progressJob?.cancel()
+        watchJob?.cancel()
         tracker.resetSession()
+        calibrated = ""
+        hubCalibrating = false
+        calibrationRunning = false
         progressJob = scope.launch {
             tracker.state
                 .map { it.calibration }
@@ -103,8 +126,63 @@ class TrackerLink(
                 .filterNotNull()
                 .collect { signals.calibrationProgress(CalibrationProgressSignal.from(it)) }
         }
+        // Not "saw CALIBRATING, then something else": a StateFlow collector can miss a short
+        // calibration's states, so the link remembers the calibrations it started itself.
+        watchJob = scope.launch {
+            tracker.state.collect { state ->
+                if (calibrationRunning && state.trackerState != CameraTrackerState.CALIBRATING) {
+                    calibrationRunning = false
+                    calibrationEnded(state)
+                }
+            }
+        }
         val mode = tracker.state.value.mode
-        if (mode != CameraMode.OFF) tracker.calibrate(mode, force = false)
+        if (mode != CameraMode.OFF) calibrate(mode, force = false)
+    }
+
+    private fun calibrate(mode: CameraMode, force: Boolean) {
+        tracker.calibrate(mode, force)
+        calibrationRunning = tracker.state.value.trackerState == CameraTrackerState.CALIBRATING
+        // A calibration that couldn't even start (camera unavailable) has ended already.
+        if (!calibrationRunning) calibrationEnded(tracker.state.value)
+    }
+
+    private fun calibrationEnded(state: HeadTrackerState) {
+        if (state.trackerState == CameraTrackerState.TRACKING || state.trackerState == CameraTrackerState.FACE_LOST) {
+            calibrated = when {
+                state.mode == CameraMode.LEAN_2D || calibrated == CalibrationMode.LEAN_2D.wire -> CalibrationMode.LEAN_2D.wire
+                else -> CalibrationMode.LEAN_X.wire
+            }
+        }
+        if (hubCalibrating) {
+            hubCalibrating = false
+            tracker.setMode(CameraMode.OFF)
+            onHubCalibrationEnded()
+        }
+    }
+
+    /** What this visit's calibration covers: `""` (none yet), `lean_x` or `lean_2d`. */
+    fun calibratedMode(): String = calibrated
+
+    /**
+     * Calibrates from the hub: the camera on in [wire]'s mode, then every step if [full], else
+     * the centre only when the rider's extremes are from today. The camera goes off when it ends.
+     */
+    fun hubCalibrate(wire: String, full: Boolean) {
+        val mode = CalibrationMode.fromWire(wire)?.toCameraMode()
+            ?: return log("hub_calibrate: unknown mode '$wire'")
+        hubCalibrating = true
+        tracker.setMode(mode)
+        calibrate(mode, force = full)
+    }
+
+    /** Stops a hub calibration: the camera off. The visit's earlier calibration stays. */
+    fun cancelCalibration() {
+        if (!hubCalibrating) return
+        hubCalibrating = false
+        calibrationRunning = false
+        tracker.setMode(CameraMode.OFF)
+        onHubCalibrationEnded()
     }
 
     fun setTrackerMode(wire: String) {
@@ -112,14 +190,14 @@ class TrackerLink(
             ?: return log("set_tracker_mode: unknown mode '$wire'")
         tracker.setMode(mode)
         if (mode != CameraMode.OFF && tracker.state.value.trackerState == CameraTrackerState.NEEDS_CALIBRATION) {
-            tracker.calibrate(mode, force = false)
+            calibrate(mode, force = false)
         }
     }
 
     fun requestCalibration(wire: String) {
         val mode = CalibrationMode.fromWire(wire)?.toCameraMode()
             ?: return log("request_calibration: unknown mode '$wire'")
-        tracker.calibrate(mode, force = true)
+        calibrate(mode, force = true)
     }
 
     /** The hub's camera-games switch: off keeps the camera from running at all. */
@@ -128,10 +206,22 @@ class TrackerLink(
     /** The camera permission may have changed (the host's prompt answered). */
     fun refreshPermission() = tracker.refreshPermission()
 
-    fun stop() {
+    /** Between plans: the camera off, keeping this visit's centre. */
+    fun planEnded() {
+        tracker.setMode(CameraMode.OFF)
+    }
+
+    /** The visit is over: the camera off, and its centre forgotten. */
+    fun endVisit() {
         progressJob?.cancel()
         progressJob = null
+        watchJob?.cancel()
+        watchJob = null
+        hubCalibrating = false
+        calibrationRunning = false
         tracker.setMode(CameraMode.OFF)
+        tracker.resetSession()
+        calibrated = ""
     }
 
     private fun TrackerMode.toCameraMode(): CameraMode = when (this) {

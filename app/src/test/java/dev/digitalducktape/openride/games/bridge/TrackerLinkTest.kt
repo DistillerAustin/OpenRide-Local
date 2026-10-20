@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import dev.digitalducktape.openride.core.camera.TrackerMode as CameraMode
 import dev.digitalducktape.openride.core.camera.TrackerState as CameraTrackerState
@@ -92,8 +94,8 @@ class TrackerLinkTest {
     }
 
     @Test
-    fun `progress is forwarded while calibrating, without repeats, and not after stop`() {
-        link.start()
+    fun `progress is forwarded while calibrating, without repeats, and not after the visit ends`() {
+        link.startVisit()
         scope.runCurrent()
         val centre = CalibrationProgress(CalibrationStep.CENTRE, 0, 3, 0.5, 1, null)
         tracker.mutableState.value = HeadTrackerState(mode = CameraMode.LEAN_X, trackerState = CameraTrackerState.CALIBRATING, calibration = centre)
@@ -105,7 +107,7 @@ class TrackerLinkTest {
         tracker.mutableState.value = HeadTrackerState(mode = CameraMode.LEAN_X, trackerState = CameraTrackerState.TRACKING)
         scope.runCurrent()
 
-        link.stop()
+        link.endVisit()
         tracker.mutableState.value = HeadTrackerState(mode = CameraMode.LEAN_X, trackerState = CameraTrackerState.CALIBRATING, calibration = centre)
         scope.runCurrent()
 
@@ -121,23 +123,23 @@ class TrackerLinkTest {
     // --- commands ----------------------------------------------------------------------------
 
     @Test
-    fun `a session starts by forgetting the last session's centre`() {
-        link.start()
+    fun `a visit starts by forgetting the last visit's centre`() {
+        link.startVisit()
 
         assertEquals(listOf("resetSession"), tracker.calls)
     }
 
     @Test
-    fun `the first camera mode of a session calibrates, reusing same-day extremes`() {
-        link.start()
+    fun `the first camera mode of a visit calibrates, reusing same-day extremes`() {
+        link.startVisit()
         link.setTrackerMode("lean_x")
 
         assertEquals(listOf("resetSession", "setMode:lean_x", "calibrate:lean_x:force=false"), tracker.calls)
     }
 
     @Test
-    fun `a later camera game in the same session tracks straight away`() {
-        link.start()
+    fun `a later camera game in the same visit tracks straight away`() {
+        link.startVisit()
         link.setTrackerMode("lean_x")
         tracker.finishCalibration()
         link.setTrackerMode("off")
@@ -150,11 +152,11 @@ class TrackerLinkTest {
     }
 
     @Test
-    fun `a session that starts with the camera already on re-takes the centre`() {
+    fun `a visit that starts with the camera already on re-takes the centre`() {
         tracker.setMode(CameraMode.LEAN_X)
         tracker.calls.clear()
 
-        link.start()
+        link.startVisit()
 
         assertEquals(listOf("resetSession", "calibrate:lean_x:force=false"), tracker.calls)
     }
@@ -176,12 +178,99 @@ class TrackerLinkTest {
     }
 
     @Test
-    fun `stop turns the camera off`() {
-        link.start()
+    fun `the end of a visit turns the camera off and forgets its centre`() {
+        link.startVisit()
         link.setTrackerMode("lean_x")
-        link.stop()
+        link.endVisit()
+
+        assertEquals(listOf("setMode:off", "resetSession"), tracker.calls.takeLast(2))
+        assertEquals(CameraMode.OFF, tracker.state.value.mode)
+    }
+
+    // --- once per visit (the Games hub, spec §6) ----------------------------------------------
+
+    @Test
+    fun `the centre is taken once per visit, not per plan`() {
+        link.startVisit()
+        link.setTrackerMode("lean_x")
+        tracker.finishCalibration()
+        scope.runCurrent()
+        link.planEnded()
+        link.setTrackerMode("lean_x") // the second plan's camera game
+
+        assertEquals(1, tracker.calls.count { it == "resetSession" })
+        assertEquals(1, tracker.calls.count { it.startsWith("calibrate") })
+        assertEquals(CameraTrackerState.TRACKING, tracker.state.value.trackerState)
+        assertEquals("setMode:off", tracker.calls[tracker.calls.size - 2])
+    }
+
+    @Test
+    fun `a hub calibration reuses same-day extremes unless full, and the camera goes off when it ends`() {
+        link.startVisit()
+        scope.runCurrent()
+        link.hubCalibrate("lean_x", full = false)
+        assertEquals(listOf("resetSession", "setMode:lean_x", "calibrate:lean_x:force=false"), tracker.calls)
+        assertTrue(link.hubCalibrating)
+
+        tracker.finishCalibration()
+        scope.runCurrent()
+        assertEquals("setMode:off", tracker.calls.last())
+        assertFalse(link.hubCalibrating)
+        assertEquals("lean_x", link.calibratedMode())
+
+        link.hubCalibrate("lean_x", full = true)
+        assertEquals("calibrate:lean_x:force=true", tracker.calls.last())
+    }
+
+    @Test
+    fun `the camera goes off when a hub calibration fails, and the visit stays uncalibrated`() {
+        var ended = 0
+        link.onHubCalibrationEnded = { ended++ }
+        link.startVisit()
+        scope.runCurrent()
+        link.hubCalibrate("lean_x", full = false)
+        tracker.failCalibration()
+        scope.runCurrent()
 
         assertEquals("setMode:off", tracker.calls.last())
-        assertEquals(CameraMode.OFF, tracker.state.value.mode)
+        assertEquals("", link.calibratedMode())
+        assertEquals(1, ended)
+    }
+
+    @Test
+    fun `cancelling a hub calibration turns the camera off and keeps the earlier calibration`() {
+        link.startVisit()
+        scope.runCurrent()
+        link.hubCalibrate("lean_x", full = false)
+        tracker.finishCalibration()
+        scope.runCurrent()
+        link.hubCalibrate("lean_x", full = true)
+
+        link.cancelCalibration()
+        scope.runCurrent()
+
+        assertEquals("setMode:off", tracker.calls.last())
+        assertFalse(link.hubCalibrating)
+        assertEquals("lean_x", link.calibratedMode())
+        link.cancelCalibration() // nothing running: nothing happens
+        assertEquals(2, tracker.calls.count { it == "setMode:off" })
+    }
+
+    @Test
+    fun `the visit's calibration covers depth once a lean_2d calibration completes, and a new visit forgets it`() {
+        link.startVisit()
+        scope.runCurrent()
+        link.setTrackerMode("lean_2d") // a plan's depth game calibrates by itself
+        tracker.finishCalibration()
+        scope.runCurrent()
+        assertEquals("lean_2d", link.calibratedMode())
+        link.requestCalibration("lean_x")
+        tracker.finishCalibration()
+        scope.runCurrent()
+        assertEquals("lean_2d", link.calibratedMode()) // depth extremes are still there
+
+        link.endVisit()
+        link.startVisit()
+        assertEquals("", link.calibratedMode())
     }
 }

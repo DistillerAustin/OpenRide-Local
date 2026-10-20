@@ -11,6 +11,8 @@ import dev.digitalducktape.openride.core.ride.RideSessionManager
 import dev.digitalducktape.openride.core.ride.RideSessionState
 import dev.digitalducktape.openride.games.bridge.CameraPermission
 import dev.digitalducktape.openride.games.bridge.EndMode
+import dev.digitalducktape.openride.games.bridge.FakeHeadTracker
+import dev.digitalducktape.openride.games.bridge.TrackerLink
 import dev.digitalducktape.openride.games.bridge.PlanRequestKind
 import dev.digitalducktape.openride.games.bridge.PlanRequestMessage
 import kotlin.random.Random
@@ -82,10 +84,14 @@ class GameVisitManagerTest {
         db.close()
     }
 
-    private fun visit(profileId: Long? = riderId) = GameVisitManager(
+    private val headTracker = FakeHeadTracker()
+    private val trackerLink = TrackerLink(headTracker, signals, scope)
+
+    private fun visit(profileId: Long? = riderId, tracker: TrackerLink? = null) = GameVisitManager(
         signals = signals,
         scope = scope,
-        runner = GameSessionManager(signals, scope, random = Random(7)),
+        runner = GameSessionManager(signals, scope, tracker = tracker, random = Random(7)),
+        tracker = tracker,
         rideSessionManager = rides,
         gameResultDao = db.gameResultDao(),
         activeProfileId = { profileId },
@@ -539,4 +545,62 @@ class GameVisitManagerTest {
         seconds(20 * 60 + 5)
         assertEquals("idle", ended().str("reason"))
     }
+
+    // --- Calibration once per visit (spec §6) -------------------------------------------------
+
+    private val racerFive = """{"kind":"just_ride","game_id":"racer","mode":"minutes","length":5}"""
+
+    @Test
+    fun `a two-plan visit resets the tracker's centre once, and the second camera game tracks at once`() {
+        val v = visit(tracker = trackerLink).enter().start(racerFive)
+        v.call { onSetTrackerMode("lean_x") }
+        headTracker.finishCalibration()
+        scope.runCurrent()
+        v.call { onRequestEnd() }
+        seconds(5)
+        assertEquals("setMode:off", headTracker.calls.last()) // the camera's off in the hub
+
+        v.start(racerFive)
+        assertEquals("lean_x", signals.payload("session_started").str("calibrated"))
+        v.call { onSetTrackerMode("lean_x") }
+
+        assertEquals(1, headTracker.calls.count { it == "resetSession" })
+        assertEquals(1, headTracker.calls.count { it.startsWith("calibrate") })
+        assertEquals(1, signals.names.count { it == "session_paused" }) // the first plan's calibration only
+    }
+
+    @Test
+    fun `a hub calibration runs only in the hub and is reported in hub_state`() {
+        val v = visit(tracker = trackerLink).enter()
+        assertEquals("", hub()["camera"]!!.jsonObject.str("calibrated"))
+        v.call { onHubCalibrate("lean_x", false) }
+        assertEquals("calibrate:lean_x:force=false", headTracker.calls.last())
+        headTracker.finishCalibration()
+        seconds(1)
+
+        assertEquals("setMode:off", headTracker.calls.last())
+        assertEquals("lean_x", hub()["camera"]!!.jsonObject.str("calibrated"))
+        v.call { onHubCalibrate("lean_x", true) }
+        v.call { onCancelCalibration() }
+        assertEquals("setMode:off", headTracker.calls.last())
+
+        v.start(racerFive)
+        val calls = headTracker.calls.size
+        v.call { onHubCalibrate("lean_x", true) } // mid-plan: ignored
+        assertEquals(calls, headTracker.calls.size)
+    }
+
+    @Test
+    fun `the end of a visit turns the camera off, and the next visit calibrates afresh`() {
+        val v = visit(tracker = trackerLink).enter().call { onHubCalibrate("lean_x", false) }
+        headTracker.finishCalibration()
+        scope.runCurrent()
+        v.call { onExitHub("app") }
+        assertEquals(listOf("setMode:off", "resetSession"), headTracker.calls.takeLast(2))
+
+        v.enter()
+        assertEquals(3, headTracker.calls.count { it == "resetSession" }) // visit start, end, start
+        assertEquals("", hub()["camera"]!!.jsonObject.str("calibrated"))
+    }
+
 }
