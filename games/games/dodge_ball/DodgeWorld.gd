@@ -51,7 +51,7 @@ const BUSH_SWAY := 0.012
 const FENCE_OFFSET := 4.5  ## m from the kerb to the fence line
 const FENCE_SPACING := 3.125  ## m between posts; the fence's scroll wraps at this
 const FENCE_LEN := 175.0  ## m of fence ahead of the bike (past the far plane, 170)
-const FX_POOL := 96  ## streaks and chunks alive at once (ART_BIBLE §9: at most 120 particles)
+const FX_POOL := 64  ## streaks and chunks alive at once (a hit writes 24; ART_BIBLE §9)
 const HORIZON_HILLS := 155.0  ## m to the hills (inside the far plane, 170)
 const HORIZON_TREES := 125.0  ## m to the distant tree line
 
