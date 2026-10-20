@@ -30,9 +30,14 @@ func _run() -> void:
 	local.hub.send_state()
 	await _measure(hub, "home", HOME_BUDGET)
 	for screen in [["game", {"game_id": "kart_race"}], ["game", {"game_id": "dodge_ball"}],
-			["circuit", {"circuit_id": "circuit-30"}], ["settings", {}]]:
+			["game", {"game_id": "tug_of_war"}], ["game", {"game_id": "safe_cracker"}],
+			["game", {"game_id": "cadence_karaoke"}], ["circuit", {"circuit_id": "circuit-30"}], ["settings", {}]]:
 		hub.nav.push(screen[0], screen[1])
 		await _measure(hub, "%s %s" % [screen[0], screen[1].values()], -1)
+		if screen[0] == "game" and hub.screen.more_button:  # More options over the left column
+			hub.screen.open_more()
+			await _measure(hub, "%s %s more options" % [screen[0], screen[1].values()], -1)
+			hub.screen.close_more()
 		hub.nav.pop()
 	print("PASS measure hub" if _ok else "FAIL measure hub")
 	quit(0 if _ok else 1)

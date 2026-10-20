@@ -86,6 +86,11 @@ func test_every_game_screen() -> void:
 			hub.screen.length_picker.modes.pick(mode)
 			await _wait(0.4)  # the pick's pop (a scale) settles
 			_check_screen("game %s %s" % [e.id, mode])
+		if hub.screen.more_button:  # "More options" over the left column
+			hub.screen.open_more()
+			await _wait(0.4)
+			_check_screen("game %s more options" % e.id)
+			hub.screen.close_more()
 		hub.nav.pop()
 		await _settle(2)
 
@@ -152,6 +157,11 @@ func _check_screen(what: String) -> void:
 	var names := targets.map(func(t): return str(t.name))
 	assert_bool("Exit" in names and "Start" in names).override_failure_message("%s: Exit and Start on one screen" % what).is_false()
 	_check_text(what, screen)
+	for row in screen.find_children("*", "Control", true, false).filter(func(n): return n is OptionRow and n.is_visible_in_tree()):
+		var r: Rect2 = (row as Control).get_global_rect()
+		var parent_r: Rect2 = (row.get_parent() as Control).get_global_rect()
+		assert_float(r.end.x).override_failure_message("%s: %s is %.0f px wide, past its column" % [what, row.name, r.size.x]) \
+			.is_less_equal(parent_r.end.x + 0.5)
 	for card in screen.find_children("*", "Control", true, false).filter(func(n): return n is HubCard):
 		var c: HubCard = card
 		assert_bool(c.content.size.x <= c.size.x + 0.5 and c.content.size.y <= c.size.y + 0.5) \

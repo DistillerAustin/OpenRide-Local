@@ -115,3 +115,17 @@ static func clock(seconds: float) -> String:
 ## "18:40" or "1:02:00" for a duration, or "Open" for -1.
 static func duration(sec: int) -> String:
 	return "Open" if sec < 0 else HudTheme.clock(float(sec))
+
+
+## The rider's name as a card shows it: trimmed (inner runs of spaces folded), at most
+## NAME_MAX characters with an ellipsis, or "You" (Kart Race's `KartRoster.rider_label` rule).
+const NAME_MAX := 12
+
+
+static func short_name(profile_name: String) -> String:
+	var n := " ".join(Array(profile_name.strip_edges().split(" ", false)))
+	if n.is_empty():
+		return "You"
+	if n.length() > NAME_MAX:
+		n = n.left(NAME_MAX - 1).strip_edges() + "…"
+	return n

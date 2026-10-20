@@ -92,10 +92,12 @@ func _style(b: Button) -> void:
 		HudTheme.style_button(b, PLAIN_COLOURS.get(kind, Color(0.22, 0.28, 0.5)))
 
 
-## The current game's options (`GameInfo.options`); `value_of(key) -> String` reads one. An
-## empty list hides the "Game options" button.
+## The current game's options (`GameInfo.options`); `value_of(key) -> String` reads one. Only
+## those with `where` pause or both show (a hub-only pick, like Kart Race's kart, doesn't). No
+## such option hides the "Game options" button.
 func set_options(options: Array[Dictionary], value_of: Callable) -> void:
-	_options = options
+	_options.assign(options.filter(func(o): return GameInfo.option_where(o) != "hub"))
+	options = _options
 	_value_of = value_of
 	_options_button.visible = not options.is_empty()
 	for child in _options_box.get_children().slice(2):
