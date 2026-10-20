@@ -384,6 +384,13 @@ ride in History, exports and backups:
 - The ride summary lists each segment's result, and History shows a game badge.
 - Room schema 6 adds these (`MIGRATION_5_6`), with `Profile.headCalibration` for the head
   tracker's saved extremes.
+- Room schema 8 (`MIGRATION_7_8`, the Games hub) adds `game_results.planId` (null in older
+  rows) and `planRun` (0 in older rows): a visit's ride holds several plans, so each row names
+  its plan. Queries read a row's plan as `COALESCE(planId, rides.gamePlan)`, and a plan's
+  session is one run, `(rideId, planRun)`, so two runs of a circuit in one visit are two
+  candidates for its best. Backups carry both fields (older backups restore as null and 0).
+  `GameResultDao.planBests` lists the rider's best run of every plan per difficulty, for the
+  hub's `bests.plans`.
 
 The Godot AAR declares androidx `FileProvider` at `${applicationId}.fileprovider`, and Godot's
 `GodotIO` hard-codes that authority. So the app's own provider is the `OpenRideFileProvider`

@@ -123,6 +123,43 @@ class BackupRepositoryTest {
     }
 
     @Test
+    fun `a visit's results keep their plan and run through a backup and restore`() = runTest {
+        val gameBackups = BackupRepository(db, db.profileDao(), db.rideDao(), gameResultDao = db.gameResultDao()) { 0L }
+        val (profileId, _, _) = seedData()
+        val rideId = rideRepository.saveRide(
+            Ride(
+                profileId = profileId, startEpochMs = 0, durationSec = 900, avgCadence = 80, maxCadence = 90,
+                avgPower = 150, maxPower = 200, avgResistance = 40, outputKj = 135.0, calories = 130, gamePlan = "visit",
+            ),
+            emptyList(),
+        )
+        val results = listOf(
+            GameResult(rideId, 0, "kart_race", "free", "standard", 0, 600, 812.0, 2, null, false, "{}", planId = "just-ride:kart_race:minutes:10", planRun = 0),
+            GameResult(rideId, 1, "tug_of_war", "work", "hard", 610, 60, 40.0, 1, true, false, "{}", planId = "custom:tug_of_war.60", planRun = 1),
+        )
+        db.gameResultDao().insertAll(results)
+
+        val json = gameBackups.exportJson()
+        db.gameResultDao().deleteAll()
+        gameBackups.restore(gameBackups.parse(json))
+
+        assertEquals(results, db.gameResultDao().getForRide(rideId))
+    }
+
+    @Test
+    fun `an older backup's game results read with no plan and run 0`() {
+        val snapshot = backupRepository.parse(
+            """{"version":1,"exportedAtEpochMs":0,"profiles":[],"rides":[],"samples":[],"gameResults":[""" +
+                """{"rideId":1,"segmentIndex":0,"gameId":"demo","role":"free","difficulty":"standard","startSec":0,""" +
+                """"durationSec":60,"score":5.0,"stars":1,"won":null,"skipped":false,"statsJson":"{}","variant":""}]}""",
+        )
+
+        val result = snapshot.gameResults.single().toEntity()
+        assertEquals(null, result.planId)
+        assertEquals(0, result.planRun)
+    }
+
+    @Test
     fun `a backup file without game results still parses`() {
         val snapshot = backupRepository.parse(
             """{"version":1,"exportedAtEpochMs":0,"profiles":[],"rides":[],"samples":[]}""",

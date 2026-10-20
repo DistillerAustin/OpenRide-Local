@@ -8,7 +8,7 @@ import dev.digitalducktape.openride.core.content.ContentSourceDao
 
 @Database(
     entities = [Profile::class, Ride::class, RideSample::class, ContentSource::class, GameResult::class],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class OpenRideDatabase : RoomDatabase() {
@@ -117,5 +117,20 @@ val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
 val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE game_results ADD COLUMN variant TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/**
+ * The Games hub (spec 2026-10-19, §5.3): one ride is now a whole visit, which can hold several
+ * plans, so each result row names its plan. Additive only:
+ * - `game_results.planId`: null in existing rows, which read their plan through
+ *   `rides.gamePlan` (the DAO queries use `COALESCE(planId, gamePlan)`);
+ * - `game_results.planRun`: the plan's 0-based run within the ride, 0 in existing rows (each
+ *   of which is the only run in its ride), so their bests are unchanged.
+ */
+val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE game_results ADD COLUMN planId TEXT")
+        db.execSQL("ALTER TABLE game_results ADD COLUMN planRun INTEGER NOT NULL DEFAULT 0")
     }
 }

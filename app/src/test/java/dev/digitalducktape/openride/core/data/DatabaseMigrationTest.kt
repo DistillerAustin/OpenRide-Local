@@ -317,7 +317,53 @@ class DatabaseMigrationTest {
     }
 
     @Test
-    fun `a version-1 database migrates to the schema Room expects at version 7`() = runTest {
+    fun `migrate 7 to 8 gives existing results no plan and run 0, keeping their data`() {
+        val db = openV1Database()
+        MIGRATION_1_2.migrate(db)
+        MIGRATION_2_3.migrate(db)
+        MIGRATION_3_4.migrate(db)
+        MIGRATION_4_5.migrate(db)
+        MIGRATION_5_6.migrate(db)
+        MIGRATION_6_7.migrate(db)
+        db.execSQL(
+            "INSERT INTO profiles (id, name, avatarEmoji, avatarColor, weightKg, ftp) " +
+                "VALUES (1, 'Ed', '🚴', -16711936, 80.0, 220)",
+        )
+        db.execSQL(
+            "INSERT INTO rides (id, profileId, startEpochMs, durationSec, avgCadence, maxCadence, " +
+                "avgPower, maxPower, avgResistance, outputKj, calories, videoId, gamePlan) " +
+                "VALUES (1, 1, 1700000000000, 1800, 85, 100, 150, 300, 45, 270.0, 260, NULL, 'circuit-20')",
+        )
+        db.execSQL(
+            "INSERT INTO game_results (rideId, segmentIndex, gameId, role, difficulty, startSec, " +
+                "durationSec, score, stars, won, skipped, statsJson, variant) " +
+                "VALUES (1, 0, 'dodge_ball', 'work', 'standard', 0, 90, 900.0, 2, NULL, 0, '{}', 'catch')",
+        )
+
+        MIGRATION_7_8.migrate(db)
+
+        db.query("SELECT score, variant, planId, planRun FROM game_results").use {
+            assertEquals(true, it.moveToFirst())
+            assertEquals(900.0, it.getDouble(0), 0.0)
+            assertEquals("catch", it.getString(1))
+            assertEquals(true, it.isNull(2))
+            assertEquals(0, it.getInt(3))
+        }
+        // New rows can carry their plan.
+        db.execSQL(
+            "INSERT INTO game_results (rideId, segmentIndex, gameId, role, difficulty, startSec, " +
+                "durationSec, score, stars, won, skipped, statsJson, variant, planId, planRun) " +
+                "VALUES (1, 1, 'kart_race', 'free', 'standard', 100, 600, 812.0, 2, NULL, 0, '{}', '', 'just-ride:kart_race:minutes:10', 1)",
+        )
+        db.query("SELECT planId, planRun FROM game_results WHERE segmentIndex = 1").use {
+            assertEquals(true, it.moveToFirst())
+            assertEquals("just-ride:kart_race:minutes:10", it.getString(0))
+            assertEquals(1, it.getInt(1))
+        }
+    }
+
+    @Test
+    fun `a version-1 database migrates to the schema Room expects at version 8`() = runTest {
         val name = "migration-chain-test.db"
         context.deleteDatabase(name)
         openV1Database(name).execSQL(
@@ -330,7 +376,7 @@ class DatabaseMigrationTest {
         // Room validates every table against its entities on open, so a migration that misses
         // a column, an index or a foreign key fails here.
         val room = Room.databaseBuilder(context, OpenRideDatabase::class.java, name)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
         try {
@@ -338,6 +384,40 @@ class DatabaseMigrationTest {
             assertEquals("Ed", profile?.name)
             assertNull(profile?.headCalibration)
             assertEquals(emptyList<GameResult>(), room.gameResultDao().getAllOnce())
+        } finally {
+            room.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun `a version-7 game ride keeps its bests after migrating to 8`() = runTest {
+        val name = "migration-7-8-bests.db"
+        context.deleteDatabase(name)
+        val v7 = openV1Database(name)
+        listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).forEach { it.migrate(v7) }
+        v7.version = 7
+        v7.execSQL("INSERT INTO profiles (id, name, avatarEmoji, avatarColor, weightKg, ftp) VALUES (1, 'Ed', '🚴', 0, NULL, 200)")
+        v7.execSQL(
+            "INSERT INTO rides (id, profileId, startEpochMs, durationSec, avgCadence, maxCadence, avgPower, maxPower, " +
+                "avgResistance, outputKj, calories, videoId, gamePlan) VALUES (1, 1, 0, 1200, 80, 90, 150, 200, 40, 180.0, 173, NULL, 'circuit-20')",
+        )
+        for ((i, score) in listOf(10.0, 20.0).withIndex()) {
+            v7.execSQL(
+                "INSERT INTO game_results (rideId, segmentIndex, gameId, role, difficulty, startSec, durationSec, score, stars, " +
+                    "won, skipped, statsJson, variant) VALUES (1, $i, 'demo', 'work', 'standard', 0, 60, $score, 1, NULL, 0, '{}', '')",
+            )
+        }
+        helper?.close()
+        helper = null
+
+        val room = Room.databaseBuilder(context, OpenRideDatabase::class.java, name)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals(PlanBest(30.0, 2), room.gameResultDao().planBest(1, "circuit-20", "standard", excludeRideId = -1))
+            assertEquals(listOf(null to 0), room.gameResultDao().getForRide(1).map { it.planId to it.planRun }.distinct())
         } finally {
             room.close()
             context.deleteDatabase(name)
