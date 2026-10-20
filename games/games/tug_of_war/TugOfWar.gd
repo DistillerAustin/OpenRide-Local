@@ -54,6 +54,8 @@ var _endless := false
 var _tension := 0.5
 var _best_rung := 0
 var _results: Array[bool] = []  ## each round's result in order (true: won), for the pips
+## Steps the 3D view down to a lower render scale if the frame rate stays low in a round.
+var governor := TugQualityGovernor.new()
 
 
 func info() -> GameInfo:
@@ -135,7 +137,7 @@ func _ready() -> void:
 	world.name = "World"
 	_view = SubViewport.new()
 	_view.name = "View3D"
-	_view.size = Vector2i(roundi(HudTheme.W * RENDER_SCALE), roundi(HudTheme.H * RENDER_SCALE))
+	_set_render_scale(RENDER_SCALE)
 	_view.msaa_3d = MSAA
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
@@ -160,6 +162,8 @@ func _on_prepare(seg: Dictionary) -> void:
 		best_of = maxi(int(params.rounds), 1)
 		best_of += 1 - best_of % 2  # best-of needs an odd count
 	logic = TugLogic.new(rng.seed, params, _mode_name, best_of)
+	governor = TugQualityGovernor.new()
+	_set_render_scale(RENDER_SCALE)
 	_best_rung = 0
 	_results = []
 	_apply_options()
@@ -191,6 +195,10 @@ func _apply_options() -> void:
 
 
 func _on_frame(delta: float) -> void:
+	if governor.sample(delta, logic.phase == TugLogic.Phase.ROUND):
+		_set_render_scale(governor.render_scale(RENDER_SCALE))
+		print("OPENRIDE_GAMES tug_of_war quality tier=%d fps=%.1f scale=%.2f" % [
+			governor.tier, governor.last_fps, governor.render_scale(RENDER_SCALE)])
 	var power := InputBus.power
 	var cadence := InputBus.cadence
 	var brace := option("brace") == "on" and InputBus.lean_depth > BRACE_LEAN
@@ -316,6 +324,13 @@ func _update_rounds() -> void:
 func _set_bot(rung: int) -> void:
 	world.set_bot(rung)
 	_status.set_bot(world.bot_name(), world.bot_color())
+
+
+## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
+func _set_render_scale(scale: float) -> void:
+	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	if _view.size != size:
+		_view.size = size
 
 
 func _show_message(text: String, seconds: float, color := GameTheme.INK) -> void:
