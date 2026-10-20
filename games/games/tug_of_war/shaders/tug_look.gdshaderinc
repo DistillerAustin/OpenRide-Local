@@ -8,3 +8,14 @@
 #define LOOK_VIGNETTE 0.3
 #define LOOK_VIGNETTE_TINT vec3(1.0, 0.9, 0.8)
 #include "res://framework/shaders/world_look.gdshaderinc"
+
+// Haze per vertex: the share of `haze_color` at a distance, worked out in vertex() and passed on
+// in a varying (haze changes slowly with distance, so per vertex is enough and saves an exp a
+// pixel on the surfaces that fill the screen). Mix it in with `hazed`.
+float haze_amount(float dist) {
+	return min(1.0 - exp(-haze_density * dist), haze_max);
+}
+
+vec3 hazed(vec3 col, float amount) {
+	return mix(col, haze_color, amount);
+}

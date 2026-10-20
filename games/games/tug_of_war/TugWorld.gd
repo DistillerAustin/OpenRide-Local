@@ -351,6 +351,9 @@ func _build_river_and_banks() -> void:
 	_water_mat.set_shader_parameter("pier_ends", Vector2(NEAR_EDGE_Z, FAR_EDGE_Z))
 	var water := PlaneMesh.new()
 	water.size = Vector2(160.0, 60.0)
+	# 5 m cells, for the haze worked out per vertex (water.gdshader).
+	water.subdivide_width = 31
+	water.subdivide_depth = 11
 	var wi := _instance(water, _water_mat, "Water")
 	wi.position = Vector3(0.0, 0.0, -8.6)
 	# The riverside: banks, hills, trees, pier frames, masts, bunting, lights, reeds, the tent.
