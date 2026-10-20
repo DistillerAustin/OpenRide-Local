@@ -228,6 +228,12 @@ func _on_frame(delta: float) -> void:
 		_shown.modulate = Color.WHITE.lerp(FLASH_TINT, _flash)
 	won = logic.rider_won()
 	variant = "ladder" if _mode_name == "ladder" else ""
+
+
+## The result's stats, built once at the end rather than a new Dictionary every frame.
+func finish() -> Dictionary:
+	if logic == null:
+		return super.finish()
 	stats = {
 		"mode": _mode_name,
 		"rounds_won": logic.wins,
@@ -240,6 +246,7 @@ func _on_frame(delta: float) -> void:
 		"surges": logic.surges,
 		"surges_answered": logic.surges_answered,
 	}
+	return super.finish()
 
 
 func _handle(event: Dictionary) -> void:
