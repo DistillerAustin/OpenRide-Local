@@ -1605,6 +1605,9 @@ antialiasing. In Compatibility each `draw_circle`, `draw_colored_polygon` or `dr
 call of its own (the bank's rivets alone were 168), so a whole room, body or door is one call.
 Each place has one key light (`SafePlaces.PLACES[i].light`): a smooth pool drawn in the room's
 batch, with the safe's steel (`SafePlaces.steel_shade`), bevels and cast shadow agreeing with it.
+The room's batch and the vignette are baked once per place into one texture at the on-screen size
+(`SafeBackdrop.bake`, a SubViewport), shown as one opaque sprite. Each place's room and body are
+built once (`SafeMesh.built`), the next place's while a cracked door stands open.
 The door's layers (`SafeDial` docs) redraw only on a change: the needle is a static drawing turned
 by `rotation`; the reading's number has its own text-only layer; the door swing is a perspective
 turn about the hinge in `safe_door.gdshader` (a uniform; the door's thickness comes from UV
@@ -1612,9 +1615,17 @@ depth). Ambient life never redraws: rain on the office window and the porthole's
 shaders on one rect each, the cabin's lantern sways on a rotation tween, the lab's flasks shimmer
 in a shader, and 16 dust motes drift in the key light (`CPUParticles2D`). A crack fires 18 gold
 sparkles; the alarm adds a red side wash. `safe_gfx_test` checks the hardware's clearances, the
-batches, that the needle and the swing redraw nothing, and each place's ambient nodes. In play:
-51 draw calls on the desktop with the HUD (86 before the graphics pass; the bank was 258, the
-lab 125).
+batches, that the needle and the swing redraw nothing, each place's ambient nodes, that the room
+bakes once per place and the next place is built ahead. In play: 47 draw calls on the desktop
+with the HUD (86 before the graphics pass; the bank was 258, the lab 125).
+
+**Tablet cost** (`GFX_POLISH.md`, "Tablet performance"). The tablet is fill-bound and 2D is all
+blended, so what counts is the pixels shaded a frame, seen or not. `tests/measure_safe.gd`
+(needs a window) prints each layer's pixels per place, the batches rebuilt a frame and the build
+times. Shapes under opaque ones have holes (`SafeMesh.round_frame`, `holed_round_rect`, the
+`hollow` of `glow` and `soft_shadow`), and the vault draws only while the door is open. Play
+shades 2.1-2.2 screens a frame (6.9-7.7 before the tablet pass, which read 50 fps on the bike,
+31 in the intro), 3.6 at worst (a crack, or under the intro card).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click

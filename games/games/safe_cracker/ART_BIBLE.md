@@ -124,13 +124,16 @@ sliding in and its door. Never shake the view.
 
 | Item | Budget | After the pass (desktop, 2026-10-20) |
 | --- | --- | --- |
-| fps | 60 | not yet measured on the bike; desktop frame time unchanged within noise |
+| fps | 60 (≥ 55 sustained) | measured on the bike before the tablet pass: 50 avg in play (min 36), 31 in the intro (min 20); re-measure after it (GFX_POLISH.md, "Tablet performance") |
+| Pixels a frame (`tests/measure_safe.gd`) | ≤ 3 screens in play, ≤ 4 at the worst moment | 2.1-2.2 screens in play, 2.7 with the alarm, 3.6 during a crack or under the intro card (was 6.9-7.7, 8.2 in the intro) |
 | Draw calls in play | ≤ 100 with the HUD | 50-52 (54-57 with the alarm, the swing or the cover); 86-258 before |
 | Redraws | the room and body only on a place change; the dial only on a shown change (`SafeDial.refresh`) | as is; a needle step redraws nothing, a new whole number only the reading's text |
 | Animated parts | shaders (`TIME`) or tweens on a node's transform or modulate, never a `queue_redraw` per frame | as is; the only redraws while animating are the light pop (0.35 s) and a bolt sliding (0.45 s) |
 | Full-screen layers | the room, the vignette: at most 3 full-screen blended layers | 1: the baked room with its vignette (was 3: a backing rect, the room's 2-3 screens of fills, the vignette); the alarm wash covers the left half while it holds |
 | Particles | ≤ 40 alive (`CPUParticles2D`) | 16 dust, plus 18 sparkles for 2 s on a crack |
 
-It runs at full 1080p (no SubViewport), so full-screen alpha layers are the main GPU cost. The
-light pools are in the room's batch and cover only their area; if the bike shows a GPU cost, the
-first thing to trim is the glows' overlap (the room has two or three).
+The canvas runs at full 1080p and the tablet pays for every blended pixel, seen or not, so the
+rules are: anything static and full-screen goes in the room's bake; a shape under an opaque one
+gets a hole (`SafeMesh.round_frame`, `holed_round_rect`, the `hollow` of `glow` and
+`soft_shadow`); what's hidden is not drawn (the vault while the door is shut). Check a change with
+`tests/measure_safe.gd`, which prints each layer's pixels per place.
