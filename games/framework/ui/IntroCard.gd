@@ -3,7 +3,7 @@ extends CanvasLayer
 ## The card before each segment (epic #31, "Intro card between games"): "Up next: <game>", the
 ## role, a one-line how-to, the target, the previous result and a countdown ending 3-2-1.
 ## Its "Skip this game" button asks to skip (`skip_requested`) when there is a next segment.
-## A touch anywhere else does nothing: the full-screen shade takes it, so no stray touch reaches
+## A touch anywhere else does nothing: the card and the shade around it take it, so no stray touch reaches
 ## the game or the HUD below, or skips. On the bike a touch on the countdown skipped the only
 ## segment of a timed Just Ride, which ended the workout (#35).
 
@@ -11,6 +11,8 @@ signal skip_requested
 
 const LAYER := 20
 const CARD_SIZE := Vector2(1320, 760)
+const SHADE := Color(0, 0, 0, 0.55)
+const SHADE_CORNER := 32.0  ## the card's corner radius
 
 var can_skip := false
 var own_countdown := false  ## the game counts its own start down: no 3-2-1 here
@@ -38,19 +40,16 @@ func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 
-	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.55)
-	shade.size = Vector2(HudTheme.W, HudTheme.H)
-	# Takes every touch over the card and ignores it.
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(shade)
+	var card_rect := Rect2((Vector2(HudTheme.W, HudTheme.H) - CARD_SIZE) / 2, CARD_SIZE)
+	_add_shade(card_rect)
 
 	var card := PanelContainer.new()
 	_card = card
 	card.add_theme_stylebox_override("panel", HudTheme.panel_style(HudTheme.CARD, 32))
-	card.position = (Vector2(HudTheme.W, HudTheme.H) - CARD_SIZE) / 2
+	card.position = card_rect.position
 	card.size = CARD_SIZE
-	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The card takes the touches over it, the shade the rest: none reaches the game or skips.
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(card)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -168,6 +167,35 @@ func _on_skip_pressed() -> void:
 	if visible and can_skip:
 		skip_requested.emit()
 
+
+
+## Dims the game around the card, not under it: the card is 96% opaque, and on the tablet's
+## fill-bound GPU a full-screen blend under it costs about half a screen of pixels every intro
+## frame. Four strips frame the card; a patch in each corner fills behind its rounded edge.
+func _add_shade(card_rect: Rect2) -> void:
+	var full := Rect2(0, 0, HudTheme.W, HudTheme.H)
+	var strips: Array[Rect2] = [
+		Rect2(full.position, Vector2(full.size.x, card_rect.position.y)),
+		Rect2(Vector2(0, card_rect.end.y), Vector2(full.size.x, full.end.y - card_rect.end.y)),
+		Rect2(Vector2(0, card_rect.position.y), Vector2(card_rect.position.x, card_rect.size.y)),
+		Rect2(Vector2(card_rect.end.x, card_rect.position.y), Vector2(full.end.x - card_rect.end.x, card_rect.size.y)),
+	]
+	for strip in strips:
+		_shade_rect(strip, Control.MOUSE_FILTER_STOP)
+	var c := Vector2.ONE * SHADE_CORNER
+	for corner in [card_rect.position, Vector2(card_rect.end.x - c.x, card_rect.position.y),
+			Vector2(card_rect.position.x, card_rect.end.y - c.y), card_rect.end - c]:
+		_shade_rect(Rect2(corner, c), Control.MOUSE_FILTER_IGNORE)
+
+
+func _shade_rect(r: Rect2, filter: Control.MouseFilter) -> void:
+	var shade := ColorRect.new()
+	shade.name = "Shade%d" % get_child_count()
+	shade.color = SHADE
+	shade.position = r.position
+	shade.size = r.size
+	shade.mouse_filter = filter
+	add_child(shade)
 
 func _centred(box: Container, font_size: int, color := HudTheme.INK) -> Label:
 	var label := HudTheme.label("", font_size, color)
