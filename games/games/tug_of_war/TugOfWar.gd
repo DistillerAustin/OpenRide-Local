@@ -24,7 +24,11 @@ const MUSIC_STYLE := {
 	"stem_gates": {"harmony": 0.55, "lead": 0.9},
 }
 const MUSIC_BPM := TugMusic.BPM
-const SCREEN_FX_LAYER := 5  ## under the HUD (10)
+## The lost-round flash: the 3D view's image is tinted toward the river (its modulate, free in
+## the draw that scales it up) instead of a full-screen blended overlay, a full-resolution pass
+## the tablet pays about 5 fps for.
+const FLASH_TINT := Color(0.25, 0.55, 0.8)
+const FLASH_FADE := 1.2  ## the flash's strength falls this much a second
 ## The 3D view renders into a SubViewport at this share of the screen's resolution, drawn
 ## scaled up under the HUD (see DodgeBall.gd: the tablet's GPU is fill-rate bound at 1080p).
 const RENDER_SCALE := 0.62
@@ -41,7 +45,8 @@ var world: TugWorld
 
 var _view: SubViewport
 var _status: TugStatus
-var _flash_rect: ColorRect
+var _shown: TextureRect
+var _flash := 0.0  ## 0-1: the lost-round flash
 var _creak_left := 0.0
 var _message_left := 0.0
 var _mode_name := "match"
@@ -145,15 +150,7 @@ func _ready() -> void:
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
-	var fx_layer := CanvasLayer.new()
-	fx_layer.layer = SCREEN_FX_LAYER
-	add_child(fx_layer)
-	_flash_rect = ColorRect.new()
-	_flash_rect.size = Vector2(HudTheme.W, HudTheme.H)
-	_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flash_rect.color = Color(0.1, 0.35, 0.55, 0.0)
-	_flash_rect.visible = false
-	fx_layer.add_child(_flash_rect)
+	_shown = shown
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -226,9 +223,9 @@ func _on_frame(delta: float) -> void:
 		_message_left -= delta
 		if _message_left <= 0.0:
 			hud.hide_message()
-	if _flash_rect.visible:
-		_flash_rect.color.a = move_toward(_flash_rect.color.a, 0.0, delta * 1.2)
-		_flash_rect.visible = _flash_rect.color.a > 0.0
+	if _flash > 0.0:
+		_flash = move_toward(_flash, 0.0, delta * FLASH_FADE)
+		_shown.modulate = Color.WHITE.lerp(FLASH_TINT, _flash)
 	won = logic.rider_won()
 	variant = "ladder" if _mode_name == "ladder" else ""
 	stats = {
@@ -274,8 +271,8 @@ func _handle(event: Dictionary) -> void:
 				world.fall(false)
 				AudioDirector.play_sfx("lose_sting")
 				GameMix.duck_for_sting(2.0)
-				_flash_rect.color = Color(0.1, 0.35, 0.55, 0.9)
-				_flash_rect.visible = true
+				_flash = 0.9
+				_shown.modulate = Color.WHITE.lerp(FLASH_TINT, _flash)
 				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, GameTheme.BAD)
 			get_tree().create_timer(FALL_SPLASH_DELAY).timeout.connect(func(): AudioDirector.play_sfx("splash"))
 		"recovery_start":
