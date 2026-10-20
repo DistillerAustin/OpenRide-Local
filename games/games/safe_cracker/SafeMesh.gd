@@ -232,10 +232,33 @@ func bevel(r: Rect2, radius: float, width: float, to_light: Vector2, hi: Color, 
 
 
 ## A soft shadow under a rounded rect: `col` inside, fading to nothing over `size` outside.
-func soft_shadow(r: Rect2, radius: float, size: float, col: Color) -> void:
+## `hollow` > 0 leaves out the middle, all but a rim that wide inside the solid part: for a
+## shadow under something opaque that covers its middle (the tablet pays for every pixel).
+func soft_shadow(r: Rect2, radius: float, size: float, col: Color, hollow := 0.0) -> void:
 	var inner := round_rect_outline(r.grow(-size * 0.5), radius)
-	fill(inner, col, false)
+	if hollow > 0.0:
+		band(round_rect_outline(r.grow(-size * 0.5 - hollow), maxf(radius - hollow, 2.0)), inner, col, col)
+	else:
+		fill(inner, col, false)
 	band(inner, round_rect_outline(r.grow(size), radius + size * 1.5), col, Color(col, 0.0))
+
+
+## A rounded frame: the rounded rect `outer` less the rounded rect `inner` (inside it), shading
+## top to bottom over `outer`, feathered on the outside only (what sits in the hole covers the
+## inner edge). A slab with a hole is cheaper than a slab under what covers it.
+func round_frame(outer: Rect2, outer_radius: float, inner: Rect2, inner_radius: float, top: Color, bottom: Color) -> void:
+	var a := round_rect_outline(outer, outer_radius)
+	var b := round_rect_outline(inner, inner_radius)
+	var ca := PackedColorArray()
+	var cb := PackedColorArray()
+	var clear := PackedColorArray()
+	for k in a.size():
+		var c := top.lerp(bottom, clampf((a[k].y - outer.position.y) / outer.size.y, 0.0, 1.0))
+		ca.append(c)
+		clear.append(Color(c, 0.0))
+		cb.append(top.lerp(bottom, clampf((b[k].y - outer.position.y) / outer.size.y, 0.0, 1.0)))
+	band_colors(a, b, ca, cb)
+	band_colors(a, grow_outline(a, FEATHER), ca, clear)
 
 
 static func segments_for(r: float, span := TAU) -> int:

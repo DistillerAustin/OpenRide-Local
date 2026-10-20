@@ -155,9 +155,12 @@ func test_the_needle_and_the_swing_never_redraw_the_door_or_dial() -> void:
 	var mat := dial.door.material as ShaderMaterial
 	assert_float(float(mat.get_shader_parameter("angle"))).is_equal_approx(SafeDial.OPEN_ANGLE, 0.0001)
 	assert_bool(dial.spill.visible).is_true()
+	assert_bool(dial.vault.visible).is_true()
 	dial.door_open = 0.0
 	assert_float(float(mat.get_shader_parameter("angle"))).is_equal(0.0)
 	assert_bool(dial.spill.visible).is_false()
+	# Shut, the door covers the vault: it isn't drawn at all.
+	assert_bool(dial.vault.visible).is_false()
 
 
 func test_each_place_shows_only_its_own_ambient_life() -> void:
