@@ -21,6 +21,9 @@ var uvs := PackedVector2Array()
 var indices := PackedInt32Array()
 var shade := Callable()
 var depth := 0.0
+## Tests and tools only: called on every flush with (canvas item, points, indices), to count
+## rebuilds and measure fill (tests/measure_safe.gd). Never set in the game.
+static var probe := Callable()
 
 
 func clear() -> void:
@@ -38,6 +41,8 @@ func vertex_count() -> int:
 
 ## Draws everything added so far onto `ci` (call from its `_draw()`), then empties the batch.
 func flush(ci: CanvasItem) -> void:
+	if probe.is_valid():
+		probe.call(ci, points, indices)
 	if not indices.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), indices, points, colors, uvs)
 	clear()
