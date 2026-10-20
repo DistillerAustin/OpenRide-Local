@@ -2,6 +2,9 @@ package dev.digitalducktape.openride.games.session
 
 import dev.digitalducktape.openride.games.bridge.Difficulty
 import dev.digitalducktape.openride.games.bridge.EndMode
+import dev.digitalducktape.openride.games.bridge.PlanRejectReason
+import dev.digitalducktape.openride.games.bridge.PlanRequestKind
+import dev.digitalducktape.openride.games.bridge.PlanRequestMessage
 import dev.digitalducktape.openride.games.bridge.PlanSegment
 import dev.digitalducktape.openride.games.bridge.SegmentRole
 import dev.digitalducktape.openride.games.bridge.SessionKind
@@ -153,6 +156,18 @@ sealed interface SessionRequest {
         val cameraGames: Boolean = true,
     ) : SessionRequest
 
+    /**
+     * A custom circuit from the Games hub's builder (spec §3.4): [slots] in order, each with
+     * its gameplay seconds. With [cameraGames] false, camera games are substituted as in
+     * [Circuit].
+     */
+    @Serializable @SerialName("custom")
+    data class Custom(
+        val slots: List<CustomSlot>,
+        override val difficulty: Difficulty = Difficulty.STANDARD,
+        val cameraGames: Boolean = true,
+    ) : SessionRequest
+
     fun toJson(): String = json.encodeToString(serializer(), this)
 
     companion object {
@@ -161,6 +176,47 @@ sealed interface SessionRequest {
         /** Null for anything unreadable. */
         fun fromJson(text: String?): SessionRequest? =
             text?.let { runCatching { json.decodeFromString(serializer(), it) }.getOrNull() }
+    }
+}
+
+/** One slot of a custom circuit: a game and its gameplay seconds (normalised by [SessionPlans.custom]). */
+@Serializable
+data class CustomSlot(val gameId: String, val durationSec: Int)
+
+/** What a hub `start_plan` request maps to: a [SessionRequest] to plan, or why it can't be played. */
+sealed interface RequestMapping {
+    data class Ok(val request: SessionRequest) : RequestMapping
+    data class Rejected(val reason: PlanRejectReason) : RequestMapping
+}
+
+/**
+ * Maps the hub's `start_plan` request onto a [SessionRequest] (spec §3.4). [cameraGames] is
+ * Kotlin's own view (the setting, the permission and the camera): Godot never sends it. A Just
+ * Ride of a camera game without the camera is rejected; circuits substitute instead.
+ */
+fun PlanRequestMessage.toSessionRequest(cameraGames: Boolean, catalog: GameCatalog): RequestMapping = when (kind) {
+    PlanRequestKind.JUST_RIDE -> {
+        val game = catalog[gameId]
+        val mode = when (mode) {
+            "minutes" -> JustRideMode.Timed(length) to JustRideSupport.MINUTES
+            "rounds" -> JustRideMode.Rounds(length) to JustRideSupport.ROUNDS
+            "open" -> JustRideMode.Open to JustRideSupport.OPEN
+            else -> null
+        }
+        when {
+            game == null -> RequestMapping.Rejected(PlanRejectReason.UNKNOWN_GAME)
+            mode == null || mode.second !in game.supports -> RequestMapping.Rejected(PlanRejectReason.UNSUPPORTED_MODE)
+            game.usesCamera && !cameraGames -> RequestMapping.Rejected(PlanRejectReason.CAMERA_UNAVAILABLE)
+            else -> RequestMapping.Ok(SessionRequest.JustRide(game.id, mode.first, difficulty))
+        }
+    }
+    PlanRequestKind.CIRCUIT ->
+        if (CircuitPresets[presetId] == null) RequestMapping.Rejected(PlanRejectReason.UNKNOWN_GAME)
+        else RequestMapping.Ok(SessionRequest.Circuit(presetId, difficulty, cameraGames))
+    PlanRequestKind.CUSTOM -> {
+        val custom = slots.map { CustomSlot(it.gameId, it.durationSec) }
+        SessionPlans.customProblem(custom, catalog, cameraGames)?.let { RequestMapping.Rejected(it) }
+            ?: RequestMapping.Ok(SessionRequest.Custom(custom, difficulty, cameraGames))
     }
 }
 
@@ -276,6 +332,79 @@ object SessionPlans {
         return SessionPlan(SessionKind.CIRCUIT, preset.id, difficulty, segments, ftp)
     }
 
+    /** A custom circuit's limits (spec §3.4). */
+    const val CUSTOM_MAX_SLOTS = 12
+    const val CUSTOM_MAX_SEC = 90 * 60
+    private const val CUSTOM_STEP_SEC = 30
+
+    /** Why [slots] can't be played as a custom circuit, or null if they can. */
+    fun customProblem(slots: List<CustomSlot>, catalog: GameCatalog, cameraGames: Boolean = true): PlanRejectReason? {
+        if (slots.isEmpty()) return PlanRejectReason.EMPTY_CIRCUIT
+        if (slots.size > CUSTOM_MAX_SLOTS) return PlanRejectReason.TOO_LONG
+        val games = slots.map { catalog[it.gameId] ?: return PlanRejectReason.UNKNOWN_GAME }
+        if (slots.zip(games).sumOf { (slot, game) -> customSeconds(game, slot.durationSec) } > CUSTOM_MAX_SEC) {
+            return PlanRejectReason.TOO_LONG
+        }
+        if (!cameraGames && games.any { customGame(it, catalog, false) == null }) {
+            return PlanRejectReason.CAMERA_UNAVAILABLE
+        }
+        return null
+    }
+
+    /**
+     * A custom circuit (spec §3.4). Each slot's seconds are rounded to 30 s and clamped to its
+     * game's limits; its role is the game's [GameCatalog.circuitRole], except that the first
+     * slot plays warm-up and the last cool-down when the game has those roles. A `free` slot
+     * (Kart Race) is scaled and ended as in a Just Ride. The id is `custom:` plus the lineup,
+     * `<game>.<sec>` joined by `,`, so the same lineup keys the same bests. With [cameraGames]
+     * false, a camera game's slot goes to the first camera-free game of its role, keeping the id.
+     * Throws [IllegalArgumentException] for slots [customProblem] rejects.
+     */
+    fun custom(
+        slots: List<CustomSlot>,
+        difficulty: Difficulty,
+        ftp: FtpBasis,
+        catalog: GameCatalog,
+        cameraGames: Boolean = true,
+    ): SessionPlan {
+        customProblem(slots, catalog, cameraGames)?.let { throw IllegalArgumentException("custom circuit: $it") }
+        val planned = slots.map { catalog[it.gameId]!! }
+        val seconds = slots.zip(planned).map { (slot, game) -> customSeconds(game, slot.durationSec) }
+        val segments = planned.mapIndexed { i, requested ->
+            val role = customRole(requested, i, planned.size)
+            val game = customGame(requested, catalog, cameraGames)!!
+            val free = role == SegmentRole.FREE
+            Segment(
+                gameId = game.id,
+                durationSec = seconds[i],
+                role = role,
+                params = JsonObject(
+                    FtpScaling.params(if (free) game.freeRideScaling else role, difficulty, ftp) +
+                        game.params(role, difficulty, ftp),
+                ),
+                endMode = game.timedEndMode,
+                effort = if (free) game.effortInJustRide else role == SegmentRole.WORK,
+            )
+        }
+        val id = "custom:" + planned.indices.joinToString(",") { "${planned[it].id}.${seconds[it]}" }
+        return SessionPlan(SessionKind.CIRCUIT, id, difficulty, segments, ftp)
+    }
+
+    /** A slot's role in a custom circuit (shown by the hub's builder, which mirrors this rule). */
+    fun customRole(game: GameDeclaration, index: Int, count: Int): SegmentRole = when {
+        index == 0 && SegmentRole.WARMUP in game.roles -> SegmentRole.WARMUP
+        index == count - 1 && count > 1 && SegmentRole.COOLDOWN in game.roles -> SegmentRole.COOLDOWN
+        else -> GameCatalog.circuitRole(game)
+    }
+
+    private fun customSeconds(game: GameDeclaration, sec: Int): Int =
+        (Math.round(sec / CUSTOM_STEP_SEC.toDouble()).toInt() * CUSTOM_STEP_SEC).coerceIn(game.minSec, game.maxSec)
+
+    /** [game], or with the camera off the first camera-free game of the same circuit role (null if none). */
+    private fun customGame(game: GameDeclaration, catalog: GameCatalog, cameraGames: Boolean): GameDeclaration? =
+        if (cameraGames || !game.usesCamera) game
+        else catalog.games.firstOrNull { !it.usesCamera && GameCatalog.circuitRole(it) == GameCatalog.circuitRole(game) }
+
     /** The plan for [request], or null if it names an unknown game or preset or an unsupported mode. */
     fun forRequest(request: SessionRequest, ftp: FtpBasis, catalog: GameCatalog): SessionPlan? = when (request) {
         is SessionRequest.JustRide -> catalog[request.gameId]?.let { game ->
@@ -284,6 +413,9 @@ object SessionPlans {
         is SessionRequest.Circuit -> CircuitPresets[request.presetId]?.let {
             circuit(it, request.difficulty, ftp, catalog, cameraGames = request.cameraGames)
         }
+        is SessionRequest.Custom -> runCatching {
+            custom(request.slots, request.difficulty, ftp, catalog, request.cameraGames)
+        }.getOrNull()
     }
 
     private data class JustRidePlan(val suffix: String, val durationSec: Int, val endMode: EndMode, val params: Map<String, JsonElement>)

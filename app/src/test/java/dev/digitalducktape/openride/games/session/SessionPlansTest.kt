@@ -1,6 +1,10 @@
 package dev.digitalducktape.openride.games.session
 
 import dev.digitalducktape.openride.games.bridge.Difficulty
+import dev.digitalducktape.openride.games.bridge.PlanRejectReason
+import dev.digitalducktape.openride.games.bridge.PlanRequestKind
+import dev.digitalducktape.openride.games.bridge.PlanRequestMessage
+import dev.digitalducktape.openride.games.bridge.PlanRequestSlot
 import dev.digitalducktape.openride.games.bridge.EndMode
 import dev.digitalducktape.openride.games.bridge.SegmentRole
 import dev.digitalducktape.openride.games.bridge.SessionKind
@@ -348,5 +352,148 @@ class SessionPlansTest {
     fun `game music set on or off ignores the rider's music`() {
         assertTrue(GameAudioPrefs(music = GameMusicMode.ON).resolve(otherMusicActive = true).music)
         assertFalse(GameAudioPrefs(music = GameMusicMode.OFF).resolve(otherMusicActive = false).music)
+    }
+
+    // --- Custom circuits (the Games hub, spec §3.4) ------------------------------------------
+
+    private val catalog = GameCatalog.DEFAULT
+    private fun slot(game: String, sec: Int) = CustomSlot(game, sec)
+
+    @Test
+    fun `a game's circuit role is work if it can work, else its main role, else free`() {
+        assertEquals(SegmentRole.WORK, GameCatalog.circuitRole(GameCatalog.DODGE_BALL))
+        assertEquals(SegmentRole.WORK, GameCatalog.circuitRole(GameCatalog.TUG_OF_WAR))
+        assertEquals(SegmentRole.RECOVERY, GameCatalog.circuitRole(GameCatalog.SAFE_CRACKER))
+        assertEquals(SegmentRole.RECOVERY, GameCatalog.circuitRole(GameCatalog.CADENCE_KARAOKE))
+        assertEquals(SegmentRole.FREE, GameCatalog.circuitRole(GameCatalog.KART_RACE))
+    }
+
+    @Test
+    fun `a custom circuit's id is its lineup, so the same lineup keys the same bests`() {
+        val slots = listOf(slot("cadence_karaoke", 180), slot("kart_race", 600), slot("safe_cracker", 120))
+        val plan = SessionPlans.custom(slots, Difficulty.STANDARD, ftp200, catalog)
+
+        assertEquals("custom:cadence_karaoke.180,kart_race.600,safe_cracker.120", plan.planId)
+        assertEquals(plan.planId, SessionPlans.custom(slots, Difficulty.HARD, ftp200, catalog).planId)
+        assertEquals(SessionKind.CIRCUIT, plan.kind)
+        assertEquals(listOf(180, 600, 120), plan.segments.map { it.durationSec })
+    }
+
+    @Test
+    fun `custom lengths are clamped to the game's limits and rounded to 30 s`() {
+        val plan = SessionPlans.custom(
+            listOf(slot("kart_race", 60), slot("dodge_ball", 100), slot("tug_of_war", 9999), slot("safe_cracker", 74)),
+            Difficulty.STANDARD, ftp200, catalog,
+        )
+
+        assertEquals(listOf(300, 90, 3600, 60), plan.segments.map { it.durationSec })
+        assertEquals("custom:kart_race.300,dodge_ball.90,tug_of_war.3600,safe_cracker.60", plan.planId)
+    }
+
+    @Test
+    fun `a custom slot plays its game's circuit role, warm-up first and cool-down last where the game has them`() {
+        val plan = SessionPlans.custom(
+            listOf(slot("cadence_karaoke", 180), slot("tug_of_war", 60), slot("cadence_karaoke", 90), slot("safe_cracker", 90), slot("cadence_karaoke", 180)),
+            Difficulty.STANDARD, ftp200, catalog,
+        )
+
+        assertEquals(
+            listOf(SegmentRole.WARMUP, SegmentRole.WORK, SegmentRole.RECOVERY, SegmentRole.RECOVERY, SegmentRole.COOLDOWN),
+            plan.segments.map { it.role },
+        )
+        assertEquals(listOf(false, true, false, false, false), plan.segments.map { it.effort })
+        assertEquals(130, plan.segments[0].params.int("power_cap_watts"))
+        assertEquals(210, plan.segments[1].params.int("target_watts"))
+        // A game without warm-up and cool-down roles plays its own role in the first and last slots.
+        val ends = SessionPlans.custom(listOf(slot("safe_cracker", 90), slot("dodge_ball", 90)), Difficulty.STANDARD, ftp200, catalog)
+        assertEquals(listOf(SegmentRole.RECOVERY, SegmentRole.WORK), ends.segments.map { it.role })
+    }
+
+    @Test
+    fun `Kart Race plays free in a custom circuit and ends on its line`() {
+        val kart = SessionPlans.custom(listOf(slot("kart_race", 600)), Difficulty.HARD, ftp200, catalog).segments.single()
+
+        assertEquals(SegmentRole.FREE, kart.role)
+        assertEquals(EndMode.GAME, kart.endMode)
+        assertTrue(kart.effort)
+        assertEquals(240, kart.params.int("target_watts"))
+        assertTrue("bot_pcts" in kart.params)
+        val timer = SessionPlans.custom(listOf(slot("tug_of_war", 60)), Difficulty.HARD, ftp200, catalog).segments.single()
+        assertEquals(EndMode.TIMER, timer.endMode)
+    }
+
+    @Test
+    fun `without camera games a custom slot goes to the next camera-free game of its role, keeping its id`() {
+        val slots = listOf(slot("dodge_ball", 90), slot("safe_cracker", 90))
+        val plan = SessionPlans.custom(slots, Difficulty.STANDARD, ftp200, catalog, cameraGames = false)
+
+        assertEquals(listOf("tug_of_war", "safe_cracker"), plan.segments.map { it.gameId })
+        assertEquals(SegmentRole.WORK, plan.segments[0].role)
+        assertEquals("custom:dodge_ball.90,safe_cracker.90", plan.planId)
+        assertNull(SessionPlans.customProblem(slots, catalog, cameraGames = false))
+        // Kart Race has nothing to stand in for it.
+        assertEquals(
+            PlanRejectReason.CAMERA_UNAVAILABLE,
+            SessionPlans.customProblem(listOf(slot("kart_race", 600)), catalog, cameraGames = false),
+        )
+    }
+
+    @Test
+    fun `custom circuits must have 1 to 12 known games and at most 90 minutes of play`() {
+        assertEquals(PlanRejectReason.EMPTY_CIRCUIT, SessionPlans.customProblem(emptyList(), catalog))
+        assertEquals(PlanRejectReason.UNKNOWN_GAME, SessionPlans.customProblem(listOf(slot("pinball", 60)), catalog))
+        assertEquals(PlanRejectReason.TOO_LONG, SessionPlans.customProblem(List(13) { slot("tug_of_war", 60) }, catalog))
+        assertNull(SessionPlans.customProblem(List(12) { slot("tug_of_war", 60) }, catalog))
+        assertNull(SessionPlans.customProblem(List(3) { slot("kart_race", 1800) }, catalog)) // exactly 90 min
+        assertEquals(PlanRejectReason.TOO_LONG, SessionPlans.customProblem(List(3) { slot("kart_race", 1830) }, catalog))
+        assertThrows(IllegalArgumentException::class.java) {
+            SessionPlans.custom(emptyList(), Difficulty.STANDARD, ftp200, catalog)
+        }
+    }
+
+    @Test
+    fun `custom requests round-trip as JSON and build their plans`() {
+        val request = SessionRequest.Custom(listOf(slot("tug_of_war", 60)), Difficulty.EASY, cameraGames = false)
+
+        assertEquals(request, SessionRequest.fromJson(request.toJson()))
+        assertEquals("custom:tug_of_war.60", SessionPlans.forRequest(request, ftp200, catalog)!!.planId)
+        assertNull(SessionPlans.forRequest(SessionRequest.Custom(emptyList()), ftp200, catalog))
+    }
+
+    // --- start_plan requests → SessionRequest --------------------------------------------------
+
+    private fun map(request: PlanRequestMessage, cameraGames: Boolean = true) = request.toSessionRequest(cameraGames, catalog)
+
+    @Test
+    fun `Just Ride requests map by mode`() {
+        val timed = PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = "kart_race", mode = "minutes", length = 10)
+        val rounds = PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = "tug_of_war", mode = "rounds", length = 3, difficulty = Difficulty.HARD)
+        val open = PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = "dodge_ball", mode = "open", difficulty = Difficulty.EASY)
+
+        assertEquals(RequestMapping.Ok(SessionRequest.JustRide("kart_race", JustRideMode.Timed(10))), map(timed))
+        assertEquals(RequestMapping.Ok(SessionRequest.JustRide("tug_of_war", JustRideMode.Rounds(3), Difficulty.HARD)), map(rounds))
+        assertEquals(RequestMapping.Ok(SessionRequest.JustRide("dodge_ball", JustRideMode.Open, Difficulty.EASY)), map(open))
+    }
+
+    @Test
+    fun `Just Ride requests are rejected for unknown games, unsupported modes and an unavailable camera`() {
+        val just = PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = "kart_race", mode = "minutes", length = 10)
+
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.UNKNOWN_GAME), map(just.copy(gameId = "pinball")))
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.UNSUPPORTED_MODE), map(just.copy(mode = "rounds", length = 3)))
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.UNSUPPORTED_MODE), map(just.copy(mode = "sideways")))
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.CAMERA_UNAVAILABLE), map(just, cameraGames = false))
+        assertTrue(map(just.copy(gameId = "tug_of_war"), cameraGames = false) is RequestMapping.Ok)
+    }
+
+    @Test
+    fun `circuit and custom requests carry the camera setting`() {
+        val circuit = PlanRequestMessage(PlanRequestKind.CIRCUIT, presetId = "circuit-30", difficulty = Difficulty.HARD)
+        val custom = PlanRequestMessage(PlanRequestKind.CUSTOM, slots = listOf(PlanRequestSlot("dodge_ball", 90)))
+
+        assertEquals(RequestMapping.Ok(SessionRequest.Circuit("circuit-30", Difficulty.HARD, cameraGames = false)), map(circuit, cameraGames = false))
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.UNKNOWN_GAME), map(circuit.copy(presetId = "circuit-99")))
+        assertEquals(RequestMapping.Ok(SessionRequest.Custom(listOf(CustomSlot("dodge_ball", 90)), cameraGames = false)), map(custom, cameraGames = false))
+        assertEquals(RequestMapping.Rejected(PlanRejectReason.EMPTY_CIRCUIT), map(custom.copy(slots = emptyList())))
     }
 }

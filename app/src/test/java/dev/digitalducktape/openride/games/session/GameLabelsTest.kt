@@ -23,6 +23,11 @@ class GameLabelsTest {
         assertEquals("Tandem Sprint · open", GameLabels.planBadge("just-ride:tandem_sprint:open"))
         assertEquals("Circuit · 45 min", GameLabels.planBadge("circuit-45"))
         assertEquals("Game", GameLabels.planBadge("something-new"))
+        // The Games hub: a custom circuit (its total play time), and a visit of several plans.
+        assertEquals("Custom circuit · 15 min", GameLabels.planBadge("custom:cadence_karaoke.180,kart_race.600,safe_cracker.120"))
+        assertEquals("Custom circuit · 2 min", GameLabels.planBadge("custom:tug_of_war.90"))
+        assertEquals("Custom circuit", GameLabels.planBadge("custom:garbled"))
+        assertEquals("Games", GameLabels.planBadge("visit"))
         assertNull(GameLabels.planBadge(null))
     }
 

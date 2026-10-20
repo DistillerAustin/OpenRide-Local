@@ -331,9 +331,15 @@ rider's FTP (`SessionPlans`):
 | Just Ride, N rounds | `just-ride:<game>:rounds:<N>` | `role: free`, N × the game's `roundSec`, `end_mode: game`, `params.rounds = N` |
 | Just Ride, open-ended | `just-ride:<game>:open` | `role: free`, `duration_sec: -1`, `end_mode: game` |
 | Circuit | `circuit-20`, `circuit-30`, `circuit-45` | the preset's slots (`CircuitPresets`), `end_mode: timer` |
+| Custom circuit (hub, v1.1) | `custom:<game>.<sec>,…`, e.g. `custom:cadence_karaoke.180,kart_race.600` | 1-12 slots, each rounded to 30 s and clamped to its game's limits, at most 90 min of play; role = `GameCatalog.circuitRole` (work, else recovery, else `free`), warm-up in the first slot and cool-down in the last for games with those roles; `end_mode` = the game's `timedEndMode`; a `free` slot (Kart Race) is scaled like a Just Ride |
 
 - Lengths are clamped to the game's limits; a mode the game doesn't support is refused.
 - Circuit presets are data. Until a preset's games exist, their slots play the demo (#37).
+- With camera games unavailable, a custom circuit's camera game goes to the first camera-free
+  game of the same circuit role (Dodge Ball becomes Tug of War); a Kart Race slot has none, so
+  the request is rejected (`camera_unavailable`).
+- `GameLabels.planBadge` reads `custom:…` as "Custom circuit · 15 min" and `visit` (a hub
+  visit of several plans) as "Games".
 - `effort` is true for work segments, and for Just Rides of games declaring
   `effort_in_just_ride`.
 - Kotlin keeps its own copy of each game's declarations in `GameCatalog`. **Adding a game

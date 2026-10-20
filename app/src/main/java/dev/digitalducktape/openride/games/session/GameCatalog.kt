@@ -233,6 +233,17 @@ class GameCatalog(games: List<GameDeclaration>) {
             },
         )
 
+        /**
+         * The role a custom-circuit slot of [game] plays (the Games hub, spec §3.4): `work` if
+         * the game can work, else its main role (recovery before warm-up and cool-down), else
+         * `free` (Kart Race). [SessionPlans.custom] still plays warm-up in the first slot and
+         * cool-down in the last for a game that has those roles.
+         */
+        fun circuitRole(game: GameDeclaration): SegmentRole =
+            CIRCUIT_ROLE_ORDER.firstOrNull { it in game.roles } ?: SegmentRole.FREE
+
+        private val CIRCUIT_ROLE_ORDER = listOf(SegmentRole.WORK, SegmentRole.RECOVERY, SegmentRole.WARMUP, SegmentRole.COOLDOWN)
+
         /** Kart Race's bots (eight racers, the rider included). */
         private const val KART_BOTS = 7
 

@@ -9,12 +9,19 @@ import dev.digitalducktape.openride.core.data.GameResult
 object GameLabels {
     /**
      * A ride's badge from its [dev.digitalducktape.openride.core.data.Ride.gamePlan]:
-     * "Demo · 20 min", "Demo · 5 rounds", "Demo · open", "Circuit · 20 min". Null for a ride
+     * "Demo · 20 min", "Demo · 5 rounds", "Demo · open", "Circuit · 20 min", "Custom circuit ·
+     * 15 min" (its play time), or "Games" for a hub visit of several plans. Null for a ride
      * that isn't a game session.
      */
     fun planBadge(gamePlan: String?, catalog: GameCatalog = GameCatalog.DEFAULT): String? {
         if (gamePlan == null) return null
         CircuitPresets[gamePlan]?.let { return "Circuit · ${it.labelMinutes} min" }
+        if (gamePlan == VISIT_PLAN) return "Games"
+        if (gamePlan.startsWith(CUSTOM_PREFIX)) {
+            val seconds = gamePlan.removePrefix(CUSTOM_PREFIX).split(",").map { it.substringAfterLast('.', "").toIntOrNull() }
+            if (seconds.isEmpty() || seconds.any { it == null }) return "Custom circuit"
+            return "Custom circuit · ${Math.round(seconds.sumOf { it!! } / 60.0)} min"
+        }
         val parts = gamePlan.split(":")
         if (parts.firstOrNull() != "just-ride" || parts.size < 3) return "Game"
         val title = gameTitle(parts[1], catalog)
@@ -26,6 +33,12 @@ object GameLabels {
         }
         return listOfNotNull(title, length).joinToString(" · ")
     }
+
+    /** [dev.digitalducktape.openride.core.data.Ride.gamePlan] of a hub visit that played more than one plan. */
+    const val VISIT_PLAN = "visit"
+
+    /** The prefix of a custom circuit's plan id (`SessionPlans.custom`). */
+    const val CUSTOM_PREFIX = "custom:"
 
     fun gameTitle(gameId: String, catalog: GameCatalog = GameCatalog.DEFAULT): String =
         catalog[gameId]?.title ?: gameId.split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
