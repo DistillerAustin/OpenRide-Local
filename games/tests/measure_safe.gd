@@ -9,7 +9,7 @@ extends SceneTree
 ## CPU time to build each place's room, body and door (once per place change).
 ##
 ## Pixels: every SafeMesh triangle (via `SafeMesh.probe`), and each visible ColorRect,
-## TextureRect, Panel and PanelContainer as its rect (text and particles are left out: small).
+## TextureRect, Panel, PanelContainer and Sprite2D as its rect (text and particles are left out: small).
 
 const SCREEN := Rect2(0, 0, 1920, 1080)
 const FULL := 1920.0 * 1080.0
@@ -99,7 +99,7 @@ func _report_fill(label: String) -> void:
 	var rows := []
 	var total := 0.0
 	for ci in _fill.keys():
-		if not is_instance_valid(ci) or not (ci as CanvasItem).is_visible_in_tree():
+		if not is_instance_valid(ci) or not (ci as CanvasItem).is_visible_in_tree() or _in_bake(ci):
 			continue
 		rows.append([str((ci as Node).get_path()).get_file(), _fill[ci]])
 	_rects(root, rows)
@@ -113,11 +113,23 @@ func _report_fill(label: String) -> void:
 	print("\n".join(lines))
 
 
+static func _in_bake(n: Node) -> bool:
+	return n.get_viewport() is SubViewport
+
+
 func _rects(n: Node, rows: Array) -> void:
 	if n is CanvasItem and not (n as CanvasItem).visible:
 		return
 	if n is CanvasLayer and not (n as CanvasLayer).visible:
 		return
+	if n is SubViewport:
+		return  # a bake: its pixels are paid once, not a frame
+	if n is Sprite2D and (n as Sprite2D).is_visible_in_tree() and (n as Sprite2D).texture:
+		var sp := n as Sprite2D
+		var gr := sp.get_global_transform() * sp.get_rect()
+		var r2 := gr.intersection(SCREEN)
+		if r2.get_area() > 0.0:
+			rows.append(["%s/%s (texture)" % [n.get_parent().name, n.name], r2.get_area()])
 	if (n is ColorRect or n is TextureRect or n is Panel or n is PanelContainer) and (n as Control).is_visible_in_tree():
 		var r := (n as Control).get_global_rect().intersection(SCREEN)
 		if n is PanelContainer and (n as Control).get_theme_stylebox("panel") is StyleBoxEmpty:

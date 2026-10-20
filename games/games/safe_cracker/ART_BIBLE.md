@@ -5,7 +5,7 @@
 > as any change to the places, the safe, the dial's drawing or the effects. **Sources of truth:**
 > `SafePlaces.gd` (rooms, palettes, key lights), `SafeBackdrop.gd` (ambient life), `SafeBody.gd`
 > (the body and the vault), `SafeDoor.gd` (the static door), `SafeDial.gd` (the dial's layers and
-> the swing), `SafeMesh.gd` (the batcher), `SafeCracker._vignette`, `SafeCracker.look` (UI).
+> the swing), `SafeMesh.gd` (the batcher), `SafeBackdrop.vignette`, `SafeCracker.look` (UI).
 > `GFX_POLISH.md` records the work.
 
 Everything is drawn in code. The six places are plain descriptions; no film, game or brand is
@@ -68,6 +68,10 @@ accent is a brass or, in the lab, a teal that must not read as the reading's "on
   (`SafeMesh.glow`) in the room's batch, a pool on the floor under it, and a soft shadow of the
   safe cast away from it. No `Light2D` (each lit item would draw again) and no light texture
   (an extra full-screen layer).
+- **The room is baked.** The room's batch and the vignette render once per place into one
+  texture at the screen's own resolution (`SafeBackdrop.bake`), shown as one opaque sprite; the
+  ambient life draws over it. So the room may stack as many fills as it likes: they cost the
+  tablet once, not every frame. Nothing that moves goes in the bake.
 - **Steel:** top-lit, the key light's side brighter and warmer (`SafePlaces.steel_shade`, an
   affine relight so fans interpolate it exactly); a 5-6 px bevel bright on the lit edges, dark
   on the far ones; brushed streaks at 4-6% white, seeded per place; rivets with a highlight dot
@@ -124,7 +128,7 @@ sliding in and its door. Never shake the view.
 | Draw calls in play | ≤ 100 with the HUD | 50-52 (54-57 with the alarm, the swing or the cover); 86-258 before |
 | Redraws | the room and body only on a place change; the dial only on a shown change (`SafeDial.refresh`) | as is; a needle step redraws nothing, a new whole number only the reading's text |
 | Animated parts | shaders (`TIME`) or tweens on a node's transform or modulate, never a `queue_redraw` per frame | as is; the only redraws while animating are the light pop (0.35 s) and a bolt sliding (0.45 s) |
-| Full-screen layers | the room, the vignette: at most 3 full-screen blended layers | 2 (room, vignette); the alarm wash covers the left half while it holds |
+| Full-screen layers | the room, the vignette: at most 3 full-screen blended layers | 1: the baked room with its vignette (was 3: a backing rect, the room's 2-3 screens of fills, the vignette); the alarm wash covers the left half while it holds |
 | Particles | ≤ 40 alive (`CPUParticles2D`) | 16 dust, plus 18 sparkles for 2 s on a crack |
 
 It runs at full 1080p (no SubViewport), so full-screen alpha layers are the main GPU cost. The

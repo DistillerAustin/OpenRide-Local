@@ -192,3 +192,23 @@ func test_the_alarm_washes_the_room_and_glows_round_the_safe() -> void:
 	await await_millis(500)
 	assert_bool(wash.visible).is_false()
 	assert_bool(dial.alarm_glow.visible).is_false()
+
+
+## The tablet pays for every blended pixel: the room and its vignette are one baked texture,
+## rendered once per place, never a frame.
+func test_the_room_is_baked_once_per_place() -> void:
+	var game := _game()
+	var backdrop: SafeBackdrop = game.get("_backdrop")
+	await _frames(3)
+	assert_int(backdrop.bake.render_target_update_mode).is_not_equal(SubViewport.UPDATE_ALWAYS)
+	assert_bool(backdrop.bake.transparent_bg).is_false()
+	assert_object(backdrop.view.texture).is_same(backdrop.bake.get_texture())
+	var before := backdrop.bakes
+	var draws := [0]
+	backdrop.room.draw.connect(func() -> void: draws[0] += 1)
+	await _frames(5)
+	assert_int(draws[0]).override_failure_message("the room redrew with nothing changed").is_equal(0)
+	backdrop.set_place(2)
+	await _frames(2)
+	assert_int(backdrop.bakes).is_equal(before + 1)
+	assert_int(draws[0]).is_equal(1)

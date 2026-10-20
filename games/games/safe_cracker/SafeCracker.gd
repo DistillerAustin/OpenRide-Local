@@ -101,15 +101,9 @@ func target_text(seg: Dictionary) -> String:
 
 func _ready() -> void:
 	SafeAudioScript.register()
-	var wall := ColorRect.new()  # under everything, so a frame is never empty
-	wall.color = Color(0.05, 0.05, 0.07)
-	wall.size = SafePlaces.SIZE
-	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(wall)
 	_backdrop = SafeBackdrop.new()
 	_backdrop.name = "Backdrop"
-	add_child(_backdrop)
-	add_child(_vignette())
+	add_child(_backdrop)  # opaque: the room and the vignette, baked
 	_wash = _alarm_wash()
 	add_child(_wash)
 	_body_root = Node2D.new()
@@ -125,32 +119,6 @@ func _ready() -> void:
 	_banner = SafeBanner.new(look)
 	_banner.name = "Banner"
 	add_child(_banner)
-
-
-## A soft soot vignette over the room (one texture, drawn once: +1 draw call), so the eye goes to
-## the safe.
-static func _vignette() -> TextureRect:
-	var g := Gradient.new()
-	g.set_color(0, Color(look.ink, 0.0))
-	g.set_color(1, Color(look.ink, 0.72))
-	# A smooth shoulder (no visible edge where the darkening starts).
-	for k in [[0.5, 0.0], [0.62, 0.05], [0.74, 0.18], [0.86, 0.4]]:
-		g.add_point(k[0], Color(look.ink, k[1]))
-	var tex := GradientTexture2D.new()
-	tex.gradient = g
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, BODY_HOME.y / SafePlaces.SIZE.y)
-	tex.fill_to = Vector2(1.05, 1.05)
-	tex.width = 256
-	tex.height = 144
-	var rect := TextureRect.new()
-	rect.name = "Vignette"
-	rect.texture = tex
-	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_SCALE
-	rect.size = SafePlaces.SIZE
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return rect
 
 
 ## A red additive wash from the room's left, as if an alarm light came on: drawn once, shown and
