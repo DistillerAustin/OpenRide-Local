@@ -76,6 +76,8 @@ func _run() -> void:
 		game.logic.surge_state = shot[3]
 		game.logic.p = shot[2]
 		game.world.set_bot(0 if shot[0] != "night_surge" else 3)
+		# A surge ends when its time runs out: give the staged one some, or it ends next step.
+		game.logic._surge_left = 30.0
 		for i in 8:
 			game.logic.p = shot[2]
 			game.logic.surge_state = shot[3]
