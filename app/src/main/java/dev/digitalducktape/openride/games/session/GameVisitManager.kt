@@ -187,6 +187,7 @@ class GameVisitManager(
         if (gen != generation || phase != Phase.WAITING) return@launch
         rider = activeProfileId()?.let { loadProfile(it) }
         avatarPng = rider?.let { runCatching { avatar(it) }.getOrNull() }
+        tracker?.setCameraGamesEnabled(settings.settings.value.cameraGames)
         tracker?.startVisit()
         tracker?.onHubCalibrationEnded = ::requestHubState
         enterHub()

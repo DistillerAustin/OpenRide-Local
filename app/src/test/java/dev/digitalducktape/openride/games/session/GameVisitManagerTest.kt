@@ -633,4 +633,14 @@ class GameVisitManagerTest {
         assertEquals(1, signals.names.count { it == "visit_ended" })
         assertEquals(VisitDestination.RideSummary(allRides().single().id), navigator.pending.value)
     }
+
+    @Test
+    fun `the tracker gets the camera-games setting at the visit's start and on every change`() {
+        settings.update { it.copy(cameraGames = false) }
+        val v = visit(tracker = trackerLink).enter()
+        assertTrue("setCameraGamesEnabled:false" in headTracker.calls)
+
+        v.call { onUpdateSetting("camera_games", "true") }
+        assertEquals("setCameraGamesEnabled:true", headTracker.calls.last())
+    }
 }
