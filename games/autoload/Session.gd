@@ -151,7 +151,7 @@ func request_exit() -> void:
 	if _bridge:
 		_bridge.request_exit()
 	else:
-		_local.start()
+		_local.request_exit()
 
 
 # --- Godot → Kotlin, the Games hub (v1.1) ---
@@ -343,13 +343,26 @@ func _set_visit_id(id: String) -> void:
 # --- Input ---
 
 func _notification(what: int) -> void:
-	# Android back: pause a running session (the pause screen offers "end"); leave after the
-	# summary. Never quit (see project.godot's quit_on_go_back).
+	# Android back: pause a running session (the pause screen offers "end"); in the hub, the
+	# hub steps back a screen (on its home it asks to exit); on a visit's result card, back to
+	# the hub; after a v1 summary, leave. Never quit (see project.godot's quit_on_go_back).
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		if active and not paused:
+		back()
+
+
+## What Android back does now (also for tests and the desktop's Esc in the hub).
+func back() -> void:
+	if active:
+		if not paused:
 			request_pause()
-		elif not active and not summary.is_empty():
-			request_exit()
+	elif director.phase == SessionDirector.Phase.HUB:
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("back"):
+			scene.back()
+	elif director.summary_screen.visible:
+		director._on_summary_done()
+	elif not summary.is_empty():
+		request_exit()
 
 
 func _input(event: InputEvent) -> void:
@@ -363,7 +376,10 @@ func _input(event: InputEvent) -> void:
 				request_pause()
 			get_viewport().set_input_as_handled()
 		KEY_ESCAPE:
-			request_end()
+			if active:
+				request_end()
+			else:
+				back()  # the hub and the result card: as Android back
 			get_viewport().set_input_as_handled()
 
 

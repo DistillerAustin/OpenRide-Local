@@ -13,6 +13,10 @@ extends Node
 ## starts a scripted calibration by itself (centre-only once this process has "same-day"
 ## extremes covering the mode, otherwise centre, left, right, and in/back for lean_2d), and
 ## `request_calibration` runs every step. Progress arrives as calibration_progress.
+##
+## The Games hub (v1.1) is played by its child `LocalHub`: the project's main scene (the hub)
+## starts a desktop visit instead of a Just Ride, and the hub's calls go there. A plan of a
+## visit keeps the visit's calibration (its `calibrated`), as TrackerLink does on the bike.
 
 const INTRO_SEC := 10
 const GRACE_SEC := 5.0
@@ -23,6 +27,8 @@ const RIDER_NAME := "Alex"
 ## Simulated calibration: seconds per step.
 const CALIBRATION_STEPS := {"centre": 3.0, "left": 2.0, "right": 2.0, "in": 2.0, "back": 2.0}
 const CALIBRATION_REPORT_SEC := 0.1
+const LocalHub := preload("res://autoload/LocalHub.gd")
+const DEFAULT_AUDIO := {"music": true, "music_volume": 0.8, "sfx_volume": 1.0}
 
 var _session: Node
 var _plan: Dictionary = {}
@@ -47,14 +53,17 @@ var _extremes := {}  # modes with "same-day" extremes: lean_x, lean_2d (kept acr
 var _calibration_mode := ""
 ## Calibrations started since launch, automatic or requested (for tests: one per session start).
 var calibrations_started := 0
-## The hub's v1.1 calls, recorded as [method, args…]. The desktop hub (LocalHub, plan phase B1)
-## will play them; until then they're only logged.
+## The hub's v1.1 calls, recorded as [method, args…] (for tests), then played by `hub`.
 var hub_calls: Array = []
+## The desktop's stand-in for Kotlin's visit (GameVisitManager).
+var hub: Node
 
 
 func _init(session: Node) -> void:
 	_session = session
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	hub = LocalHub.new(self, session)
+	add_child(hub)
 
 
 ## A Just Ride of the open game: a scene run on its own (F6) may declare `game_id`, as every
@@ -76,10 +85,28 @@ func default_plan() -> Dictionary:
 	}
 
 
-## Starts the default plan when the project or a scene is running. Under a `-s` script (the
-## headless checks and GdUnit4) nothing starts until the script calls `start()`.
+## Starts the default plan when a game scene runs on its own (F6), or a hub visit when the
+## project runs (its main scene is the hub). Under a `-s` script (the headless checks and
+## GdUnit4) nothing starts until the script calls `start()` or `hub.begin_visit()`.
 func autostart() -> void:
-	if _plan.is_empty() and get_tree().current_scene != null:
+	var scene := get_tree().current_scene
+	if not _plan.is_empty() or scene == null:
+		return
+	if scene.scene_file_path == SessionDirector.IDLE_SCENE:
+		hub.begin_visit()
+	else:
+		start()
+
+
+## As Kotlin's request_exit: in a visit's hub it exits the hub; during a visit's plan it ends
+## the plan (v1's early exit); outside a visit it restarts the local plan.
+func request_exit() -> void:
+	if hub.is_live():
+		if _phase in ["", "finished"]:
+			hub.exit_hub("app")
+		else:
+			request_end()
+	else:
 		start()
 
 
@@ -93,7 +120,10 @@ func start(plan: Dictionary = {}) -> void:
 	_end_requested = false
 	_results = []
 	_calibration_steps = []
-	_session_calibrated = false
+	# A visit's later plan keeps the visit's centre (TrackerLink resets once per visit).
+	_session_calibrated = not str(_plan.get("calibrated", "")).is_empty()
+	if _session_calibrated:
+		_calibration_mode = str(_plan.calibrated)
 	var sent := _plan.duplicate()
 	if not sent.has("rider_name"):
 		sent["rider_name"] = RIDER_NAME
@@ -101,39 +131,46 @@ func start(plan: Dictionary = {}) -> void:
 	_start_segment(0)
 
 
-# --- The Games hub (v1.1): recorded only, until LocalHub (plan B1) ---
+# --- The Games hub (v1.1): recorded, then played by LocalHub ---
 
 func start_plan(request: Dictionary) -> void:
-	_hub_call(["start_plan", request])
+	hub_calls.append(["start_plan", request])
+	hub.start_plan(request)
 
 
 func update_setting(key: String, value: Variant) -> void:
-	_hub_call(["update_setting", key, value])
+	hub_calls.append(["update_setting", key, value])
+	hub.update_setting(key, value)
 
 
 func hub_calibrate(mode: String, full: bool) -> void:
-	_hub_call(["hub_calibrate", mode, full])
+	hub_calls.append(["hub_calibrate", mode, full])
+	hub.hub_calibrate(mode, full)
 
 
 func cancel_calibration() -> void:
-	_hub_call(["cancel_calibration"])
+	hub_calls.append(["cancel_calibration"])
+	hub.cancel_calibration()
 
 
 func request_camera_permission() -> void:
-	_hub_call(["request_camera_permission"])
+	hub_calls.append(["request_camera_permission"])
+	hub.request_camera_permission()
 
 
 func exit_hub(next: String) -> void:
-	_hub_call(["exit_hub", next])
+	hub_calls.append(["exit_hub", next])
+	hub.exit_hub(next)
 
 
 func hub_activity() -> void:
-	_hub_call(["hub_activity"])
+	hub_calls.append(["hub_activity"])
+	hub.hub_activity()
 
 
-func _hub_call(call: Array) -> void:
-	hub_calls.append(call)
-	print("LocalSession: %s (no desktop hub yet)" % call[0])
+## The calibration this process's session holds now: "" (none), "lean_x" or "lean_2d".
+func calibrated_mode() -> String:
+	return _calibration_mode if _session_calibrated else ""
 
 
 func time_left() -> float:
@@ -277,13 +314,13 @@ func _start_segment(index: int) -> void:
 		"game_id": planned.game_id,
 		"duration_sec": planned.duration_sec,
 		"intro_sec": INTRO_SEC,
-		"end_mode": "game" if planned.duration_sec < 0 else _timed_end_mode(planned.game_id),
+		"end_mode": planned.get("end_mode", "game" if planned.duration_sec < 0 else _timed_end_mode(planned.game_id)),
 		"role": planned.role,
 		"difficulty": _plan.difficulty,
 		"effort": planned.role == "work" or (planned.role == "free" and _effort_in_just_ride(planned.game_id)),
 		"seed": randi(),
-		"audio": {"music": true, "music_volume": 0.8, "sfx_volume": 1.0},
-		"params": {},
+		"audio": _plan.get("audio", DEFAULT_AUDIO),
+		"params": planned.get("params", {}),
 	}
 	_phase = "intro"
 	_intro_left = INTRO_SEC
@@ -316,12 +353,18 @@ func _finish() -> void:
 	for r in _results:
 		score += float(r.get("score", 0))
 		stars += int(r.get("stars", 0))
-	_session._on_session_finished(_wire({
+	var summary := {
 		"ride_id": null,
 		"results": _results,
 		"totals": {"score": score, "stars": stars, "segments": _results.size(), "elapsed_sec": int(_elapsed)},
 		"bests": {},
-	}))
+	}
+	var in_visit := _plan.has("visit_id")
+	if in_visit:
+		summary = hub.plan_finishing(_plan, summary)
+	_session._on_session_finished(_wire(summary))
+	if in_visit:
+		hub.plan_finished(_plan, summary)
 
 
 ## As SessionPlans.kt: a timed Just Ride uses the game's own end mode (Kart Race ends on a lap

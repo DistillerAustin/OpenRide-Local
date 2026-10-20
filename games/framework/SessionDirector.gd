@@ -14,11 +14,25 @@ extends Node
 ## the game's thresholds.
 ## Pause, end (with confirmation), recalibrate, the summary on session_finished and its "Done"
 ## → request_exit are handled here too.
+##
+## The Games hub (v1.1, docs/GAMES.md "Games hub"): the idle scene is the hub (`res://hub/`).
+## In a visit (`Session.visit_id` set) the result card's button reads "Back to games" and
+## returns to the hub locally (`return_to_hub`), never calling request_exit; the calibration
+## covered so far is the visit's (`session_started.calibrated`), so a later plan doesn't
+## recalibrate. The hub runs at HUB_MAX_FPS; a segment restores the uncapped rate.
 
-enum Phase { IDLE, INTRO, PLAYING, ENDING, BETWEEN, SUMMARY }
+enum Phase { IDLE, INTRO, PLAYING, ENDING, BETWEEN, SUMMARY, HUB }
+
+## The hub is on screen (a visit started, or the rider came back from a result card).
+signal hub_entered
 
 const GRACE_SEC := 4.5  ## Kotlin's grace is 5 s; report before it gives up
-const IDLE_SCENE := "res://Main.tscn"
+const IDLE_SCENE := "res://hub/Hub.tscn"
+## The hub animates nothing that needs 60 fps, and the tablet is CPU-bound (spec §8.4).
+const HUB_MAX_FPS := 30
+const PLAY_MAX_FPS := 0  ## uncapped (vsync)
+const DONE_TEXT := "Done"
+const BACK_TO_GAMES_TEXT := "Back to games"
 const COUNTDOWN_CUES := 3  ## countdown cue on each of the intro card's last 3 seconds
 const FRAME_LOG_SEC := 5.0
 const RECALIBRATE_DEBOUNCE_MSEC := 1000
@@ -74,7 +88,7 @@ func _ready() -> void:
 			game.change_option(key, value))
 	add_child(pause_overlay)
 	summary_screen = SummaryScreen.new()
-	summary_screen.done_pressed.connect(Session.request_exit)
+	summary_screen.done_pressed.connect(_on_summary_done)
 	add_child(summary_screen)
 	done_panel = _build_done_panel()
 	add_child(done_panel)
@@ -85,9 +99,11 @@ func _ready() -> void:
 	Session.session_paused.connect(_on_session_paused)
 	Session.session_resumed.connect(_on_session_resumed)
 	Session.session_finished.connect(_on_session_finished)
+	Session.hub_state_changed.connect(_on_hub_state)
+	Session.visit_changed.connect(func(_id: String): calibrated_mode = "")
 
 
-## "IDLE", "INTRO", "PLAYING", "ENDING", "BETWEEN" or "SUMMARY", for logs and checks.
+## "IDLE", "INTRO", "PLAYING", "ENDING", "BETWEEN", "SUMMARY" or "HUB", for logs and checks.
 func phase_name() -> String:
 	return Phase.keys()[phase]
 
@@ -123,8 +139,11 @@ func _on_session_started(plan: Dictionary) -> void:
 	hud.set_plan(plan)
 	results = []
 	segment = {}
-	calibrated_mode = ""
+	# In a visit the calibration is the visit's (Kotlin sends what it covers); a v1 session
+	# starts uncalibrated.
+	calibrated_mode = str(plan.get("calibrated", "")) if plan.has("visit_id") else ""
 	looks = {}
+	Engine.max_fps = PLAY_MAX_FPS
 	_close_game()
 	_hide_overlays()
 	summary_screen.visible = false
@@ -135,6 +154,7 @@ func _on_session_started(plan: Dictionary) -> void:
 
 func _on_segment_started(new_segment: Dictionary) -> void:
 	segment = new_segment
+	Engine.max_fps = PLAY_MAX_FPS
 	done_panel.visible = false
 	var game_id := str(segment.get("game_id", ""))
 	info = GameRegistry.info(game_id)
@@ -240,7 +260,61 @@ func _on_session_finished(summary: Dictionary) -> void:
 	Session.set_tracker_mode("off")
 	AudioDirector.end_session()
 	AudioDirector.play_cue(AudioDirector.CUE_SUMMARY)
+	summary_screen.done_button.text = BACK_TO_GAMES_TEXT if in_visit() else DONE_TEXT
 	summary_screen.show_summary(summary, Session.plan, looks)
+
+
+# --- The Games hub ---
+
+## Whether a hub visit is live: the result card then leads back to the hub.
+func in_visit() -> bool:
+	return not Session.visit_id.is_empty()
+
+
+## The result card's button (or Android back on it): back to the hub in a visit, else the v1
+## exit (Kotlin finishes back to the app).
+func _on_summary_done() -> void:
+	if in_visit():
+		return_to_hub()
+	else:
+		Session.request_exit()
+
+
+## Shows the hub: the result card goes, the hub scene is current, the camera is off and the
+## frame rate drops to HUB_MAX_FPS. Kotlin is already in its hub phase (it doesn't wait for
+## this). Logs the engine's memory each time, to spot growth over many plans (spec §10).
+func return_to_hub() -> void:
+	if Session.active:
+		return  # a plan is running: only its end leads back
+	phase = Phase.HUB
+	summary_screen.visible = false
+	_hide_overlays()
+	_close_game()
+	var current := get_tree().current_scene
+	if current == null or current.scene_file_path != IDLE_SCENE:
+		_swap_scene(load(IDLE_SCENE).instantiate())
+	if Session.tracker_mode != "off":
+		Session.set_tracker_mode("off")
+	Engine.max_fps = HUB_MAX_FPS
+	print(memory_line())
+	hub_entered.emit()
+
+
+## A visit's first hub_state shows the hub (from the idle phase only: after a plan the result
+## card stays until the rider taps it).
+func _on_hub_state(_state: Dictionary) -> void:
+	if phase == Phase.IDLE:
+		return_to_hub()
+
+
+## `OPENRIDE_GAMES memory static=… objects=… nodes=… orphans=… viewports=…`.
+func memory_line() -> String:
+	var viewports := get_tree().root.find_children("*", "SubViewport", true, false).size()
+	return "OPENRIDE_GAMES memory static=%d objects=%d nodes=%d orphans=%d viewports=%d" % [
+		int(Performance.get_monitor(Performance.MEMORY_STATIC)),
+		int(Performance.get_monitor(Performance.OBJECT_COUNT)),
+		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
+		int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)), viewports]
 
 
 # --- Game ---
