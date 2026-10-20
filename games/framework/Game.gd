@@ -17,6 +17,9 @@ extends Node2D
 ## The game has finished its segment: it won the race, or it wrapped up after
 ## `request_finish`. Session then reports `finish()`.
 signal ended
+## The game's look changed mid-segment (Cadence Karaoke's follows its tunnel colour): Session
+## styles the intro card, the pause screen and the calibration with `ui_theme()` again.
+signal ui_theme_changed
 
 var segment: Dictionary = {}  ## the segment_started payload
 var params: Dictionary = {}  ## the segment's game-specific params, already FTP-scaled
@@ -61,6 +64,14 @@ func how_to_text(_segment: Dictionary) -> String:
 ## A small picture or animation for the intro card (a Control, freed with the card's next
 ## segment), or null. Called after `_on_prepare`.
 func intro_visual() -> Control:
+	return null
+
+
+## The game's look (framework/ui/UI_STYLE.md), or null for the kit's plain one. Session styles
+## the intro card and the pause screen with it; the game skins the HUD itself in `_on_prepare`
+## (`hud.set_skin(theme.hud_skin())`). Called after `_on_prepare`, and again whenever the game
+## emits `ui_theme_changed`. The summary uses the last look a game had.
+func ui_theme() -> GameTheme:
 	return null
 
 

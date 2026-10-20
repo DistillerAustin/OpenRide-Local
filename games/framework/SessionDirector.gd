@@ -47,6 +47,8 @@ var _pause_screen_up := false
 ## The current pause began (or ran) under a calibration: its resume plays no cue.
 var _calibration_pause := false
 var _last_recalibrate_msec := -1
+## Each game's last look this session (`Game.ui_theme()`), by game_id, for the summary.
+var looks := {}
 
 
 func _ready() -> void:
@@ -122,6 +124,7 @@ func _on_session_started(plan: Dictionary) -> void:
 	results = []
 	segment = {}
 	calibrated_mode = ""
+	looks = {}
 	_close_game()
 	_hide_overlays()
 	summary_screen.visible = false
@@ -161,6 +164,8 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	Session.set_tracker_mode(info.tracker_mode)
 	calibration.camera_game = info.uses_camera()
 	_calibrate_for(info)
+
+	_apply_look()
 
 	var previous: Dictionary = results.back() if not results.is_empty() else {}
 	var previous_info := GameRegistry.info(str(previous.get("game_id", ""))) if not previous.is_empty() else null
@@ -235,10 +240,23 @@ func _on_session_finished(summary: Dictionary) -> void:
 	Session.set_tracker_mode("off")
 	AudioDirector.end_session()
 	AudioDirector.play_cue(AudioDirector.CUE_SUMMARY)
-	summary_screen.show_summary(summary, Session.plan)
+	summary_screen.show_summary(summary, Session.plan, looks)
 
 
 # --- Game ---
+
+## Styles the intro card, the pause screen and the calibration in the game's look, at each
+## segment and whenever the game emits `ui_theme_changed`; remembers it for the summary.
+func _apply_look() -> void:
+	if not game:
+		return
+	var look := game.ui_theme()
+	intro_card.apply_theme(look)
+	pause_overlay.apply_theme(look)
+	calibration.apply_theme(look)
+	if look:
+		looks[game.game_id] = look
+
 
 func _on_game_ended() -> void:
 	if phase in [Phase.PLAYING, Phase.ENDING]:
@@ -361,19 +379,25 @@ func _take_game(game_id: String) -> Game:
 func _show_game(next: Game) -> void:
 	if game and game != next:
 		game.ended.disconnect(_on_game_ended)
+		game.ui_theme_changed.disconnect(_apply_look)
 	_swap_scene(next)
 	game = next
 	if not game.ended.is_connected(_on_game_ended):
 		game.ended.connect(_on_game_ended)
+		game.ui_theme_changed.connect(_apply_look)
 
 
 func _close_game() -> void:
 	if game:
 		game.ended.disconnect(_on_game_ended)
+		game.ui_theme_changed.disconnect(_apply_look)
 		game = null
 	info = null
 	hud.visible = false
 	hud.clear_widgets()
+	intro_card.apply_theme(null)
+	pause_overlay.apply_theme(null)
+	calibration.apply_theme(null)
 	calibration.camera_game = false
 	var current := get_tree().current_scene
 	if current is Game or current == null:

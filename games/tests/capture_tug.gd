@@ -3,10 +3,15 @@ extends SceneTree
 ##   $GODOT_BIN --path games -s res://tests/capture_tug.gd -- --out=DIR
 ## Plays a local Just Ride, then sets the rope and the bot's state by hand for each shot, in
 ## each time of day. With --play=SECONDS it instead holds the rope steady and lets surges and
-## rounds run (for Movie Maker: add --write-movie FILE.avi --fixed-fps 30).
+## rounds run (for Movie Maker: add --write-movie FILE.avi --fixed-fps 30). With --snaps as well,
+## it saves a half-size PNG at the first of each HUD state while it plays (the surge's telegraph
+## and surge, a round won or lost, the rest between rounds): the UI review's stills, no video.
 
 var _session: Node
 var _director: Node
+var _out := "user://captures"
+var _snaps := false
+var _snapped := {}
 
 
 func _initialize() -> void:
@@ -24,6 +29,9 @@ func _run() -> void:
 			hud = false
 		elif arg.begins_with("--play="):
 			play_sec = float(arg.get_slice("=", 1))
+		elif arg == "--snaps":
+			_snaps = true
+	_out = out
 	DirAccess.make_dir_recursive_absolute(out)
 	_session = root.get_node("Session")
 	_director = _session.director
@@ -123,8 +131,32 @@ func _ride(game: Node, seconds: float) -> void:
 				_key(key, true)
 			held = key
 		await process_frame
+		if _snaps:
+			_snap_state(game)
 	if held != 0:
 		_key(held, false)
+
+
+## A half-size still the first time the game is in each HUD state.
+func _snap_state(game: Node) -> void:
+	var state := ""
+	match int(game.logic.phase):
+		TugLogic.Phase.ROUND:
+			state = game.logic.surge_state
+		TugLogic.Phase.ROUND_END:
+			state = "won" if game.logic.round_won else "lost"
+		TugLogic.Phase.RECOVERY:
+			state = "rest"
+	if state == "" or _snapped.has(state):
+		return
+	_snapped[state] = true
+	for i in 12:  # let the badge and the message pop in
+		await process_frame
+	var img := root.get_viewport().get_texture().get_image()
+	img.resize(img.get_width() / 2, img.get_height() / 2, Image.INTERPOLATE_LANCZOS)
+	img.save_png("%s/tug_play_%s.png" % [_out, state])
+	print("CAPTURE %s/tug_play_%s.png draw_calls=%d" % [_out, state,
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
 
 
 func _key(keycode: Key, pressed: bool) -> void:

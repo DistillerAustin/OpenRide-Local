@@ -31,6 +31,10 @@ const RETEMPO_SEC := 6.0  ## how often a moving target (a profile) asks for a ne
 const SWAP_TIMEOUT_SEC := 16.0  ## a pace change that hasn't heard a tempo swap applies anyway
 const NO_MUSIC_DELAY_SEC := 1.5  ## ... and with no music playing, almost at once
 const BAND_COLOR_STEP := 1.0
+const INK := Color("12052a")  ## the synthwave stage's deep violet (UI_STYLE.md §4)
+const BUTTON_SIZE := Vector2(300, HudTheme.BUTTON_HEIGHT)
+const BUTTON_GAP := 60
+const BUTTON_MARGIN := 30  ## from the bottom edge
 
 var logic: CadenceLogic
 var world: CadenceWorld
@@ -39,6 +43,10 @@ var _view: SubViewport
 var _status: CadenceStatus
 var _minus: Button
 var _plus: Button
+var _controls: HBoxContainer  ## the − and + buttons, bottom centre
+## The segment's look, from the tunnel's neon (`world.theme_color`); rebuilt when the rider's
+## colour option changes.
+var _look: GameTheme
 var _beat_phase := 0.0
 var _beat_flare := 0.0
 var _requested_tempo := 0
@@ -54,7 +62,7 @@ func info() -> GameInfo:
 	var i := GameInfo.new()
 	i.id = "cadence_karaoke"
 	i.title = "Cadence Karaoke"
-	i.how_to = "Pedal with the beat and keep the ball on the line"
+	i.how_to = "Pedal with the beat and keep the orb on the beat line"
 	i.supports = ["minutes", "open"]
 	i.min_sec = 60
 	i.max_sec = 3600
@@ -81,10 +89,12 @@ func info() -> GameInfo:
 	return i
 
 
-func how_to_text(seg: Dictionary) -> String:
-	if seg.get("params", {}).has("cadence_profile"):
-		return "Pedal to the target rpm and keep the ball in the box. − and + move the target 5 rpm"
-	return "Pedal to the target rpm and keep the ball in the box. − and + move the target 5 rpm"
+func how_to_text(_seg: Dictionary) -> String:
+	return "Match the target rpm. − and + change it"
+
+
+func ui_theme() -> GameTheme:
+	return _look
 
 
 func target_text(seg: Dictionary) -> String:
@@ -114,18 +124,69 @@ func _ready() -> void:
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
-	# The target buttons (− and + 5 rpm), along the bottom of the view.
+	# The target buttons (−5 and +5 rpm), bottom centre: far from End (top right). Built here in
+	# the free segment's look; `_on_prepare` restyles them in the segment's.
 	var layer := CanvasLayer.new()
+	layer.name = "Controls"
 	layer.layer = CONTROLS_LAYER
 	add_child(layer)
-	_minus = HudTheme.button("−  5", func(): adjust_pace(-1), Color(0.18, 0.24, 0.42, 0.92))
-	_plus = HudTheme.button("+  5", func(): adjust_pace(1), Color(0.18, 0.24, 0.42, 0.92))
-	for button in [_minus, _plus]:
-		button.custom_minimum_size = Vector2(220, HudTheme.BUTTON_HEIGHT)
-		button.size = Vector2(220, HudTheme.BUTTON_HEIGHT)
-		layer.add_child(button)
-	_minus.position = Vector2(HudTheme.W / 2.0 - 250.0, HudTheme.H - HudTheme.BUTTON_HEIGHT - 30.0)
-	_plus.position = Vector2(HudTheme.W / 2.0 + 30.0, HudTheme.H - HudTheme.BUTTON_HEIGHT - 30.0)
+	_look = _make_look(CadenceWorld.THEMES.free)
+	_controls = HBoxContainer.new()
+	_controls.name = "PaceButtons"
+	_controls.add_theme_constant_override("separation", BUTTON_GAP)
+	_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_controls)
+	_minus = _pace_button("−5", -1)
+	_plus = _pace_button("+5", 1)
+	_controls.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, BUTTON_MARGIN)
+	_controls.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_controls.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_controls.visible = false  # until play starts: the intro card stays clean
+
+
+## A pace button: "−5" big and "rpm" as a caption, so it says what moves.
+func _pace_button(value: String, steps: int) -> Button:
+	var b := _look.button("", func(): adjust_pace(steps), GameTheme.PRIMARY)
+	b.name = "Slower" if steps < 0 else "Faster"
+	b.custom_minimum_size = BUTTON_SIZE
+	var box := HBoxContainer.new()
+	box.name = "Face"
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 10)
+	b.add_child(box)
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for text in [value, "rpm"]:
+		var l := Label.new()
+		l.name = "Value" if text == value else "Unit"
+		l.text = text
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		box.add_child(l)
+	_controls.add_child(b)
+	_style_pace_button(b)
+	return b
+
+
+func _style_pace_button(b: Button) -> void:
+	_look.style_button(b, GameTheme.PRIMARY)
+	_look.style_label(b.get_node("Face/Value"), HudTheme.MEDIUM, GameTheme.INK, true)
+	_look.style_label(b.get_node("Face/Unit"), HudTheme.SMALL, GameTheme.MUTED, true)
+
+
+static func _make_look(neon: Color) -> GameTheme:
+	return GameTheme.new(neon, INK, 0.25, true)
+
+
+## The look follows the tunnel's neon: the HUD skin, the status widget and the buttons.
+func _restyle() -> void:
+	_look = _make_look(world.theme_color)
+	hud.set_skin(_look.hud_skin())
+	if _status:
+		_status.apply_theme(_look)
+	for b in [_minus, _plus]:
+		_style_pace_button(b)
+	ui_theme_changed.emit()  # the intro card, the pause screen and the summary follow
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -141,8 +202,11 @@ func _on_prepare(seg: Dictionary) -> void:
 	_retempo_left = RETEMPO_SEC
 	_band_for = -1
 	_apply_look()
-	_status = CadenceStatus.new()
+	_status = null
+	_restyle()
+	_status = CadenceStatus.new(_look)
 	hud.add_widget(_status)
+	_controls.visible = false
 	_requested_tempo = roundi(logic.target())
 	AudioDirector.play_music(MUSIC_STYLE, float(_requested_tempo), _seed)
 	AudioDirector.set_intensity(0.4)
@@ -155,13 +219,20 @@ func _on_prepare(seg: Dictionary) -> void:
 	_update_status()
 
 
+func _on_start() -> void:
+	_update_buttons()
+	GameTheme.fade(_controls, true)
+
+
 func _exit_tree() -> void:
 	if AudioDirector.tempo_swapped.is_connected(_on_tempo_swapped):
 		AudioDirector.tempo_swapped.disconnect(_on_tempo_swapped)
 
 
-func _on_option_changed(_key: String, _value: String) -> void:
+func _on_option_changed(key: String, _value: String) -> void:
 	_apply_look()
+	if key == "look" and hud:
+		_restyle()  # a re-skin re-lays out the HUD: fine here, on the pause screen
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -178,9 +249,23 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func adjust_pace(steps: int) -> void:
 	if logic == null or not logic.request_pace(steps):
 		return
+	GameTheme.pop(_minus if steps < 0 else _plus, 1.15)
+	_update_buttons()
 	_request_tempo(roundi(logic.target() + logic.pending_adjust))
 	_pending_wait = 0.0
-	_show_message("Target → %d rpm at the next phase" % roundi(logic.target() + logic.pending_adjust), 2.0)
+	_show_message("Next: %d rpm, on the next bar" % roundi(logic.target() + logic.pending_adjust), 2.0)
+
+
+## Greys out − at the slowest pace and + at the fastest (request_pace would refuse them).
+func _update_buttons() -> void:
+	if logic == null:
+		return
+	var wanted := logic.pace() + logic.pending_adjust
+	for pair in [[_minus, wanted <= CadenceLogic.PACE_MIN], [_plus, wanted >= CadenceLogic.PACE_MAX]]:
+		var b: Button = pair[0]
+		if b.disabled != pair[1]:
+			b.disabled = pair[1]
+			b.modulate.a = 0.4 if b.disabled else 1.0
 
 
 func _request_tempo(rpm: int) -> void:
@@ -239,6 +324,7 @@ func _handle(event: Dictionary) -> void:
 	match event.type:
 		"streak":
 			AudioDirector.play_sfx("streak_up", -3.0, 1.0 + 0.04 * float(event.seconds) / CadenceLogic.STREAK_STEP_SEC)
+			_status.streak_up(logic.streak_multiplier())
 		"band_exit":
 			AudioDirector.play_sfx("band_exit")
 			world.orb_flash = 1.0
@@ -259,6 +345,8 @@ func _beat(delta: float) -> void:
 	if _beat_phase >= 1.0:
 		_beat_phase -= 1.0
 		_beat_flare = 1.0
+		if _status:
+			_status.beat()
 		if option("metronome") == "on":
 			AudioDirector.play_sfx("beat_tick", -6.0)
 	_beat_flare = maxf(_beat_flare - delta * 5.0, 0.0)
@@ -289,21 +377,23 @@ func _update_bands() -> void:
 
 
 func _update_status() -> void:
-	# One speed number for the rider: the target rpm the ball follows. − and + shift it, and
-	# a circuit's profile moves it.
-	var target_text := "TARGET %d rpm" % roundi(logic.target())
+	# The one speed number for the rider is the hero: the target rpm the orb follows. − and +
+	# shift it, and a circuit's profile moves it.
+	_status.set_target(roundi(logic.target()))
 	var next_text := ""
 	if logic.pending_adjust != 0:
-		next_text = "→ %d rpm %s" % [roundi(logic.target() + logic.pending_adjust), _swap_eta_text()]
-	var info_text := "In band %d%% · streak ×%s" % [roundi(logic.pct_in_band()), String.num(logic.streak_multiplier(), 2)]
-	var alert := ""
+		next_text = "%d %s" % [roundi(logic.target() + logic.pending_adjust), _swap_eta_text()]
+	_status.set_next(next_text)
+	_status.set_info(roundi(logic.pct_in_band()), logic.streak_multiplier())
+	var alert := CadenceStatus.ALERT_NONE
 	if logic.frozen:
-		alert = "EASE OFF"
+		alert = CadenceStatus.ALERT_EASE
 	elif logic.cadence < 20.0:
-		alert = "Pedal"
+		alert = CadenceStatus.ALERT_PEDAL
 	elif not logic.in_band:
-		alert = "SLOW DOWN" if logic.gap > 0.0 else "SPEED UP"
-	_status.set_state(target_text, next_text, info_text, alert)
+		alert = CadenceStatus.ALERT_SLOW if logic.gap > 0.0 else CadenceStatus.ALERT_FAST
+	_status.set_alert(alert)
+	_update_buttons()
 
 
 ## "in 7 s" until the pending pace takes effect, or "soon" while the new tempo is still rendering.

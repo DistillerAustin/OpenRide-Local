@@ -101,6 +101,12 @@ func how_to_text(_seg: Dictionary) -> String:
 	return "DODGE the balls! Lean away from the red balls"
 
 
+## Dodge Ball's look (`DodgeStatus.look`): the session styles the intro card and the pause
+## screen with it, and `_on_prepare` skins the HUD.
+func ui_theme() -> GameTheme:
+	return DodgeStatus.look
+
+
 func intro_visual() -> Control:
 	return ModeBadgeScript.new(option("mode") == "catch")
 
@@ -177,6 +183,7 @@ func _on_prepare(seg: Dictionary) -> void:
 		_round_limit = maxf(1.0, float(params.get("rounds", 1))) * DodgeBallLogic.ROUND_SEC
 	_apply_options()
 
+	hud.set_skin(DodgeStatus.look.hud_skin())
 	_status = DodgeStatus.new(logic.cadence_floor, logic.has_lives, logic.is_catch())
 	hud.add_widget(_status)
 	hud.metrics.set_cadence_band(logic.cadence_floor)
@@ -259,7 +266,8 @@ func _frame(delta: float) -> void:
 		_fx_mat.set_shader_parameter("flash", _flash)
 	_status.set_state(logic.shield, cadence < logic.cadence_floor, bonus_on, logic.streak, maxi(logic.lives, 0), logic.wave)
 	if logic.game_over_left > 0.0:
-		hud.show_message("Game over! Next run in %d" % ceili(logic.game_over_left), HudTheme.WARN)
+		hud.show_message("Game over! Best run: %d\nNext run in %d" % [roundi(_best_awarded), ceili(logic.game_over_left)],
+			GameTheme.BAD)
 	elif _message_left > 0.0:
 		_message_left -= delta
 		if _message_left <= 0.0:
@@ -299,24 +307,27 @@ func _handle(event: Dictionary) -> void:
 		"dodge":
 			var got := _score(event.points)
 			world.dodge_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
+			_pop_score(got)
 			AudioDirector.play_sfx("dodge_tick", 1.0, 1.0 + 0.04 * mini(logic.streak, 10))
 		"catch":
 			var got := _score(event.points)
 			world.catch_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
+			_pop_score(got)
 			AudioDirector.play_sfx("catch_chime", 1.0, 1.0 + 0.05 * mini(logic.streak, 10))
 		"miss":
 			world.miss_fx(event.ball)
 			AudioDirector.play_sfx("miss_whiff", -3.0)
-			_pop(_status)
+			_streak_lost()
 		"fumble":
 			world.fumble_fx(event.ball)
 			AudioDirector.play_sfx("fumble_thud")
 			AudioDirector.play_sfx("ball_bounce", -4.0, 0.8)
 			_show_message("Pedal up to hold on!", 1.2)
+			_streak_lost()
 		"streak":
 			world.streak_fx()
 			AudioDirector.play_sfx("streak_chime", 0.0, [1.0, 1.122, 1.335][DodgeBallLogic.STREAK_CHIMES.find(event.count)])
-			_pop(_status)
+			GameTheme.pop(_status.streak_label, 1.35)
 		"shield_break":
 			world.shield_fx(event.ball.x1, event.ball.kind)
 			_flash = 0.45
@@ -334,7 +345,11 @@ func _handle(event: Dictionary) -> void:
 			GameMix.duck_for_moment(0.6)
 			if event.penalty > 0.0:
 				penalize(event.penalty)
-			_pop(_status)
+			# The loss on what was lost: a life (Just Ride) or the shield bar (circuit).
+			var lost: Control = _status.lives_box if _status.lives_box.visible else _status.bar
+			GameTheme.pop(lost, 0.8)
+			GameTheme.flash(lost)
+			_streak_lost()
 		"wave":
 			_show_message("Wave %d" % event.wave, 1.6)
 			AudioDirector.play_sfx("streak_chime", -3.0, 0.75)
@@ -364,8 +379,14 @@ func _show_message(text: String, seconds: float) -> void:
 	_message_left = seconds
 
 
-## A brief brightening, not a scale-up, so the widget never grows over its neighbours.
-func _pop(widget: Control) -> void:
-	var tween := widget.create_tween()
-	tween.tween_property(widget, "modulate", Color(1.6, 1.6, 1.6), 0.06)
-	tween.tween_property(widget, "modulate", Color.WHITE, 0.25)
+## Juice on the element that changed (UI_STYLE.md, "Motion"): a new score pops the HUD's score.
+## It's a compact BigNumber with no panel of its own, so scaling it never moves its neighbours.
+func _pop_score(got: float) -> void:
+	if got > 0.0 and hud and hud.score:
+		GameTheme.pop(hud.score, 1.12)
+
+
+## A broken streak (a miss, a fumble, a hit) pops the streak down.
+func _streak_lost() -> void:
+	if _status and _status.streak_label.text != "STREAK 0":
+		GameTheme.pop(_status.streak_label, 0.8)

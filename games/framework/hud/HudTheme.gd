@@ -47,12 +47,21 @@ const ROLE_NAMES := {
 static func label(text: String, font_size: int, color := INK) -> Label:
 	var l := Label.new()
 	l.text = text
+	style_label(l, font_size, color)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+## Gives a label the kit's plain look (also undoing a `GameTheme` restyle: its face, shadow and
+## gradient).
+static func style_label(l: Label, font_size: int, color := INK) -> void:
+	l.remove_theme_font_override("font")
+	l.remove_theme_color_override("font_shadow_color")
+	l.material = null
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	l.add_theme_constant_override("outline_size", maxi(4, font_size / 12))
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
 
 
 static func panel_style(color := PANEL, radius := 24) -> StyleBoxFlat:
@@ -72,14 +81,23 @@ static func button(text: String, action: Callable, color := Color(0.22, 0.28, 0.
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(300, BUTTON_HEIGHT)
+	style_button(b, color)
+	b.pressed.connect(action)
+	return b
+
+
+## Gives a button the kit's plain look in `color` (also undoing a `GameTheme` restyle).
+static func style_button(b: Button, color := Color(0.22, 0.28, 0.5)) -> void:
+	b.remove_theme_font_override("font")
+	b.remove_theme_color_override("font_outline_color")
+	b.remove_theme_constant_override("outline_size")
+	b.remove_theme_stylebox_override("focus")
 	b.add_theme_font_size_override("font_size", BUTTON_FONT)
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		var style := panel_style(color if state != "pressed" else color.lightened(0.2), 20)
 		if state == "hover":
 			style.bg_color = color.lightened(0.1)
 		b.add_theme_stylebox_override(state, style)
-	b.pressed.connect(action)
-	return b
 
 
 ## "12:05" (or "1:02:03"); negative input reads "--:--".

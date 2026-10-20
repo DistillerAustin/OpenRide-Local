@@ -501,9 +501,10 @@ so a game only plays. None of this changes the Bridge contract.
    `request_pause`/`request_resume`. Its End button, and the pause screen's, ask for
    confirmation, then call `request_end`.
 8. **`session_finished`**: it goes back to the idle scene, sets the tracker off, and shows the
-   **summary**: each segment's result and stars, the totals, and any bests. Its **Done** button
-   (or Android back) calls `request_exit`. Circuit mode (#37) adds its sections with
-   `SummaryScreen.add_section()`.
+   **summary** over an opaque backdrop: each segment's result and stars, the totals, and any
+   bests. Its **Done** button (or Android back) calls `request_exit`. Circuit mode (#37) adds
+   its sections with `SummaryScreen.add_section()` (under the list on a circuit, in the column
+   on a one-game summary).
 
 ### Adding a game
 
@@ -560,6 +561,10 @@ For work games, set the thresholds so that 3 stars needs about 1.3× effort. A p
   (`game_results.variant`, schema 7).
 - Override `how_to_text(segment)` and `intro_visual()` to give the intro card a dynamic how-to
   line and a small picture or animation (Dodge Ball shows its mode).
+- Override `ui_theme()` to return the game's `GameTheme` (see "Game UI kit"). The session then
+  styles the intro card and the pause screen with it; the game skins the HUD itself in
+  `_on_prepare` with `hud.set_skin(theme.hud_skin())`. The default, `null`, keeps the kit's plain
+  look.
 - `end_segment()` ends the segment. It is honoured in `end_mode: game`, in open-ended
   segments, and after `request_finish`. A game that finishes early in a timed slot starts another
   round instead (epic #31, "Short games fill their slot").
@@ -651,6 +656,9 @@ Dodge Ball, the mode).
   Recalibrate moved up and no reserve, the empty bottom bar folds away and the strip sits on the
   bottom margin. `set_status_area(width, reserve_bottom)` moves the strip later without a
   re-skin (a re-skin re-lays out every label: about 1 ms on the desktop, 25 on the tablet).
+  Two more keys style the centre message: `message_font` (it then pops in whenever it appears
+  or its text changes) and `message_outline_color`; `GameTheme.hud_skin()` sets every styling
+  key.
   Buttons keep their touch size. `clear_skin()` (and `clear_widgets()`, when the game leaves)
   puts everything back; `hud_layout_test` and `kart_presentation_test` cover both.
 
@@ -660,24 +668,91 @@ text is never below 34 px, and buttons are 110 px tall.
 Games add their own widgets to the top-centre slot with `hud.add_widget()`. Keep them slim (a
 row or two of small text, as Dodge Ball's status) so they stay above the horizon, for example a
 `TargetBand` (a cadence floor or a power cap) or a `BigNumber`. `StarRow` draws stars as
-shapes, so no font needs the glyph. Everything uses Godot's default font.
+shapes, so no font needs the glyph. The kit's plain look uses Godot's default font; a game with
+a `GameTheme` uses the shared display face.
+
+### Game UI kit
+
+`framework/ui/UI_STYLE.md` is the style guide every game follows: one OFL display face (Lilita
+One, `games/assets/fonts/`), ink outlines, badge panels, pill buttons, shared meaning colours
+(good, warn, bad, target) with an accent and an ink per game, motion rules, touch targets and
+the draw-call budget. `GameTheme` (`framework/ui/GameTheme.gd`) is its kit: labels, gradient hero
+text, panel, badge and card styles, buttons, a HUD skin, and `pop` / `slam` / `flash` / `pulse` /
+`fade` tweens. Kart Race keeps its own `KartTheme`, which follows the same rules.
+
+- A game opts in through `Game.ui_theme()`. `SessionDirector` calls `IntroCard.apply_theme()`,
+  `PauseOverlay.apply_theme()` and `CalibrationOverlay.apply_theme()` with it at each segment
+  (the themed countdown slams each 3-2-1 in gold), again whenever the game emits
+  `Game.ui_theme_changed` (Cadence Karaoke's colour option), and with `null` when the game
+  leaves. Layout, text and touch behaviour don't change.
+- **The session summary** takes the look of the game it follows: `SessionDirector.looks` keeps
+  each game's last `ui_theme()` by game_id, and `SummaryScreen.show_summary(summary, plan,
+  looks)` uses it. One game (a Just Ride) is centred in that game's look: its chip, the title,
+  its three stars slamming in one by one, points and time as tiles, the best as a badge (gold
+  for a new best, a quiet panel for the one to beat), and Done (560 x 120) at the bottom. A
+  circuit is in the house look, `GameTheme.house()`: the title across the top, tiles (points,
+  stars, time, games played), the best and a full-width Done on the left, and a card per
+  planned game on the right, edged and numbered in its game's accent; the list scrolls when
+  it's long. A game with no `ui_theme()` (Kart Race, the demo) gets the house look, a
+  periwinkle on deep indigo that sits next to Kart's violet night.
+- **The calibration screens** take the game's look too (the house look without one): see
+  "Calibration UI".
+- The open-ride "Game over" panel stays neutral.
+- `HudTheme.style_label` and `HudTheme.style_button` put the plain look back on a restyled node.
+- `game_theme_test` covers the kit and the opt-in theming (and that `null` fully undoes it);
+  `hud_layout_test` lays the HUD out with a theme skin too. `summary_screen_test` lays out
+  both summary shapes (no overlaps, Done's size and place, long names, a list that scrolls,
+  the opaque backdrop, the entrance), and `calibration_overlay_test` every calibration step,
+  the strips, the taps and the look.
+- `tests/capture_ui_states.gd` (needs a window) saves half-size screenshots of any game at its
+  intro, play, a high-tension moment, pause and the summary, with each frame's draw calls:
+  `$GODOT_BIN --path games -s res://tests/capture_ui_states.gd -- --game=tug_of_war --out=DIR`.
+  `tests/capture_framework_screens.gd` does the same for the framework's own screens: every
+  calibration step and strip, and the summary in its shapes (one game, a new best, no stars, a
+  circuit, one ended early, a long one, Kart Race's house look).
+
+### World look (3D)
+
+The 3D games light their worlds by hand: every world surface is `unshaded, fog_disabled` (the
+engine's per-pixel light and fog cost the tablet about a third of its frame), and the colour
+grade is folded into each material (a full-screen pass cost about 5 fps). The shared pieces,
+generalised from Kart Race (which keeps its own `light.gdshaderinc`):
+
+- `framework/shaders/world_look.gdshaderinc`: the uniforms `sun_dir`, `sun_color`, `sky_color`,
+  `ground_color`, `haze_color`, `haze_density`, `haze_max` and `noise_tex`, and `vnoise(p)`,
+  `hemi(n)`, `sun_light(n)` (hemisphere plus Lambert sun; call it per vertex for scenery),
+  `haze(col, dist)` and `grade(col, SCREEN_UV)`. Each game sets its own grade with
+  `#define LOOK_SAT`, `LOOK_CONTRAST`, `LOOK_GAIN`, `LOOK_LIFT`, `LOOK_VIGNETTE` and
+  `LOOK_VIGNETTE_TINT` before the `#include`; with none defined the grade is a no-op.
+- `WorldLook` (`framework/WorldLook.gd`): `apply(materials, look)` sets those uniforms on a
+  list of materials from one Dictionary (unknown keys are ignored, so a time-of-day table can go
+  straight in), `sun_dir(elevation, azimuth)` in the time-of-day presets' convention, and
+  `noise_texture()`, the same 64×64 noise as Dodge Ball's.
+- `world_look_test` compiles the include with and without a game's defines.
+
+Each game's look is in its `ART_BIBLE.md`, and the planned graphics work in its `GFX_POLISH.md`.
 
 ### Calibration UI
 
-`CalibrationOverlay` shows only in camera games:
+`CalibrationOverlay` shows only in camera games, in the game's look:
 
 - **While calibrating** (`tracker_state` 2, or `calibration_progress` in the last second), it
-  prompts each step: centre, with a 3-2-1 from `fraction`, then left, right, and in / back for
-  `lean_2d`. It shows a progress bar.
+  prompts each step on a card: centre, with a 3-2-1 from `fraction`, then left, right, and in /
+  back for `lean_2d`. A drawn rider shows the pose (leaning, or bigger for "lean in" and smaller
+  for "sit back", with gold arrows) inside a ring that fills with `fraction`; a dot per step
+  turns green with a tick as each is done, and a finished step says "Got it!".
   The header reads "Step 2 of 3" (`step_index`, `step_count`; left out for a centre-only
   run), and "Try 2" from `attempt`. `retry_reason` becomes a hint: "Hold still for a moment",
   "Can't see you. Face the screen: is the room bright enough?" (on the bike, a dark room was
   the usual cause), "Lean a little further" or "Other way!". For `used_default` it shows "Using
   your usual range; recalibrate later if steering feels off" (no 3-2-1 over it).
-- **When the tracker needs calibration** (`tracker_state` 1), it offers "Tap to calibrate".
-- **When the face is lost** (`tracker_state` 4), it shows a slim "Can't see you" strip.
+- **When the tracker needs calibration** (`tracker_state` 1), it offers "Tap to calibrate" with
+  a "Tap anywhere to start" pill.
+- **When the face is lost** (`tracker_state` 4), it shows a slim amber strip with a camera icon:
+  "Can't see you: face the camera, and check the room is lit", and "TAP TO RECALIBRATE".
 - **When a calibration ended in `tracker_state` 0** (no face found after two tries), it shows
-  a slim "Camera steering is off" strip.
+  a slim strip with a crossed-out camera: "Camera steering is off: no face found. Turn a light
+  on and face the camera", and "TAP TO TRY AGAIN".
 
 Tapping "tap to calibrate", "can't see you" or "camera off" calls `request_calibration`, and so
 does the HUD's Recalibrate button; both run every step. A tap during a running calibration is
@@ -1147,6 +1222,11 @@ Dodge Ball (#39):
   shield drain and refill, the power bonus, lives and runs, circuit penalties, waves, streaks,
   the stars and the time of day.
 - `dodge_ball_scene_test` covers pause, per-rider options and the result's stats.
+- `dodge_ball_status_test` covers the themed status widget (`DodgeStatus.look`, UI polish
+  2026-10-19): with the longest texts it fits the 850 x 120 top-centre budget, its parts don't
+  overlap and it keeps the road clear; nothing moves when the caption (SHIELD, PEDAL UP!, NO
+  SHIELD) or the ×2 POINTS badge changes; an empty shield throbs without a redraw every frame;
+  every label is the display face at 34 px or more.
 - `tests/capture_dodge.gd` takes desktop screenshots in each lighting (it needs a window). With
   `--play=SECONDS`, add `--write-movie FILE.avi --fixed-fps 30` to record the game's own mix,
   bus effects included, without playing a sound.
@@ -1317,14 +1397,38 @@ between them. Winning hauls the bot off its pier into the river; losing pulls th
 view follows the Dodge Ball recipe for the tablet (a scaled `SubViewport`, no MSAA, unshaded
 water lit by hand, per-vertex lit everything else, MultiMesh rope and crowd, CPUParticles3D for
 the splash). On the tablet it held 59-62 fps (mock build, 2026-10-03). `tests/capture_tug.gd`
-takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording.
+takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording (add
+`--snaps` for half-size stills of each HUD state instead of a video).
+
+**UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
+rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
+leaning 0.12, the face upright. `TugStatus` is the hero tug meter: the watts either side of a
+420 x 40 rope bar, filled from the centre towards the leader in that team's colour (YOU in the
+gloves' blue, BOT in the bot's body colour, lifted for contrast), with a rope knot at `p`; under
+it, best-of pips (a "RUNG n" badge on the ladder, "WON n" in an endless ride) and the bot's
+name. PEDAL!, SURGE! (breathing) and REST n take the pips' place while they hold. At most
+790 x 115 px with the longest texts (`tug_status_layout_test`), no per-frame code, about 14 draw
+calls (99-101 in play on the desktop). The intro card shows the first bot (`TugBotPortrait`).
 
 ## Safe Cracker (#41)
 
 A recovery game played with the resistance knob: dial it to each number of a combination and
 hold it there to click a tumbler. `SafeLogic` holds the rules (headless-tested by
 `safe_logic_test`); the picture is 2D shapes drawn in code (`SafePlaces` for the six rooms,
-`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget and `SafeAudio` the sounds.
+`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget, `SafeBanner` the game's
+callouts and `SafeAudio` the sounds.
+
+**Look** (`framework/ui/UI_STYLE.md`, punch list `games/safe_cracker/UI_POLISH.md`): a noir heist
+in brass `#E8B04A` and soot `#14110D`, upright (`SafeCracker.look`, a `GameTheme`, also styles
+the HUD, the intro card and the pause screen). The dial's reading is the hero (96 px, green on a
+shown target) in the bottom gap the needle never sweeps; the target is on a brass-edged plate
+above the bezel; the tumbler lights are a column right of the bezel, and the newest pops. The
+status widget is a "VAULT n" badge, a brass pip per safe cracked and "MAX 120 W" ("OVER 120 W"
+in amber). The alarm ("ALARM: EASE OFF", breathing, with the safe glowing red) and "CRACKED!
++n" (a gold hero) show in `SafeBanner`, a layer under the HUD between its top bar and the safe,
+never in the HUD's centre message, which would cover the dial. `safe_scene_test` checks the
+layout (no overlaps, the needle's sweep, the status budget) and the events. In play: 88 draw
+calls on the desktop (105 before the polish: the dial's text is now two batches).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click
@@ -1369,8 +1473,13 @@ exactly where you score. `CadenceLogic` holds the rules (headless-tested by `cad
 `CadenceWorld` the 3D view, `CadenceStatus` the HUD widget and `CadenceAudio` the sounds.
 
 **The gap.** `gap` is -1 (behind the box) to 1 (in front of it), 0 inside the band, and depends
-on the cadence right now and nothing earlier. The target is always a multiple of 5 rpm (60 to start; a circuit's profile moves it in 5-rpm jumps). The HUD shows one speed number, the target rpm, and says "SLOW DOWN" or "SPEED UP" when out
-of the band. While a pace change waits for its boundary, whichever of the old and new targets is
+on the cadence right now and nothing earlier. The target is always a multiple of 5 rpm (60 to start; a circuit's profile moves it in 5-rpm jumps). The HUD widget (`CadenceStatus`) makes the target rpm its hero (96 px, the world's neon
+gradient, popping when it changes), with a chip for a pending change ("125 in 12 s"), "In band" and
+the streak multiplier (gold, popping on each step, "×2!" slammed at the max), and a WARN badge with a
+drawn arrow, "SLOW DOWN" ▼ or "SPEED UP" ▲, when out of the band ("EASE OFF", red and breathing,
+over the power cap). The badge flashes on each beat. The look (`ui_theme()`, the HUD skin, the −5 and
++5 rpm buttons at the bottom centre) is rebuilt per segment from `CadenceWorld.theme_color`, ink
+`#12052A`, and again when the rider changes the colour option. While a pace change waits for its boundary, whichever of the old and new targets is
 nearer the rider's cadence counts, so riding the new pace is never "ahead" of a beat that hasn't
 moved. **The bike reports a new cadence about once a second** (once a pedal revolution): the
 service streams frames at 5 Hz (`REPORT_RATE_MS` 200) but each rpm repeats for about four, so the

@@ -57,6 +57,16 @@ default font and, until #55 (below), the repo's own `bright` music style.
 Kart Race (#43) adds one imported asset, the OFL display font above; everything else is
 procedural, or rendered offline from the game's own scenes (the picker's track thumbnails).
 
+| File | Source URL | Author | Licence |
+| --- | --- | --- | --- |
+| `assets/fonts/LilitaOne-Regular.ttf` (unchanged; the shared display face of `GameTheme`, a copy of Kart Race's) | https://github.com/google/fonts/tree/main/ofl/lilitaone | Juan Montoreano | SIL OFL 1.1 (`assets/fonts/LilitaOne-OFL.txt`) |
+| `framework/shaders/world_look.gdshaderinc` (the 3D games' shared hand light, haze and grade) and `framework/WorldLook.gd` (its uniforms and generated noise texture) | Written for this repo (graphics pass) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `framework/ui/shaders/text_gradient.gdshader` (the kit's gradient text fill, a copy of Kart Race's) | Written for this repo | The OpenRide Authors | Apache-2.0, the repo's licence |
+
+The shared game-UI kit (`framework/ui/GameTheme.gd`, `UI_STYLE.md`) uses that one OFL face for
+every game. Kart Race still loads its own copy, so both files ship until Kart moves to the shared
+path.
+
 ## Rendered music and effects (#55)
 
 Every file below is synthesised by code written for this repo (`games/tools/music/`: numpy and

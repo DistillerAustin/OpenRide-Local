@@ -150,6 +150,16 @@ func bot_name() -> String:
 	return _bot_name
 
 
+## The current bot's body colour (the status widget's BOT colour).
+func bot_color() -> Color:
+	return _bot_body_mat.albedo_color
+
+
+## Whether the current bot wears horns (odd rungs) rather than ears.
+func bot_has_horns() -> bool:
+	return _bot.get_node("Horns").visible
+
+
 ## A round has ended: the loser falls into the river. The splash lands a moment later, at the
 ## far pier's end for the bot and just ahead of the camera for the rider.
 func fall(bot_falls: bool) -> void:
