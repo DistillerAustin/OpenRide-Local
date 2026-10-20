@@ -18,11 +18,21 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.digitalducktape.openride.R
 import dev.digitalducktape.openride.appContainer
+import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.GameBridge
+import dev.digitalducktape.openride.games.bridge.GameSession
 import dev.digitalducktape.openride.games.bridge.OpenRideBridgePlugin
-import dev.digitalducktape.openride.games.session.GameSessionManager
+import dev.digitalducktape.openride.games.bridge.SessionSummary
+import dev.digitalducktape.openride.games.bridge.SessionTotals
+import dev.digitalducktape.openride.games.session.FtpBasis
+import dev.digitalducktape.openride.games.session.GameCatalog
 import dev.digitalducktape.openride.games.session.JustRideMode
+import dev.digitalducktape.openride.games.session.NoRide
+import dev.digitalducktape.openride.games.session.PlanStart
+import dev.digitalducktape.openride.games.session.SessionPlans
 import dev.digitalducktape.openride.games.session.SessionRequest
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import org.godotengine.godot.Godot
 import org.godotengine.godot.GodotActivity
 import org.godotengine.godot.plugin.GodotPlugin
@@ -51,8 +61,8 @@ class GameHostActivity : GodotActivity() {
     private val bridge: GameBridge
         get() = appContainer.gameBridge
 
-    private val sessions: GameSessionManager
-        get() = appContainer.gameSessionManager
+    /** Interim (Games hub A4): replaced by the visit in A5. */
+    private var sessions: GameSession = InterimSession(DEFAULT_REQUEST)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before the engine starts: players that exist now are other apps' music, not Godot's.
@@ -146,8 +156,8 @@ class GameHostActivity : GodotActivity() {
     private fun startSession(intent: Intent) {
         val request = SessionRequest.fromJson(intent.getStringExtra(EXTRA_REQUEST)) ?: DEFAULT_REQUEST
         Log.i(TAG, "game session: $request")
-        // A session still running (the rider left without its summary) is finished and saved.
-        sessions.begin(request, onExit = ::exitToApp)
+        bridge.detach(sessions)
+        sessions = InterimSession(request)
         bridge.attach(sessions)
     }
 
@@ -157,6 +167,41 @@ class GameHostActivity : GodotActivity() {
         bridge.detach(sessions)
         moveTaskToBack(true)
         Log.i(TAG, "game host moved to back")
+    }
+
+    /**
+     * Interim (Games hub A4 only, removed in A5): plays [request] through the plan runner
+     * without recording, so the build and the Compose tab keep working between the plan
+     * runner's refactor and the visit that records.
+     */
+    private inner class InterimSession(private val request: SessionRequest) : GameSession {
+        private val runner get() = appContainer.gameSessionManager
+        override val segmentTimeLeftSec: Double get() = runner.segmentTimeLeftSec
+        override fun onGameReady() {
+            appContainer.gamesScope.launch {
+                val plan = SessionPlans.forRequest(request, FtpBasis.of(null), GameCatalog.DEFAULT) ?: return@launch
+                runner.run(plan, NoRide, PlanStart()) { outcome ->
+                    val summary = SessionSummary(
+                        rideId = null,
+                        results = outcome.results.map { it.result },
+                        totals = SessionTotals(outcome.results.sumOf { it.result.score }, outcome.results.sumOf { it.result.stars }, outcome.results.size, outcome.elapsedSec),
+                        bests = JsonObject(emptyMap()),
+                    )
+                    bridge.sessionFinished(BridgeMessages.encode(summary))
+                }
+            }
+        }
+        private fun post(block: () -> Unit) { appContainer.gamesScope.launch { block() } }
+        override fun onSegmentFinished(resultJson: String) = post { runner.segmentFinished(resultJson) }
+        override fun onRequestCalibration(mode: String) = post { runner.requestCalibration(mode) }
+        override fun onSetTrackerMode(mode: String) = post { runner.setTrackerMode(mode) }
+        override fun onRequestPause() = post { runner.requestPause() }
+        override fun onRequestResume() = post { runner.requestResume() }
+        override fun onRequestEnd() = post { runner.requestEnd() }
+        override fun onRequestExit() = post {
+            runner.finishNow()
+            exitToApp()
+        }
     }
 
     companion object {

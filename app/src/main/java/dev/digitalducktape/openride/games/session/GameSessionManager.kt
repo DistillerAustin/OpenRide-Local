@@ -1,105 +1,89 @@
 package dev.digitalducktape.openride.games.session
 
-import dev.digitalducktape.openride.core.data.GameResult
-import dev.digitalducktape.openride.core.data.GameResultDao
-import dev.digitalducktape.openride.core.data.Ride
-import dev.digitalducktape.openride.core.ride.RideSessionManager
-import dev.digitalducktape.openride.core.ride.RideSessionState
-import dev.digitalducktape.openride.games.bridge.AudioSettings
 import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.CalibrationMode
-import dev.digitalducktape.openride.games.bridge.Difficulty
 import dev.digitalducktape.openride.games.bridge.EndMode
-import dev.digitalducktape.openride.games.bridge.GameSession
 import dev.digitalducktape.openride.games.bridge.GameSignals
 import dev.digitalducktape.openride.games.bridge.SegmentResult
-import dev.digitalducktape.openride.games.bridge.SegmentRole
 import dev.digitalducktape.openride.games.bridge.SegmentStartMessage
-import dev.digitalducktape.openride.games.bridge.SessionSummary
-import dev.digitalducktape.openride.games.bridge.SessionTotals
 import dev.digitalducktape.openride.games.bridge.TrackerLink
 import dev.digitalducktape.openride.games.bridge.TrackerMode
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
+
+/** What `session_started` says about who plays and, in a hub visit, which visit. */
+data class PlanStart(
+    val riderId: Long? = null,
+    val riderName: String? = null,
+    /** Null outside a visit: then none of the visit keys is sent. */
+    val visitId: String? = null,
+    val planIndex: Int? = null,
+    /** The visit's calibration: `""`, `lean_x` or `lean_2d`. */
+    val calibrated: String? = null,
+)
+
+/** One segment as played: its `segment_started`, its start on the ride clock and its gameplay seconds. */
+data class PlayedSegment(val segment: SegmentStartMessage, val startSec: Int, val playedSec: Int, val result: SegmentResult)
 
 /**
- * Runs mini-games sessions (#35): the Kotlin side of the Bridge contract (docs/GAMES.md), and
- * the session's clock. App-scoped, like the ride it records: one session at a time, started by
- * [begin] each time the rider enters games.
+ * A finished plan, for the visit to record and summarise.
  *
- * When Godot is ready ([onGameReady]) it builds the [SessionPlan] from the [SessionRequest]
- * and the active rider's FTP, starts the ride through the app's own [RideSessionManager] (so the
- * session records like any other ride, auto-pause included, as `Ride.gamePlan`), and walks
- * the plan on a 1 Hz clock:
+ * @param elapsedSec the plan's own seconds, from its first intro card to its end, pauses excluded.
+ * @param gameplaySec gameplay seconds, intro cards excluded (the visit's keep-or-discard rule).
+ */
+data class PlanOutcome(val plan: SessionPlan, val results: List<PlayedSegment>, val elapsedSec: Int, val gameplaySec: Int)
+
+/**
+ * The plan runner (Games hub spec §2): walks one [SessionPlan] on a 1 Hz clock, the Kotlin side
+ * of the Bridge contract *within a plan* (docs/GAMES.md). The class keeps its v1 name to limit
+ * churn; the hub visit ([GameVisitManager]) owns everything around it: the ride, the camera's
+ * session, results, bests and `session_finished`.
  *
- * - `session_started` (the plan), then per segment `segment_started` → the intro card
- *   (`intro_sec`; the ride records through it, but `segment_time_left` counts gameplay only) →
- *   gameplay → the end:
+ * - [run] sends `session_started` (the plan, with [PlanStart]'s keys), then per segment
+ *   `segment_started` → the intro card (`intro_sec`; `segment_time_left` counts gameplay only)
+ *   → gameplay → the end:
  *   - `end_mode: timer`: `segment_ending` at `duration_sec`;
  *   - `end_mode: game`: the game ends it, with a hard stop (`segment_ending`) at 1.5 ×;
  *   - after `segment_ending` the game has 5 s to report, or a zero result is recorded.
  * - Any `segment_finished` (a skip from the intro card included) advances at once.
- * - Pauses come from the rider (`request_pause`/`request_resume`, which pause the ride), from
- *   the ride's own freewheel auto-pause, and from the head tracker while it calibrates (the
- *   ride keeps recording then: the rider is still on the bike). Any of them freezes the clock and
- *   is signalled; calibration resumes by itself when it completes or ends as unavailable.
- * - `request_end` asks the current game to finish (`segment_ending`), then ends the session.
+ * - Pauses come from the rider ([requestPause]/[requestResume], which pause the [PlanRide] too),
+ *   from the ride's freewheel auto-pause, and from the head tracker while it calibrates (the
+ *   ride keeps recording then). Any of them freezes the clock and is signalled; calibration
+ *   resumes by itself when it completes or ends as unavailable.
+ * - [requestEnd] asks the current game to finish (`segment_ending`), then ends the plan.
  * - After the last segment a timed plan finishes by itself; an open-ended one waits for
- *   `request_end`.
- * - Finishing stops and saves the ride, writes one `game_results` row per segment, works out
- *   the rider's bests and only then sends `session_finished`. A session with under a minute of
- *   gameplay, or no pedalling at all, is discarded instead (`ride_id: null`).
+ *   [requestEnd]. [finishNow] ends it at once (the rider left games).
+ * - Finishing stops the clock and hands a [PlanOutcome] to `onFinished`, synchronously. Each
+ *   result's `startSec` is on the ride's clock ([PlanRide.elapsedSec]), so it lines up with the
+ *   samples across a visit's plans.
  *
- * Every entry point hops onto [scope] (the main thread in the app), so all state is touched on
- * one thread; only [segmentTimeLeftSec] is read from Godot's thread. A session with no active
- * rider, or started while another ride is in progress, plays without recording (`ride_id: null`).
+ * Not thread-safe: call everything on [scope]'s thread (the visit posts onto it). Only
+ * [segmentTimeLeftSec] is read from Godot's thread.
  */
 class GameSessionManager(
     private val signals: GameSignals,
     private val scope: CoroutineScope,
-    private val rideSessionManager: RideSessionManager,
-    private val gameResultDao: GameResultDao,
-    private val activeProfileId: () -> Long?,
-    /** The rider's FTP, or null if unset (the plan falls back to 150 W). */
-    private val profileFtp: suspend (profileId: Long) -> Int?,
-    /** The rider's profile name for `session_started`'s `rider_name`, or null. */
-    private val profileName: suspend (profileId: Long) -> String? = { null },
-    /** The camera head tracker's session side; null runs sessions without a camera. */
+    /** The camera head tracker's plan side; null runs plans without a camera. */
     private val tracker: TrackerLink? = null,
-    private val catalog: GameCatalog = GameCatalog.DEFAULT,
     private val audioPrefs: () -> GameAudioPrefs = { GameAudioPrefs() },
     /** The rider's own music (another app's) is playing: [OtherMusicDetector] in the app. */
     private val otherMusicActive: () -> Boolean = { false },
     private val random: Random = Random.Default,
     private val log: (String) -> Unit = {},
-) : GameSession {
-    private enum class Phase { IDLE, WAITING, STARTING, INTRO, PLAYING, ENDING, AWAITING_END, SAVING, FINISHED }
-
-    /** One segment's result with what Kotlin knows about the segment. */
-    private data class Played(val segment: SegmentStartMessage, val startSec: Int, val playedSec: Int, val result: SegmentResult)
+) {
+    private enum class Phase { IDLE, INTRO, PLAYING, ENDING, AWAITING_END, FINISHED }
 
     private var phase = Phase.IDLE
-    private var generation = 0
-    private var request: SessionRequest? = null
-    private var onExit: () -> Unit = {}
     private var plan: SessionPlan? = null
-    private var sessionJob: Job? = null
-    private var savingJob: Job? = null
+    private var ride: PlanRide = NoRide
+    private var onFinished: (PlanOutcome) -> Unit = {}
+    private var planJob: Job? = null
     private var segment: SegmentStartMessage? = null
     private var segmentStartSec = 0
     private var introLeftSec = 0
@@ -111,35 +95,25 @@ class GameSessionManager(
     private var calibrationPaused = false
     private var paused = false
     private var endRequested = false
-    private var exited = false
-    private var profileId: Long? = null
-    private var recording = false
-    private val results = mutableListOf<Played>()
+    private val results = mutableListOf<PlayedSegment>()
 
+    /** Input frame index 10: gameplay seconds left in the current segment, -1 if open-ended or none. */
     @Volatile
-    override var segmentTimeLeftSec: Double = -1.0
+    var segmentTimeLeftSec: Double = -1.0
         private set
 
-    private val _finishedRideId = MutableStateFlow<Long?>(null)
-
-    /** The ride the last session saved, once `session_finished` is sent; for the hub's summary (#38). */
-    val finishedRideId: StateFlow<Long?> = _finishedRideId.asStateFlow()
+    /** A plan is under way: from [run] until it finishes. */
+    val isRunning: Boolean get() = phase in PLAYABLE
 
     /**
-     * Readies a session of [request] for the next Godot frame poll. [onExit] runs when the game
-     * calls `request_exit()`. A session still running is finished (and its ride saved) first.
-     * Call on [scope]'s thread, before attaching this to the bridge.
+     * Runs [plan] against [ride] (already resumed by the visit). [onFinished] gets the outcome
+     * when it ends. Ignored while another plan runs.
      */
-    fun begin(request: SessionRequest, onExit: () -> Unit) {
-        if (phase in LIVE) {
-            log("a new session replaces one still running: finishing it")
-            finish()
-        }
-        generation++
-        this.request = request
-        this.onExit = onExit
-        phase = Phase.WAITING
-        plan = null
+    fun run(plan: SessionPlan, ride: PlanRide, start: PlanStart, onFinished: (PlanOutcome) -> Unit) {
+        if (isRunning) return log("run ${plan.planId}: a plan is already running")
+        this.plan = plan
+        this.ride = ride
+        this.onFinished = onFinished
         segment = null
         segmentStartSec = 0
         introLeftSec = 0
@@ -151,25 +125,33 @@ class GameSessionManager(
         calibrationPaused = false
         paused = false
         endRequested = false
-        exited = false
-        profileId = null
-        recording = false
         results.clear()
-        segmentTimeLeftSec = -1.0
-        _finishedRideId.value = null
-    }
-
-    override fun onGameReady() = post {
-        if (phase != Phase.WAITING) return@post
-        phase = Phase.STARTING
+        log("session_started ${plan.planId} (${plan.difficulty}, FTP ${plan.ftp.watts} W)")
+        signals.sessionStarted(
+            BridgeMessages.encode(
+                plan.toMessage(riderId = start.riderId, riderName = start.riderName)
+                    .copy(visitId = start.visitId, planIndex = start.planIndex, calibrated = start.calibrated),
+            ),
+        )
+        startSegment(0)
         val job = SupervisorJob(scope.coroutineContext[Job])
-        sessionJob = job
-        CoroutineScope(scope.coroutineContext + job).launch { start(generation) }
+        planJob = job
+        val planScope = CoroutineScope(scope.coroutineContext + job)
+        planScope.launch { ride.pausedChanges.collect { refreshPaused() } }
+        tracker?.let { link ->
+            planScope.launch {
+                link.calibrating.collect {
+                    calibrationPaused = it
+                    refreshPaused()
+                }
+            }
+        }
+        planScope.launch { runClock() }
     }
 
-    override fun onSegmentFinished(resultJson: String) = post {
-        val current = segment ?: return@post
-        if (phase !in setOf(Phase.INTRO, Phase.PLAYING, Phase.ENDING)) return@post
+    fun segmentFinished(resultJson: String) {
+        val current = segment ?: return
+        if (phase !in setOf(Phase.INTRO, Phase.PLAYING, Phase.ENDING)) return
         val parsed = BridgeMessages.parseResult(resultJson) ?: SegmentResult.zero(current.gameId).also {
             log("segment_finished: unreadable result, recording zero: $resultJson")
         }
@@ -179,99 +161,45 @@ class GameSessionManager(
         advance()
     }
 
-    override fun onRequestCalibration(mode: String) = post {
+    fun requestCalibration(mode: String) {
         log("request_calibration ${CalibrationMode.fromWire(mode) ?: "unknown mode '$mode'"}")
-        if (phase in PLAYABLE) tracker?.requestCalibration(mode)
+        if (isRunning) tracker?.requestCalibration(mode)
     }
 
-    override fun onSetTrackerMode(mode: String) = post {
-        if (TrackerMode.fromWire(mode) == null) return@post log("set_tracker_mode: unknown mode '$mode'")
+    fun setTrackerMode(mode: String) {
+        if (TrackerMode.fromWire(mode) == null) return log("set_tracker_mode: unknown mode '$mode'")
         log("set_tracker_mode $mode")
-        // The summary screen never needs the camera.
-        if (phase in PLAYABLE) tracker?.setTrackerMode(mode)
+        // The result card never needs the camera.
+        if (isRunning) tracker?.setTrackerMode(mode)
     }
 
-    override fun onRequestPause() = post {
-        if (phase !in PLAYABLE || riderPaused) return@post
+    fun requestPause() {
+        if (!isRunning || riderPaused) return
         riderPaused = true
-        if (recording) rideSessionManager.pause()
+        ride.pause()
         refreshPaused()
     }
 
-    override fun onRequestResume() = post {
-        if (phase !in PLAYABLE) return@post
+    fun requestResume() {
+        if (!isRunning) return
         riderPaused = false
         // Also ends an auto-pause: the rider pressed Resume on the pause screen.
-        if (recording) rideSessionManager.resume()
+        ride.resume()
         refreshPaused()
     }
 
-    override fun onRequestEnd() = post {
+    fun requestEnd() {
         endRequested = true
         when (phase) {
             Phase.INTRO, Phase.PLAYING -> beginEnding()
-            Phase.WAITING, Phase.AWAITING_END -> finish()
-            // STARTING ends as soon as the first segment is up; the rest are ending already.
+            Phase.AWAITING_END -> finish()
             else -> Unit
         }
     }
 
-    override fun onRequestExit() = post {
-        if (exited || phase == Phase.IDLE) return@post
-        // The contract sends request_exit after the summary. A game that leaves early still
-        // gets its ride saved, so nothing is left recording behind the closed host.
-        if (phase != Phase.SAVING && phase != Phase.FINISHED) finish()
-        exited = true
-        onExit()
-    }
-
-    private suspend fun start(gen: Int) {
-        // A replaced session's ride must be saved before this one's can start.
-        savingJob?.join()
-        if (gen != generation) return
-        val pid = activeProfileId()
-        val ftp = FtpBasis.of(pid?.let { runCatching { profileFtp(it) }.getOrNull() })
-        val riderName = pid?.let { runCatching { profileName(it) }.getOrNull() }
-        val built = request?.let { SessionPlans.forRequest(it, ftp, catalog) }
-        if (built == null) {
-            log("can't plan $request: finishing without playing")
-            finish()
-            return
-        }
-        plan = built
-        profileId = pid
-        recording = startRide(pid, built.planId)
-        log("session_started ${built.planId} (${built.difficulty}, FTP ${ftp.watts} W, recording=$recording)")
-        tracker?.start()
-        signals.sessionStarted(BridgeMessages.encode(built.toMessage(riderId = pid, riderName = riderName)))
-        startSegment(0)
-        val sessionScope = CoroutineScope(scope.coroutineContext + sessionJob!!)
-        sessionScope.launch { rideSessionManager.state.collect { refreshPaused() } }
-        tracker?.let { link ->
-            sessionScope.launch {
-                link.calibrating.collect {
-                    calibrationPaused = it
-                    refreshPaused()
-                }
-            }
-        }
-        sessionScope.launch { runClock() }
-        if (endRequested) beginEnding()
-    }
-
-    private fun startRide(pid: Long?, planId: String): Boolean {
-        if (pid == null) {
-            log("no active rider: this session isn't recorded")
-            return false
-        }
-        // A finished ride nobody dismissed (e.g. a summary still open) must not block this one.
-        if (rideSessionManager.state.value is RideSessionState.Finished) rideSessionManager.reset()
-        if (rideSessionManager.state.value != RideSessionState.Idle) {
-            log("another ride is in progress: this session isn't recorded")
-            return false
-        }
-        rideSessionManager.start(pid, gamePlan = planId)
-        return true
+    /** Ends the plan now, with the results so far (the rider left games mid-plan). */
+    fun finishNow() {
+        if (isRunning) finish()
     }
 
     private fun startSegment(index: Int) {
@@ -288,12 +216,12 @@ class GameSessionManager(
             difficulty = current.difficulty,
             effort = planned.effort,
             seed = random.nextLong(0, Int.MAX_VALUE.toLong()),
-            // Re-checked every segment, so the rider's music starting or stopping mid-session counts.
+            // Re-checked every segment, so the rider's music starting or stopping mid-plan counts.
             audio = audioPrefs().resolve(otherMusicActive()),
             params = planned.params,
         )
         segment = message
-        segmentStartSec = elapsedSec
+        segmentStartSec = ride.elapsedSec
         introLeftSec = message.introSec
         playedSec = 0
         phase = if (introLeftSec > 0) Phase.INTRO else Phase.PLAYING
@@ -312,7 +240,7 @@ class GameSessionManager(
     private fun tick() {
         val current = segment ?: return
         if (paused) {
-            // A rider who ends the session from the pause screen still gets it ended.
+            // A rider who ends the plan from the pause screen still gets it ended.
             if (phase == Phase.ENDING && endRequested) graceTick(current)
             return
         }
@@ -354,7 +282,7 @@ class GameSessionManager(
 
     private fun record(result: SegmentResult) {
         val current = segment ?: return
-        results += Played(current, segmentStartSec, playedSec, result)
+        results += PlayedSegment(current, segmentStartSec, playedSec, result)
     }
 
     private fun advance() {
@@ -371,134 +299,25 @@ class GameSessionManager(
         }
     }
 
-    /** Pauses from either source, signalled to Godot only when the combined state changes. */
+    /** Pauses from any source, signalled to Godot only when the combined state changes. */
     private fun refreshPaused() {
-        val now = riderPaused || calibrationPaused ||
-            (recording && rideSessionManager.state.value == RideSessionState.Paused)
+        val now = riderPaused || calibrationPaused || ride.isPaused
         if (now == paused) return
         paused = now
-        if (phase !in PLAYABLE) return
+        if (!isRunning) return
         log(if (now) "session_paused" else "session_resumed")
         if (now) signals.sessionPaused() else signals.sessionResumed()
     }
 
-    /** Stops the clock and the camera, then saves in the background and sends `session_finished`. */
     private fun finish() {
-        if (phase == Phase.SAVING || phase == Phase.FINISHED || phase == Phase.IDLE) return
-        phase = Phase.SAVING
+        val finishedPlan = plan ?: return
+        phase = Phase.FINISHED
         segmentTimeLeftSec = -1.0
-        if (plan != null) tracker?.stop()
-        sessionJob?.cancel()
-        sessionJob = null
-        val gen = generation
-        val played = results.toList()
-        val finishedPlan = plan
-        val wasRecording = recording
-        val pid = profileId
-        val elapsed = elapsedSec
-        val keep = wasRecording && worthKeeping(gameplaySec)
-        if (wasRecording && !keep) {
-            log("discarding the ride: ${gameplaySec}s of gameplay, pedalled=${pedalled()}")
-            rideSessionManager.discard()
-        }
-        savingJob = scope.launch {
-            val ride = if (keep) saveRide(played, finishedPlan) else null
-            val bests = if (ride != null && pid != null && finishedPlan != null) bests(pid, ride.id, finishedPlan, played) else EMPTY
-            val summary = SessionSummary(
-                rideId = ride?.id,
-                results = played.map { it.result },
-                totals = SessionTotals(
-                    score = played.sumOf { it.result.score },
-                    stars = played.sumOf { it.result.stars },
-                    segments = played.size,
-                    elapsedSec = ride?.durationSec ?: elapsed,
-                ),
-                bests = bests,
-            )
-            log("session_finished: ride ${ride?.id}, ${played.size} results")
-            signals.sessionFinished(BridgeMessages.encode(summary))
-            if (gen == generation) phase = Phase.FINISHED
-            _finishedRideId.value = ride?.id
-        }
-    }
-
-    /**
-     * Whether the session belongs in History: at least [MIN_GAMEPLAY_SEC] of gameplay (intro
-     * cards don't count, so a skipped or abandoned game isn't a ride) and some pedalling.
-     * Normal rides have no such rule; they're always ended deliberately from the ride screen.
-     */
-    private fun worthKeeping(gameplay: Int): Boolean = gameplay >= MIN_GAMEPLAY_SEC && pedalled()
-
-    private fun pedalled(): Boolean = rideSessionManager.liveAggregates.value.let { it.maxCadence > 0 || it.maxPower > 0 }
-
-    /** The ride through the normal recording path, then its results. Null if nothing was saved. */
-    private suspend fun saveRide(played: List<Played>, finishedPlan: SessionPlan?): Ride? {
-        val ride = try {
-            rideSessionManager.stop()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log("saving the ride failed: $e")
-            null
-        } ?: return null
-        val difficulty = wire(Difficulty.serializer(), finishedPlan?.difficulty ?: Difficulty.STANDARD)
-        val rows = played.map { p ->
-            GameResult(
-                rideId = ride.id,
-                segmentIndex = p.segment.index,
-                gameId = p.segment.gameId,
-                role = wire(SegmentRole.serializer(), p.segment.role),
-                difficulty = difficulty,
-                startSec = p.startSec,
-                durationSec = p.playedSec,
-                score = p.result.score,
-                stars = p.result.stars,
-                won = p.result.won,
-                skipped = p.result.skipped,
-                statsJson = p.result.stats.toString(),
-                variant = p.result.variant,
-            )
-        }
-        try {
-            if (rows.isNotEmpty()) gameResultDao.insertAll(rows)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log("saving the game results failed: $e")
-        }
-        // Back to Idle so the app's next ride can start; the summary loads by ride id.
-        rideSessionManager.reset()
-        return ride
-    }
-
-    /**
-     * `bests`: `{"score": true}` and/or `{"stars": true}` when this session beat the rider's
-     * best at the same plan and difficulty (or is their first to score). Empty otherwise.
-     */
-    private suspend fun bests(pid: Long, rideId: Long, finishedPlan: SessionPlan, played: List<Played>): JsonObject {
-        // Sessions played in one variant throughout compare only with sessions in that variant.
-        val variants = played.filterNot { it.result.skipped }.map { it.result.variant }.distinct()
-        val variant = variants.singleOrNull()
-        val previous = try {
-            gameResultDao.planBest(
-                pid, finishedPlan.planId, wire(Difficulty.serializer(), finishedPlan.difficulty), rideId, variant,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log("reading bests failed: $e")
-            return EMPTY
-        }
-        val score = played.filterNot { it.result.skipped }.sumOf { it.result.score }
-        val stars = played.filterNot { it.result.skipped }.sumOf { it.result.stars }
-        val flags = buildMap {
-            if (score > 0 && score > (previous.bestScore ?: 0.0)) put("score", JsonPrimitive(true))
-            if (stars > 0 && stars > (previous.bestStars ?: 0)) put("stars", JsonPrimitive(true))
-            // The best before this session, so the summary can say what the rider is up against.
-            previous.bestScore?.let { put("previous_score", JsonPrimitive(it.toInt())) }
-            previous.bestStars?.let { put("previous_stars", JsonPrimitive(it)) }
-        }
-        return JsonObject(flags)
+        planJob?.cancel()
+        planJob = null
+        val outcome = PlanOutcome(finishedPlan, results.toList(), elapsedSec, gameplaySec)
+        log("plan ${finishedPlan.planId} finished: ${outcome.results.size} results, ${gameplaySec}s of gameplay")
+        onFinished(outcome)
     }
 
     private fun updateTimeLeft() {
@@ -506,25 +325,11 @@ class GameSessionManager(
         segmentTimeLeftSec = if (duration < 0) -1.0 else (duration - playedSec).coerceAtLeast(0).toDouble()
     }
 
-    private fun post(block: () -> Unit) {
-        scope.launch { block() }
-    }
-
-    private fun <T> wire(serializer: KSerializer<T>, value: T): String =
-        Json.encodeToJsonElement(serializer, value).jsonPrimitive.content
-
     companion object {
         const val GRACE_SEC = 5
-
-        /** The shortest session saved as a ride: a game's shortest timed length (`min_sec`). */
-        const val MIN_GAMEPLAY_SEC = 60
         private const val TICK_MS = 1_000L
-        private val EMPTY = JsonObject(emptyMap())
 
-        /** A session is under way: the tracker and pause requests apply. */
-        private val PLAYABLE = setOf(Phase.STARTING, Phase.INTRO, Phase.PLAYING, Phase.ENDING, Phase.AWAITING_END)
-
-        /** A session that [begin] must finish before replacing it. */
-        private val LIVE = PLAYABLE + Phase.WAITING
+        /** A plan is under way: the tracker and pause requests apply. */
+        private val PLAYABLE = setOf(Phase.INTRO, Phase.PLAYING, Phase.ENDING, Phase.AWAITING_END)
     }
 }

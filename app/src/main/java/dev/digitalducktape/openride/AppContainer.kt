@@ -252,23 +252,22 @@ class AppContainer(private val applicationContext: Context) {
     /** Read by the Games hub for the rider's bests (#38). */
     val gameResultDao get() = database.gameResultDao()
 
+    /** The plan runner (Games hub): walks one plan at a time over [gameBridge]. */
     val gameSessionManager: GameSessionManager by lazy {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val log: (String) -> Unit = { Log.i(GAMES_LOG_TAG, it) }
         GameSessionManager(
             signals = gameBridge,
-            scope = scope,
-            rideSessionManager = rideSessionManager,
-            gameResultDao = database.gameResultDao(),
-            activeProfileId = { activeProfileHolder.activeProfileId.value },
-            profileFtp = { profileRepository.getProfile(it)?.ftp },
-            profileName = { profileRepository.getProfile(it)?.name },
-            tracker = TrackerLink(headTracker, gameBridge, scope, log),
+            scope = gamesScope,
+            tracker = TrackerLink(headTracker, gameBridge, gamesScope, gamesLog),
             otherMusicActive = otherMusicDetector::otherMusicActive,
             audioPrefs = { gamesSettings.settings.value.audio },
-            log = log,
+            log = gamesLog,
         )
     }
+
+    /** The games' main-thread scope: the visit and the plan runner touch their state only on it. */
+    val gamesScope: CoroutineScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+
+    val gamesLog: (String) -> Unit = { Log.i(GAMES_LOG_TAG, it) }
 
     /**
      * Tells the rider's own music from the Godot engine's player, for game music on "auto"
