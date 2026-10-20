@@ -1473,8 +1473,14 @@ GL Compatibility) took, measured with the mock build:
 - **The road and verges are unshaded**, lit and fogged by hand. They cover most of the screen,
   and the engine's per-pixel light and fog cost about a third of the frame.
 - **Shaders sample a 64×64 noise texture** instead of hashing with `sin()` per pixel.
-- **Scenery is lit per vertex, without specular.** The Kenney nature-kit materials are fully
-  metallic (near-black without reflections), so they're replaced by matte ones.
+- **Everything in the world lights itself** with the shared `WorldLook` (Dodge's grade in
+  `shaders/look.gdshaderinc`): the road, verges, sky, scenery (per vertex, painted AO, one
+  material per surface look shared by every chunk), the far horizon mesh and the handlebars
+  (one merged mesh). `DodgeWorld.look_for` builds the look from the time-of-day preset. Only the
+  balls use the engine sun. The Kenney kit's metallic materials are dropped for this.
+- **Bursts and sparks are one pooled MultiMesh** (`shaders/fx.gdshader`): a burst writes its
+  instances once and the vertex shader moves them, so they cost no main-thread simulation.
+  The pool hides itself when idle. The fence is one mesh for the whole road, not one a chunk.
 - **The full-screen effect overlay is hidden while idle**, and HUD labels only change when
   their value does. A theme override every frame re-laid-out the HUD.
 - **Release builds don't check for null.** A GDScript call on a null node crashed the exported
@@ -1489,6 +1495,12 @@ For measuring, set `DEV_TUNING` in `DodgeBall.gd` (off in every build). The game
 (`[render] scale=0.67 msaa=0`) and switches parts off (`[world] sky=false road=false
 verges=false scenery=false balls=false rig=false fog=false screenfx=false`). Write it with
 `adb shell run-as dev.digitalducktape.openride …`.
+
+On the desktop, `tests/capture_dodge.gd` takes the look's captures (`--nohud`, `--scenes=`,
+`--mode=catch`, `--close` for a ball near the bars, `--bonus`) and with `--perf` prints each
+preset's mean frame time with vsync off, draw calls and triangles. `dodge_world_look_test`
+covers the look's materials, meshes and FX packing. The art direction is
+`games/dodge_ball/ART_BIBLE.md`.
 
 ## Tug of War (#40)
 
@@ -1525,13 +1537,37 @@ overrides `Game.tracker_mode_for_segment`: `lean_2d` with brace lean on, otherwi
 `SessionDirector` applies that mode (a copy of the declarations from
 `GameInfo.with_tracker_mode`) for the segment, and the Calibrate button shows only then.
 
-**Look.** The rider stands at the end of a pier, the bot on the far pier, a flag on the rope
-between them. Winning hauls the bot off its pier into the river; losing pulls the camera in. The
-view follows the Dodge Ball recipe for the tablet (a scaled `SubViewport`, no MSAA, unshaded
-water lit by hand, per-vertex lit everything else, MultiMesh rope and crowd, CPUParticles3D for
-the splash). On the tablet it held 59-62 fps (mock build, 2026-10-03). `tests/capture_tug.gd`
-takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording (add
-`--snaps` for half-size stills of each HUD state instead of a video).
+**Look** (`games/tug_of_war/ART_BIBLE.md`; graphics pass 2026-10-19, `GFX_POLISH.md`). A summer
+fairground across a lazy river: the rider's gloves on the rope at the end of a plank pier, a
+wind-up tin robot on the far pier, a flag on the rope between them. Winning hauls the bot off its
+pier into the river; losing pulls the camera in. It follows the tablet recipe (a scaled
+`SubViewport`, no MSAA) on the shared world look (`WorldLook`, Tug's grade in
+`shaders/tug_look.gdshaderinc`): every surface is unshaded and lit by hand from one table
+(`TugWorld.look_for(preset)`), with no engine lights, fog or post passes.
+
+- `TugMeshes` bakes the statics into one vertex-coloured mesh with painted AO (`KartMeshKit`
+  shapes): sloped earth banks, reeds, shore rocks, hills, the nature-kit trees, pier frames,
+  pilings, torch posts, masts, bunting, string lights, a striped tent and hay bales.
+  `scenery.gdshader` reads `COLOR.a` as 1 − sway, `UV.x` as ground grain and `UV.y` as a bulb's
+  glow.
+- `deck.gdshader` draws the planks in world space (two noise reads, lines antialiased with
+  `fwidth`), with the bot's blob shadow and the torches' warm pools. `water.gdshader` (two reads)
+  has glitter along the sun's path, a fresnel to the two-colour sky, foam at the banks and
+  pilings, and shade under the piers.
+- The bot is one mesh (`bot.gdshader`: body colour as a uniform, the key spun in the vertex
+  shader, faster on a telegraph), plus ears or horns, self-lit eyes and chimney steam in a
+  telegraph or surge.
+- The crowd is a GPU billboard MultiMesh cut from a two-frame sprite drawn in code; the
+  flames are additive cards; the flag, bunting, reeds and lily pads all move in their shaders.
+  Per frame, GDScript lays out the rope's 22 segments and poses the bot, nothing else.
+
+About 13 draw calls for the world (55 before), 57 in play with the HUD (99 before), and 29k
+primitives on the desktop. On the tablet it
+held 59-62 fps before the pass (mock build, 2026-10-03); re-measure with Brace lean on.
+`tests/capture_tug.gd` takes desktop screenshots (`--stats` prints draw calls and frame times)
+and, with `--play=SECONDS`, plays rounds for a recording (add `--snaps` for half-size stills of
+each HUD state instead of a video). `tug_world_test` covers the shaders, the look table, the baked
+meshes and the per-frame budget.
 
 **UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
 rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
@@ -1541,15 +1577,15 @@ gloves' blue, BOT in the bot's body colour, lifted for contrast), with a rope kn
 it, best-of pips (a "RUNG n" badge on the ladder, "WON n" in an endless ride) and the bot's
 name. PEDAL!, SURGE! (breathing) and REST n take the pips' place while they hold. At most
 790 x 115 px with the longest texts (`tug_status_layout_test`), no per-frame code, about 14 draw
-calls (99-101 in play on the desktop). The intro card shows the first bot (`TugBotPortrait`).
+calls (57 in play on the desktop after the graphics pass, 99-101 before). The intro card shows the first bot (`TugBotPortrait`).
 
 ## Safe Cracker (#41)
 
 A recovery game played with the resistance knob: dial it to each number of a combination and
 hold it there to click a tumbler. `SafeLogic` holds the rules (headless-tested by
 `safe_logic_test`); the picture is 2D shapes drawn in code (`SafePlaces` for the six rooms,
-`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget, `SafeBanner` the game's
-callouts and `SafeAudio` the sounds.
+`SafeBackdrop` for their ambient life, `SafeBody`, `SafeDoor` and `SafeDial` for the safe),
+`SafeStatus` is the HUD widget, `SafeBanner` the game's callouts and `SafeAudio` the sounds.
 
 **Look** (`framework/ui/UI_STYLE.md`, punch list `games/safe_cracker/UI_POLISH.md`): a noir heist
 in brass `#E8B04A` and soot `#14110D`, upright (`SafeCracker.look`, a `GameTheme`, also styles
@@ -1560,8 +1596,25 @@ status widget is a "VAULT n" badge, a brass pip per safe cracked and "MAX 120 W"
 in amber). The alarm ("ALARM: EASE OFF", breathing, with the safe glowing red) and "CRACKED!
 +n" (a gold hero) show in `SafeBanner`, a layer under the HUD between its top bar and the safe,
 never in the HUD's centre message, which would cover the dial. `safe_scene_test` checks the
-layout (no overlaps, the needle's sweep, the status budget) and the events. In play: 88 draw
-calls on the desktop (105 before the polish: the dial's text is now two batches).
+layout (no overlaps, the needle's sweep, the status budget) and the events.
+
+**Graphics** (`games/safe_cracker/ART_BIBLE.md`, punch list `GFX_POLISH.md`): one heavy steel
+safe in a pool of light. Every shape goes through `SafeMesh`, which batches a node's shapes into
+one `canvas_item_add_triangle_array` with per-vertex colours and a 1.2 px feather for
+antialiasing. In Compatibility each `draw_circle`, `draw_colored_polygon` or `draw_arc` is a draw
+call of its own (the bank's rivets alone were 168), so a whole room, body or door is one call.
+Each place has one key light (`SafePlaces.PLACES[i].light`): a smooth pool drawn in the room's
+batch, with the safe's steel (`SafePlaces.steel_shade`), bevels and cast shadow agreeing with it.
+The door's layers (`SafeDial` docs) redraw only on a change: the needle is a static drawing turned
+by `rotation`; the reading's number has its own text-only layer; the door swing is a perspective
+turn about the hinge in `safe_door.gdshader` (a uniform; the door's thickness comes from UV
+depth). Ambient life never redraws: rain on the office window and the porthole's sea are
+shaders on one rect each, the cabin's lantern sways on a rotation tween, the lab's flasks shimmer
+in a shader, and 16 dust motes drift in the key light (`CPUParticles2D`). A crack fires 18 gold
+sparkles; the alarm adds a red side wash. `safe_gfx_test` checks the hardware's clearances, the
+batches, that the needle and the swing redraw nothing, and each place's ambient nodes. In play:
+51 draw calls on the desktop with the HUD (86 before the graphics pass; the bank was 258, the
+lab 125).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click
@@ -1588,8 +1641,9 @@ the bike.
 
 **Options** (per rider): Place (random or one fixed place), Target number (show or hide it) and
 Click sounds. Stats: `vaults`, `fastest_crack`, `alarms`, `avg_power`. `tests/capture_safe.gd`
-takes desktop screenshots and, with `--play=SECONDS`, cracks safes with a scripted rider for a
-recording.
+takes desktop screenshots (each with its draw calls; `--nohud` hides the HUD; `--measure=SECONDS`
+prints the desktop frame time, render CPU time and draw calls with vsync off) and, with
+`--play=SECONDS`, cracks safes with a scripted rider for a recording.
 
 ## Cadence Karaoke (#42)
 
@@ -1649,7 +1703,21 @@ cadence stays within about ±2 rpm of the target earns about 1700, one who wande
 **Options** (per rider): Metronome (a beat tick, off by default) and Colour (by
 workout part, or one fixed colour). The beat visuals run on the target's clock, which the music is
 laid out at; check their alignment with the music on the bike. `tests/capture_cadence.gd` plays a
-scripted ride for a recording.
+scripted ride for a recording (`--looks=` stills per colour, `--measure=SEC` the 3D view's draw
+calls and frame time, `--overdraw` an overdraw still).
+
+**The look** (`games/cadence_karaoke/ART_BIBLE.md`). Everything is unshaded and drawn in its
+shaders, with no engine glow or post pass: the tunnel's grid (`grid.gdshaderinc` with floor,
+wall and ceiling wrappers) has antialiased lines that fade to their average far away, the
+theme's neon on the long lines and its secondary (`CadenceWorld.SECONDARY`) on the cross lines;
+the floor reflects the rings and the beat line, the walls carry equaliser columns on the beat's
+clock, and a portal closes the far end. The rings are a thin frame mesh (`frame_mesh`, no
+`discard`), the orb a white-hot core with its state colour as a rim and an ink outline, a halo
+and a pool and trail on the floor. In the bonus band, sparks fly off the line as a ring lands
+(a pooled MultiMesh moved by its shader); while scoring is frozen the tunnel desaturates. The
+grade is the shared world look's (`cadence_look.gdshaderinc` sets Cadence's defines); additive
+layers take only its linear parts. `CadenceWorld.ring_z` places the rings for the MultiMesh and
+for the floor's reflections alike (`cadence_world_test`).
 
 ## Kart Race (#43)
 

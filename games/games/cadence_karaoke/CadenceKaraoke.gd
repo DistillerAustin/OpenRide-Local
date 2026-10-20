@@ -282,7 +282,7 @@ func _on_tempo_swapped(_key: String, _since: float) -> void:
 func _apply_look() -> void:
 	var look := option("look")
 	var role := str(segment.get("role", "free"))
-	world.set_theme_color(CadenceWorld.THEMES.get(role if look == "auto" else look, CadenceWorld.THEMES.free))
+	world.set_theme(role if look == "auto" else look)
 
 
 func _on_frame(delta: float) -> void:

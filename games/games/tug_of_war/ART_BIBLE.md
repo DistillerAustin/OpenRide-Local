@@ -1,14 +1,14 @@
 # Tug of War: art bible
 
-> **Status:** v1, 2026-10-19, from the graphics review of `games-polish` at 6ef6fab (code and
-> the before captures). **Owner:** whoever changes the look. Change this file in the same commit
-> as any change to the palette, the light, the bot, the crowd or the effects. **Sources of
-> truth:** `TugWorld.gd`, `shaders/water.gdshader`, Dodge Ball's `tod/*.tres` and
-> `shaders/sky.gdshader` (shared), `TugStatus` / `TugOfWar.look` (UI). **Target** marks what the
-> code doesn't do yet; `GFX_POLISH.md` tracks the work.
+> **Status:** v2, 2026-10-20: the graphics pass (`GFX_POLISH.md`, every item done) on v1 of
+> 2026-10-19. **Owner:** whoever changes the look. Change this file in the same commit as any
+> change to the palette, the light, the bot, the crowd or the effects. **Sources of truth:**
+> `TugWorld.gd` (layout, per-frame), `TugMeshes.gd` (every mesh), `shaders/*.gdshader` and
+> `shaders/tug_look.gdshaderinc` (the grade), Dodge Ball's `tod/*.tres` (shared presets),
+> `TugStatus` / `TugOfWar.look` (UI). **Open** marks what the code still doesn't do.
 
 All of it is procedural except the Kenney nature-kit trees, bushes and rocks (CC0, loaded from
-`games/dodge_ball/models/`). The bots are plain material-and-animal names, nobody's character.
+`games/dodge_ball/models/`, recoloured and baked into the riverside mesh). The bots are plain material-and-animal names, nobody's character.
 
 ## 1. Identity
 
@@ -32,8 +32,8 @@ diverge in the grade and the materials, not the sky.
 | --- | --- |
 | Even | Calm river, the crowd bobbing, torches flickering. Flag mid-rope. |
 | Winning | The bot leans forward and slides; the near crowd hops higher (`excitement`). |
-| Telegraph | The bot's eyes flash amber, it braces (-10°); **Target:** its wind-up key spins fast, a puff of steam from its chimney. |
-| Surge | Red eyes, -16° lean, a small rumble shake. **Target:** steam jets from the chimney. |
+| Telegraph | The bot's eyes flash amber, it braces (-10°), its wind-up key spins fast and its chimney puffs steam. |
+| Surge | Red eyes, -16° lean, a small rumble shake, steam jets from the chimney. |
 | Win | The bot topples into the river: splash, ripple ring, crowd jumps. |
 | Lose | The camera is pulled in and dips toward the water: the water fills the view. |
 
@@ -41,10 +41,10 @@ diverge in the grade and the materials, not the sky.
 
 | Role | Colour | Rule |
 | --- | --- | --- |
-| Deck timber | `#8C6138` planks, gaps `#2E1F14` | Warm, the brightest wood near the camera. **Target:** plank geometry or a procedural plank shader, never a magnified blurry texture. |
+| Deck timber | `#8C6138` planks, gaps `#2E1F14` | Warm, the brightest wood near the camera. A procedural plank shader (`deck.gdshader`), never a magnified blurry texture. |
 | Pilings, posts | `#4D331F` | Dark, so the pier ends frame the river. |
 | Water deep / shallow | `#12405C` / `#29758C` | Cool: the river is the one big cool area. Sky shows at grazing angles. |
-| Banks | `#4D8033` | **Target:** a sloped earth bank `#6B5233` with reeds, never a box edge. |
+| Banks | `#4D8033`, earth `#6B5233` | A sloped earth bank with reeds and shore rocks, never a box edge. |
 | Rope | `#C7A86B` / `#8C6B42` stripes | The lightest warm line on screen. |
 | Flag | `#FF401F` | The only red; the bot's eyes may flash red in a surge. |
 | Bot bodies | `BOT_COLORS` (rust, copper, tin, brass, iron, steel, zinc, chrome) | Metallic hues, matte painted tin (no real specular). |
@@ -57,11 +57,13 @@ flag the only red, and the rope orange-tan so the meter and the world agree.
 
 ## 4. Lighting, materials and shading
 
-- **Target: one hand light**, `framework/shaders/world_look.gdshaderinc`, as in Dodge Ball: every
-  surface `unshaded, fog_disabled`, lit by `sun_light` per vertex and graded per pixel. Today the
-  piers, banks, bot, crowd and hands are engine-lit per vertex with engine fog, and the water is
-  lit by hand.
-- **Tug's grade** (the `LOOK_*` defines, Target):
+- **One hand light**, `framework/shaders/world_look.gdshaderinc` through
+  `shaders/tug_look.gdshaderinc`: every surface `unshaded, fog_disabled`, lit by `sun_light` per
+  vertex (the water, deck and crowd per pixel or per quad) and graded per pixel, from one table
+  per preset (`TugWorld.look_for`). The sun node only places the sky's disc. The gloves have
+  their own fixed key light; the eyes, flames and bulbs are self-lit.
+- **Tug's grade** (the `LOOK_*` defines in `tug_look.gdshaderinc`; the sky repeats it without
+  the vignette):
 
   | Define | Value |
   | --- | --- |
@@ -82,23 +84,29 @@ flag the only red, and the rope orange-tan so the meter and the world agree.
 
 ## 5. Shapes and proportions
 
-- **The bot** (Target): a wind-up tin robot about 2.6 m tall on the deck (scale 1.3 today), a
-  rounded barrel body, a dome head with a visor slot for the glowing eyes, mitten hands on the
-  rope, a big wind-up key on its back and a chimney. Ears or horns alternate by rung. Today it is
-  stacked boxes.
-- **The crowd** (Target): toy-like fans, 1.6-1.9 m, a round head and a rounded body with arms
-  that wave, as sprites or one mesh each, never faceless capsules.
-- **The rider's hands** (Target): chunky work gloves in the UI blue, knuckles readable, the rope
-  wrapped over them. Today they are 8-segment spheres.
+- **The bot:** a wind-up tin robot 2.75 m tall to its chimney (built at scale 1): a barrel body
+  with darker hoops and rivets, a chest gauge, a dome head with a visor slot for the glowing
+  eyes, a mouth grille, springy hose arms to mitten hands on the rope, a brass wind-up key on its
+  back and a chimney. Ears or horns alternate by rung. Under 3k triangles.
+- **The crowd:** toy-like fans, 1.6-1.9 m, a round head with dark hair, a shirt, trousers and arms
+  that go up when they cheer: billboard sprites from a two-frame image drawn in code, each with a
+  blob shadow.
+- **The rider's hands:** chunky work gloves in the UI blue, knuckles readable, cream knit cuffs,
+  the rope running through the fists.
+- **The flag:** a short white pole and a red swallowtail pennant flying broadside, the pole
+  leaned 22° right so it never stands across the bot.
 - Proportions: the near pier 5 m wide, the river 8.4 m between pier ends, the far pier 7 m deep.
 
 ## 6. Environment
 
 - **Layout:** the near pier (rider), the river across the whole view, the far pier with the bot
   and two torches, crowds either side of both piers, trees, then hills.
-- **Dressing** (Target): bunting strung across the river above the rope's height (never across
-  the rope's line), a striped tent and hay bales on the far bank, a scoreboard post, reeds and
-  rocks along the waterline, lily pads drifting, string lights that glow at dusk and night.
+- **Banks and piers:** the piers jut out over the water (the banks' top edges at z −1.4 and
+  −12.2), so their end pilings stand in it with foam around them.
+- **Dressing:** bunting from masts beside the far torches back to masts on the near bank, wide of
+  the camera (never across the rope's line); string lights from those masts out over the far
+  bank; a mustard-and-cream striped tent and hay bales on the far bank; reeds and rocks along the
+  waterline; lily pads drifting downstream. **Open:** a scoreboard post.
 - **Depth:** near (deck, hands) warm and detailed, mid (river, far pier, crowd) the story, far
   (trees, hills) hazed toward the sky. Keep the far pier's backdrop simpler than the bot.
 
@@ -106,9 +114,10 @@ flag the only red, and the rope orange-tan so the meter and the world agree.
 
 | Effect | Look |
 | --- | --- |
-| Splash | White droplets up and out, a ripple ring spreading; **Target:** droplets as short streaks, a foam disc that fades |
-| Torches | **Target:** a flame card that flickers in the shader (today a sphere scaled per frame in GDScript) |
-| Surge | **Target:** steam puffs from the bot's chimney (alpha, never additive) |
+| Splash | White droplets as short streaks up and out, a ripple ring spreading over a foam disc that fades |
+| Torches | An additive flame card per torch, licking and flickering in the shader, with a glow halo; warm pools on the far deck at dusk and night |
+| Surge | Steam puffs from the bot's chimney (alpha, never additive): a few on a telegraph, jets in a surge |
+| Life | The crowd bobs and cheers, the bunting, reeds and flag flutter, the lily pads drift, the bot's key turns: all in shaders |
 | Crowd cheer | Hops scale with `excitement` |
 
 Additive only for flames, eyes and string lights. Water and steam are alpha blended.
@@ -121,16 +130,15 @@ the pull rhythm on the fists.
 
 ## 9. Tablet budget (Gen 2, PowerVR GX6250, Compatibility; tracker only with Brace lean on)
 
-| Item | Budget | Today (desktop) |
+| Item | Budget | Now (desktop, 2026-10-20) |
 | --- | --- | --- |
-| fps | 60 with the tracker on (`lean_2d`) | 59-62 measured (tracker off, 2026-10-03) |
+| fps | 60 with the tracker on (`lean_2d`) | 59-62 on the tablet before the pass (tracker off, 2026-10-03); re-measure |
 | Render scale | 0.62 (`TugOfWar.RENDER_SCALE`) | 0.62 |
-| Draw calls in play | ≤ 100 with the HUD (world ≤ 70) | 99 |
-| Visible triangles | ≤ 100k | well under |
+| Draw calls in play | ≤ 100 with the HUD (world ≤ 70) | 57 with the HUD (99 before); the world 13 (14 with steam), from 55 |
+| Visible triangles | ≤ 100k | about 29k |
 | Water per pixel | ≤ 3 noise reads | 2 |
-| Per-frame GDScript | the rope's 22 segments and the bot's pose only; crowd, torches, flags and bunting move in shaders | the crowd re-places 120 instances at 20 Hz, torches scale every frame |
+| Per-frame GDScript | the rope's 22 segments and the bot's pose only; crowd, torches, flags and bunting move in shaders | as budgeted, plus a few uniforms (eyes, key, steam, the deck's shadow) |
 | Particles | the splash (48) only | as is |
 
-Today the world is about 40 separate `MeshInstance3D` (hills, posts, the bot's parts, the hands),
-each its own draw. Merge static ones into vertex-coloured meshes before adding dressing: each
-draw costs main-thread driver time on the tablet.
+The statics are one vertex-coloured mesh (`TugMeshes.scenery`, about 22k triangles); add new
+dressing to it, not as new nodes: each draw costs main-thread driver time on the tablet.

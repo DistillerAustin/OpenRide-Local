@@ -29,20 +29,23 @@ with Godot's default font.
 | `games/dodge_ball/models/light-curved.glb`, `construction-cone.glb`, `Textures/colormap.png` (unchanged) | https://kenney.nl/assets/city-kit-roads (v2.1) | Kenney (www.kenney.nl) | CC0 1.0 (pack `License.txt`) |
 | `games/dodge_ball/models/tree_default.glb`, `tree_oak.glb`, `tree_pineTallA.glb`, `tree_cone.glb`, `plant_bushLarge.glb`, `rock_largeA.glb` (unchanged; recoloured at runtime) | https://kenney.nl/assets/nature-kit | Kenney (www.kenney.nl) | CC0 1.0 (pack `License.txt`) |
 | `games/dodge_ball/sfx/*.tres` (7 `SfxPreset` parameter sets) and `tod/*.tres` (4 lighting presets), with the scripts that write them | Written for this repo (#39) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| `games/dodge_ball/shaders/*.gdshader` (road, verge, sky, ball, warning, shadow, shield, screen effects) | Written for this repo (#39) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/dodge_ball/shaders/*.gdshader` and `look.gdshaderinc` (road, verge, sky, scenery, handlebars, bursts, ball, warning, shadow, shield, screen effects), and the procedural horizon, fence and handlebar meshes in `DodgeWorld.gd` | Written for this repo (#39, graphics pass 2026-10-20) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `games/tug_of_war/sfx/*.tres` (6 `SfxPreset` parameter sets: rope_creak, crowd_swell, surge_drumroll, win_sting, lose_sting, splash; synth settings, no samples) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| `games/tug_of_war/shaders/water.gdshader` and every mesh in `TugWorld.gd` (piers, bot, crowd, rope, flag, hands, splash; built from boxes, cylinders, spheres and capsules in code, with a plank texture generated at runtime) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/tug_of_war/shaders/*.gdshader`, `tug_look.gdshaderinc` and every mesh in `TugMeshes.gd` / `TugWorld.gd` (banks, piers, deck planks, water, the wind-up tin robot, the crowd's two-frame sprite drawn in code, gloves, rope, flag, bunting, string lights, reeds, tent, hay bales, lily pads, flames, steam, splash; graphics pass 2026-10-19, built from primitives and `KartMeshKit` shapes in code; `sky.gdshader` is a copy of Dodge Ball's with Tug's grade) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
 Tug of War (#40) adds no recorded asset: its trees, bushes and rocks are the Kenney nature-kit
-models listed above (loaded from `games/dodge_ball/models/`), its bots are named from plain
+models listed above (loaded from `games/dodge_ball/models/`, recoloured and baked into its
+riverside mesh at runtime), its bots are named from plain
 material and animal words, and its music was the repo's own `heave` style (since #55 a rendered theme, below).
 | `games/safe_cracker/sfx/*.tres` (5 `SfxPreset` parameter sets: tumbler_click, proximity_tick, soft_alarm, vault_open, door_creak; synth settings, no samples) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| Every shape in `SafePlaces.gd`, `SafeBody.gd` and `SafeDial.gd` (six rooms, the safe, its dial and the gold, drawn in code) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| Every shape in `SafePlaces.gd`, `SafeBackdrop.gd`, `SafeBody.gd`, `SafeDoor.gd` and `SafeDial.gd` (six rooms with their props and key lights, the safe, its door, hardware, dial, vault and gold, drawn in code through `SafeMesh.gd`) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/safe_cracker/safe_door.gdshader`, `safe_rain.gdshader`, `safe_sea.gdshader`, `safe_shimmer.gdshader` (the door's perspective swing, the office rain, the porthole sea, the flasks' shimmer) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
-Safe Cracker (#41) adds no recorded or imported asset: it draws everything in code, uses Godot's
-default font and, until #55 (below), the repo's own `noir` music style.
+Safe Cracker (#41) adds no recorded or imported asset: it draws everything in code (the dust
+and sparkle dot is a `GradientTexture2D` made at run time), uses the framework's display font and
+until #55 (below), the repo's own `noir` music style.
 | `games/cadence_karaoke/sfx/*.tres` (4 `SfxPreset` parameter sets: beat_tick, streak_up, band_exit, ease_off_chime; synth settings, no samples) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| `games/cadence_karaoke/shaders/grid.gdshader`, `ring.gdshader` and every mesh in `CadenceWorld.gd` (tunnel, beat rings, rail, orb and halo; shaders and primitive meshes, with a gradient texture made at runtime) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/cadence_karaoke/shaders/*` (the tunnel grid include and its floor, wall and ceiling wrappers, `cadence_look.gdshaderinc`, ring, orb, orb halo, orb pool, portal and spark shaders) and every mesh in `CadenceWorld.gd` (tunnel, the beat rings' frame mesh, the box, orb, halo, pool, portal card and sparks; shaders, primitive meshes and a mesh built in code, no textures beyond the shared runtime noise) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
 Cadence Karaoke (#42) adds no recorded or imported asset: it is drawn in code, uses Godot's
 default font and, until #55 (below), the repo's own `bright` music style.

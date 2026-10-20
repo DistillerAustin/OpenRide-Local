@@ -4,8 +4,9 @@ extends Game
 ## alarm trips; pedal too gently and the dial loses power. Each safe cracked opens the next, in a
 ## different random place, harder than the last: the goal is how many safes you can get into.
 ##
-## Rules: `SafeLogic` (tested headless). Drawing: `SafeBackdrop`, `SafeBody` and `SafeDial`, all
-## shapes drawn in code. Audio: `SafeAudio`. This scene wires them to the framework:
+## Rules: `SafeLogic` (tested headless). Drawing (ART_BIBLE.md): `SafeBackdrop` (the room and
+## its ambient life), `SafeBody` and `SafeDial` (the door's layers, `SafeDoor` the static door),
+## all shapes drawn in code and batched by `SafeMesh`. Audio: `SafeAudio`. This scene wires them to the framework:
 ## declarations, the HUD widget and the game's banner (`SafeBanner`), scoring through award(), music and effects through
 ## AudioDirector, and the rider's options (place, hints, sound) through `GameOptions`.
 
@@ -28,6 +29,8 @@ const DOOR_SEC := 1.3
 const LIGHT_POP_SEC := 0.35
 const ALARM_TINT := Color(1.0, 0.62, 0.58)  ## the door's red breathe while the alarm holds
 const ALARM_PULSE_SEC := 0.9
+const ALARM_WASH := 0.55  ## the red side wash's peak alpha while the alarm holds
+const SPARKLE_DELAY := 0.45  ## the crack's gold sparkles rise once the door has started to swing
 
 ## Noir heist: brass accent, soot ink, upright (framework/ui/UI_STYLE.md §4).
 static var look := GameTheme.new(Color("e8b04a"), Color("14110d"))
@@ -47,6 +50,7 @@ var _door_tween: Tween
 var _slide_tween: Tween
 var _light_tween: Tween
 var _alarm_tween: Tween
+var _wash: Node2D
 
 
 func info() -> GameInfo:
@@ -106,6 +110,8 @@ func _ready() -> void:
 	_backdrop.name = "Backdrop"
 	add_child(_backdrop)
 	add_child(_vignette())
+	_wash = _alarm_wash()
+	add_child(_wash)
 	_body_root = Node2D.new()
 	_body_root.name = "SafeRoot"
 	_body_root.position = BODY_HOME
@@ -127,7 +133,9 @@ static func _vignette() -> TextureRect:
 	var g := Gradient.new()
 	g.set_color(0, Color(look.ink, 0.0))
 	g.set_color(1, Color(look.ink, 0.72))
-	g.add_point(0.55, Color(look.ink, 0.0))
+	# A smooth shoulder (no visible edge where the darkening starts).
+	for k in [[0.5, 0.0], [0.62, 0.05], [0.74, 0.18], [0.86, 0.4]]:
+		g.add_point(k[0], Color(look.ink, k[1]))
 	var tex := GradientTexture2D.new()
 	tex.gradient = g
 	tex.fill = GradientTexture2D.FILL_RADIAL
@@ -143,6 +151,23 @@ static func _vignette() -> TextureRect:
 	rect.size = SafePlaces.SIZE
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return rect
+
+
+## A red additive wash from the room's left, as if an alarm light came on: drawn once, shown and
+## breathed by `_set_alarm` (+1 draw call while the alarm holds).
+static func _alarm_wash() -> Node2D:
+	var wash := SafeDial.Layer.new()
+	wash.name = "AlarmWash"
+	wash.paint = func(ci: CanvasItem) -> void:
+		var m := SafeMesh.new()
+		m.glow(Vector2(-120, 520), Vector2(1100, 760), Color(1.0, 0.12, 0.08, 0.5), 14)
+		m.flush(ci)
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	wash.material = add
+	wash.visible = false
+	wash.modulate.a = 0.0
+	return wash
 
 
 func ui_theme() -> GameTheme:
@@ -184,6 +209,7 @@ func _show_place() -> void:
 	var place := SafePlaces.place(_place)
 	_dial.colour = place.safe
 	_dial.accent = place.accent
+	_dial.place_index = _place
 
 
 func _on_frame(delta: float) -> void:
@@ -241,11 +267,16 @@ func _set_alarm(on: bool) -> void:
 		_alarm_tween.kill()
 	_alarm_tween = create_tween()
 	if on:
+		_wash.visible = true
 		_alarm_tween.set_loops()
 		_alarm_tween.tween_property(_body_root, "modulate", ALARM_TINT, ALARM_PULSE_SEC * 0.5).set_trans(Tween.TRANS_SINE)
+		_alarm_tween.parallel().tween_property(_wash, "modulate:a", ALARM_WASH, ALARM_PULSE_SEC * 0.5).set_trans(Tween.TRANS_SINE)
 		_alarm_tween.tween_property(_body_root, "modulate", Color.WHITE, ALARM_PULSE_SEC * 0.5).set_trans(Tween.TRANS_SINE)
+		_alarm_tween.parallel().tween_property(_wash, "modulate:a", ALARM_WASH * 0.45, ALARM_PULSE_SEC * 0.5).set_trans(Tween.TRANS_SINE)
 	else:
 		_alarm_tween.tween_property(_body_root, "modulate", Color.WHITE, 0.25)
+		_alarm_tween.parallel().tween_property(_wash, "modulate:a", 0.0, 0.25)
+		_alarm_tween.tween_callback(_wash.hide)
 
 
 func _handle(event: Dictionary) -> void:
@@ -268,6 +299,7 @@ func _handle(event: Dictionary) -> void:
 				_door_tween.kill()
 			_door_tween = create_tween()
 			_door_tween.tween_property(_dial, "door_open", 1.0, DOOR_SEC).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+			_door_tween.parallel().tween_callback(_dial.burst_sparkle).set_delay(SPARKLE_DELAY)
 			_dial.refresh()
 		"new_vault":
 			_dial.door_open = 0.0
