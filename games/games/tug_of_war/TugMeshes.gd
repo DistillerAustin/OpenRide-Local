@@ -429,34 +429,34 @@ static func bot_body() -> ArrayMesh:
 	var dark := IRON
 	# Feet and legs.
 	for x: float in [-0.24, 0.24]:
-		_k(kit, KartMeshKit.blob(Vector3(0.19, 0.12, 0.28), 0.5, 0.5, 10, 6), KartMeshKit.xf(Vector3(x, 0.12, 0.06)), dark)
+		_k(kit, KartMeshKit.blob(Vector3(0.19, 0.12, 0.28), 0.5, 0.5, 8, 5), KartMeshKit.xf(Vector3(x, 0.12, 0.06)), dark)
 		var leg := PackedVector3Array()
 		var cols := PackedColorArray()
 		for i in 5:
 			leg.append(Vector3(x * 0.92, 0.2 + i * 0.09, 0.0))
 			cols.append(lin(Color(0.55, 0.55, 0.58) if i % 2 == 0 else Color(0.3, 0.3, 0.33)))
-		kit.add(KartMeshKit.tube(leg, PackedFloat32Array([0.085]), 8, cols), Transform3D.IDENTITY, Color.WHITE)
+		kit.add(KartMeshKit.tube(leg, PackedFloat32Array([0.085]), 6, cols), Transform3D.IDENTITY, Color.WHITE)
 	_k(kit, KartMeshKit.lathe(PackedVector2Array([Vector2(0.3, 0.52), Vector2(0.42, 0.56), Vector2(0.42, 0.62),
-		Vector2(0.3, 0.64)]), 14), Transform3D.IDENTITY, dark)
+		Vector2(0.3, 0.64)]), 12), Transform3D.IDENTITY, dark)
 	# The barrel body, in the body colour with darker hoops.
 	kit.outline = 1.0
 	var shade := Color(0.62, 0.62, 0.62)
 	var paint := Color(1.0, 1.0, 1.0)
 	var body := KartMeshKit.lathe(PackedVector2Array([Vector2(0.34, 0.58), Vector2(0.44, 0.62), Vector2(0.46, 0.68),
 		Vector2(0.52, 0.78), Vector2(0.55, 1.05), Vector2(0.53, 1.32), Vector2(0.47, 1.46), Vector2(0.45, 1.52),
-		Vector2(0.36, 1.6), Vector2(0.0, 1.62)]), 16,
+		Vector2(0.36, 1.6), Vector2(0.0, 1.62)]), 14,
 		PackedColorArray([shade, shade, paint, paint, paint, paint, paint, shade, shade, shade]))
 	kit.add(body, Transform3D.IDENTITY, Color.WHITE)
 	# The head: a short drum and a dome.
 	var head := KartMeshKit.lathe(PackedVector2Array([Vector2(0.0, 1.7), Vector2(0.3, 1.7), Vector2(0.39, 1.75),
 		Vector2(0.41, 1.9), Vector2(0.41, 2.16), Vector2(0.37, 2.3), Vector2(0.27, 2.42), Vector2(0.13, 2.49),
-		Vector2(0.0, 2.51)]), 16, PackedColorArray([shade, shade, paint, paint, paint, paint, paint, paint, paint]))
+		Vector2(0.0, 2.51)]), 14, PackedColorArray([shade, shade, paint, paint, paint, paint, paint, paint, paint]))
 	kit.add(head, Transform3D.IDENTITY, Color.WHITE)
 	# Shoulders and mitten hands on the rope (the rope meets them at (0, 1.3, 0.97)).
 	for x: float in [-0.56, 0.56]:
-		kit.add(KartMeshKit.sphere(0.14, 10, 5), KartMeshKit.xf(Vector3(x, 1.38, 0.0)), Color(0.92, 0.92, 0.92))
+		kit.add(KartMeshKit.sphere(0.14, 8, 4), KartMeshKit.xf(Vector3(x, 1.38, 0.0)), Color(0.92, 0.92, 0.92))
 	for x: float in [-0.12, 0.12]:
-		kit.add(KartMeshKit.blob(Vector3(0.1, 0.11, 0.13), 0.7, 0.7, 10, 6), KartMeshKit.xf(Vector3(x, 1.3, 0.9)), Color.WHITE)
+		kit.add(KartMeshKit.blob(Vector3(0.1, 0.11, 0.13), 0.7, 0.7, 8, 5), KartMeshKit.xf(Vector3(x, 1.3, 0.9)), Color.WHITE)
 		kit.add(KartMeshKit.blob(Vector3(0.04, 0.05, 0.06), 0.8, 0.8, 6, 4), KartMeshKit.xf(Vector3(x * 0.55, 1.4, 0.93), Vector3(0.0, 0.0, 0.0)), Color(0.9, 0.9, 0.9))
 	kit.outline = 0.0
 	# The arms: springy hoses from the shoulders to the mittens.
@@ -470,9 +470,9 @@ static func bot_body() -> ArrayMesh:
 			var t := i / 8.0
 			arm.append(a.lerp(b, t).lerp(b.lerp(c, t), t))
 			cols.append(lin(Color(0.6, 0.6, 0.62) if i % 2 == 0 else Color(0.32, 0.32, 0.35)))
-		kit.add(KartMeshKit.tube(arm, PackedFloat32Array([0.07]), 8, cols), Transform3D.IDENTITY, Color.WHITE)
+		kit.add(KartMeshKit.tube(arm, PackedFloat32Array([0.07]), 6, cols), Transform3D.IDENTITY, Color.WHITE)
 	# The visor slot (the eyes glow inside it) and the mouth grille.
-	_k(kit, KartMeshKit.blob(Vector3(0.3, 0.085, 0.08), 0.25, 0.25, 12, 6), KartMeshKit.xf(Vector3(0.0, 2.05, 0.345)), Color(0.06, 0.06, 0.08))
+	_k(kit, KartMeshKit.blob(Vector3(0.3, 0.085, 0.08), 0.25, 0.25, 10, 5), KartMeshKit.xf(Vector3(0.0, 2.05, 0.345)), Color(0.06, 0.06, 0.08))
 	for i in 3:
 		_k(kit, KartMeshKit.box(Vector3(0.24, 0.025, 0.04)), KartMeshKit.xf(Vector3(0.0, 1.82 + i * 0.045, 0.395)), Color(0.08, 0.08, 0.1))
 	# The chest gauge: a brass rim, a cream face and a needle.
@@ -496,7 +496,7 @@ static func bot_body() -> ArrayMesh:
 	_k(kit, KartMeshKit.cylinder(0.04, 0.04, 0.32, 8), KartMeshKit.xf(p + Vector3(0.0, 0.0, -0.66), Vector3(90.0, 0.0, 0.0)), BRASS)
 	_k(kit, KartMeshKit.sphere(0.07, 8, 4), KartMeshKit.xf(p + Vector3(0.0, 0.0, -0.83)), BRASS)
 	for side: float in [-1.0, 1.0]:
-		_k(kit, KartMeshKit.blob(Vector3(0.17, 0.11, 0.035), 0.9, 0.9, 12, 6), KartMeshKit.xf(p + Vector3(side * 0.17, 0.0, -0.83)), BRASS)
+		_k(kit, KartMeshKit.blob(Vector3(0.17, 0.11, 0.035), 0.9, 0.9, 8, 4), KartMeshKit.xf(p + Vector3(side * 0.17, 0.0, -0.83)), BRASS)
 	kit.glow = 0.0
 	return kit.commit()
 
@@ -602,6 +602,29 @@ static func flag() -> ArrayMesh:
 
 
 # --- Effects ---
+
+## A lily pad (lily.gdshader): a flat disc with a notch, a paler rim, a raised centre; some carry a
+## pink-white flower bud.
+static func lily_pad(flower: bool) -> ArrayMesh:
+	var t := Tris.new()
+	var seg := 10
+	var pad := lin(Color(0.27, 0.48, 0.2))
+	var rim := lin(Color(0.38, 0.58, 0.26))
+	var centre := Vector3(0.0, 0.02, 0.0)
+	for i in seg:
+		var a0 := (i + 0.5) / seg * TAU
+		var a1 := (i + 1.5) / seg * TAU
+		if i == 0:
+			continue  # the notch
+		var p0 := Vector3(cos(a0), 0.0, sin(a0))
+		var p1 := Vector3(cos(a1), 0.0, sin(a1))
+		t.tri(centre, p0, p1, Vector3.UP, pad, rim, rim)
+	var kit := _new_kit()
+	kit.add(t.mesh(), Transform3D.IDENTITY, Color.WHITE)
+	if flower:
+		_k(kit, KartMeshKit.blob(Vector3(0.14, 0.12, 0.14), 1.0, 1.0, 6, 4, PI * 0.55), KartMeshKit.xf(Vector3(0.25, 0.02, 0.1)), Color(0.98, 0.85, 0.9))
+	return kit.commit()
+
 
 ## The two torch flames: a card each (flame.gdshader, additive), facing the rider; COLOR.a is
 ## each flame's flicker phase.

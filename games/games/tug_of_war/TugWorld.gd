@@ -335,6 +335,30 @@ func _build_river_and_banks() -> void:
 	_scenery_mat = _material("scenery.gdshader")
 	var scenery := _instance(TugMeshes.scenery(models), _scenery_mat, "Scenery")
 	scenery.extra_cull_margin = 4.0
+	# Lily pads drifting downstream, wide of the rope's line.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3307
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.use_colors = true  # Compatibility zeroes COLOR in a MultiMesh without instance colours
+	mm.mesh = TugMeshes.lily_pad(true)
+	mm.instance_count = 14
+	var lines := TugMeshes.waterlines()
+	for i in mm.instance_count:
+		var near := i % 2 == 0
+		var z := lines.x - rng.randf_range(0.5, 1.6) if near else lines.y + rng.randf_range(0.5, 2.2)
+		var s := rng.randf_range(0.28, 0.5)
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * s), Vector3(0.0, 0.015, z)))
+		mm.set_instance_color(i, Color.WHITE)
+		mm.set_instance_custom_data(i, Color(float(i) / mm.instance_count + rng.randf() * 0.05, rng.randf(), rng.randf(), 0.0))
+	var lilies := MultiMeshInstance3D.new()
+	lilies.name = "Lilies"
+	lilies.multimesh = mm
+	lilies.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	lilies.material_override = _material("lily.gdshader")
+	lilies.extra_cull_margin = 40.0
+	add_child(lilies)
 
 
 func _build_piers() -> void:
