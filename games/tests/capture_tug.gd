@@ -6,11 +6,15 @@ extends SceneTree
 ## rounds run (for Movie Maker: add --write-movie FILE.avi --fixed-fps 30). With --snaps as well,
 ## it saves a half-size PNG at the first of each HUD state while it plays (the surge's telegraph
 ## and surge, a round won or lost, the rest between rounds): the UI review's stills, no video.
+## With --stats, each lighting shot also prints the frame's draw calls, primitives and objects and
+## the mean frame time and the 3D view's render CPU/GPU time over 240 frames with vsync off (the
+## graphics pass's before/after numbers; desktop only, the tablet is what counts).
 
 var _session: Node
 var _director: Node
 var _out := "user://captures"
 var _snaps := false
+var _stats := false
 var _snapped := {}
 
 
@@ -31,6 +35,8 @@ func _run() -> void:
 			play_sec = float(arg.get_slice("=", 1))
 		elif arg == "--snaps":
 			_snaps = true
+		elif arg == "--stats":
+			_stats = true
 	_out = out
 	DirAccess.make_dir_recursive_absolute(out)
 	_session = root.get_node("Session")
@@ -77,6 +83,8 @@ func _run() -> void:
 		var img := root.get_viewport().get_texture().get_image()
 		img.save_png("%s/tug_%s.png" % [out, shot[0]])
 		print("CAPTURE %s/tug_%s.png fps=%d" % [out, shot[0], Engine.get_frames_per_second()])
+		if _stats:
+			await _print_stats(game, shot[0])
 	# A round won: the bot falls into the river, and the splash.
 	game.change_option("scene", "day")
 	game.logic.surge_state = ""
@@ -109,6 +117,32 @@ func _run() -> void:
 		lost_img.save_png("%s/tug_lose_%d.png" % [out, frame])
 		print("CAPTURE %s/tug_lose_%d.png" % [out, frame])
 	quit()
+
+
+## The frame's render counters, then the mean frame time and the 3D view's render times over 240
+## frames, vsync off.
+func _print_stats(game: Node, shot: String) -> void:
+	var view: SubViewport = game.get_node("View3D")
+	var rid := view.get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(rid, true)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	for i in 30:
+		await process_frame
+	var draws := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var prims := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+	var objects := Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+	var frames := 240
+	var cpu := 0.0
+	var gpu := 0.0
+	var start := Time.get_ticks_usec()
+	for i in frames:
+		await process_frame
+		cpu += RenderingServer.viewport_get_measured_render_time_cpu(rid)
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	var frame_ms := (Time.get_ticks_usec() - start) / 1000.0 / frames
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	print("STATS %s draw_calls=%d primitives=%d objects=%d frame_ms=%.2f view3d_cpu_ms=%.2f view3d_gpu_ms=%.2f" % [
+		shot, draws, prims, objects, frame_ms, cpu / frames, gpu / frames])
 
 
 ## Rides for `seconds` with a simple controller that holds the simulator at a target wattage:
