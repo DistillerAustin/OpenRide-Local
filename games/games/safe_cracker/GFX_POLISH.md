@@ -1,7 +1,8 @@
 # Safe Cracker: graphics polish punch list
 
 > **Status:** every item done on branch `gfx-safe` (2026-10-20) except the cabin's tilt (item 6);
-> the notes under each say how. In play: 51 draw calls with the HUD (86 before).
+> the notes under each say how. In play: 51 draw calls with the HUD (86 before). The tablet pass
+> (branch `perf-safe`) is at the end: "Tablet performance".
 
 From the graphics review of 2026-10-19 against `ART_BIBLE.md` (this folder) and Kart Race's
 polish. UI is out of scope (`UI_POLISH.md`: the dial's type, the target plate, the banner), and
@@ -139,3 +140,56 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
   SubViewport and a render scale for no readability gain.
 - Bitmap textures for the steel or rooms: procedural drawing keeps the APK small and every
   place consistent.
+
+## Tablet performance (branch `perf-safe`, 2026-10-20)
+
+**On the bike, before:** 50 fps average in play (min 36) and 31 in the intro (min 20), from the
+`OPENRIDE_GAMES frame fps=` lines; the target is 55+ sustained (the other games hold 59-60).
+
+**Diagnosis.** Not the CPU: no batch was rebuilt in a frame (0 in the intro and in play, the needle
+sweeping), and the process time matched Tug of War's on the desktop. It was fill. The PowerVR
+GX6250 pays for every pixel of every layer (2D is all blended, so nothing hidden is skipped), and
+Safe shaded 6.9-7.7 screens of pixels a frame in play: a backing ColorRect (1 screen), the room
+(2.1-3.0: its wall, its floor with boards over it, props, two or three big light pools), the
+full-screen vignette (1), the safe's body with the whole vault and a seam slab under the shut
+door (1.9) and the door (0.75). The intro card adds its full-screen shade (1.0) and its card
+(0.5): 8.2 screens. At about 1.5 ms a screen (a full-screen pass cost about 5 fps), play sat
+just past the 16.7 ms vsync budget, so frames alternated between 60 and 30 (50 on average), and
+the intro's extra 1.5 screens pushed nearly every frame past it: 30 fps. The intro's minimum of
+20 is the load (the scene, its first shader compiles and the first builds) in that second.
+
+`tests/measure_safe.gd` (needs a window) prints each layer's pixels per place, for play, the
+intro, the open door and the alarm; the batches rebuilt a frame; each place's build time; and a
+place change's longest frame. Pixels are canvas pixels (1920x1080; "screens" = /2.07 M); the
+bike shows the canvas at 1792x1008, 0.87 of that.
+
+| Trim (commit) | Pixels a frame, play | Estimated on the bike | What the rider loses |
+| --- | --- | --- | --- |
+| 1. The room and the vignette baked into one texture per place (`SafeBackdrop.bake`, a SubViewport at the on-screen size, shown as one opaque sprite); the backing ColorRect gone | 6.9-7.7 → 3.7-3.8 screens (−3.1 to −4.0) | −5 to −6 ms a frame: the biggest win | Nothing visible: the ambient life (rain, sea, lantern, flasks, dust) now draws over the vignette, which is under 6% where they sit. 7 MB of VRAM; a window resize re-bakes |
+| 2. The body and the door's seam are frames round the door's hole; the cast shadow keeps a 90 px rim; the vault is `SafeDial`'s `Vault` layer, drawn only while the door is open | 3.7-3.8 → 2.3 (−1.45) | −2 ms | Nothing: the shut door covered all of it. The open door adds the vault back (0.72) for the 2.6 s of a crack |
+| 3. A hole in the door's slab under the dial's face; the bezel's shadow only where it shows | 2.3 → 2.2 (−0.15) | −0.2 ms | Nothing |
+| 4. Each place's room and body built once (`SafeMesh.built`), and the next place's while a cracked door stands open (`SafeCracker._next_place`) | (CPU) a place change's longest desktop frame 13-21 ms → 11.5-12.7 | −25 to −50 ms off the frame the next safe slides in | Nothing; about 3 MB of RAM for all six places |
+
+**After:** play 2.1-2.2 screens in every place (was 6.9-7.7), 2.7 with the alarm's wash, 3.6 with
+the door open (the vault and the warm spill) and 3.5-3.6 under the intro card (was 8.2). That
+should hold 60 in play with room for face tracking, and the intro and a crack land where play
+used to be minus a third. Draw calls: 47 in play with the HUD (51 before), 33 in the intro.
+
+**Left as they are:**
+- The intro card's shade (a full screen at 55% black) and its card (half a screen) are the
+  shared `IntroCard` (framework/ui, not Safe's to change): 1.5 of the intro's 3.6 screens. If
+  the intro still reads under 55, the cheapest shared fix is a shade only round the card, or none
+  (the card is 96% opaque); it would help every 2D game's intro.
+- The crack's warm spill (0.72 screens, additive, 2.6 s a crack) is the open vault's look; it is
+  the next trim (a smaller ellipse) if a crack dips on the bike.
+- The shaders: rain (0.06 screens), sea (0.03) and the flask shimmer (0.01) cost little at their
+  sizes even at several times a plain fill's ALU; the door's is vertex-only.
+- The door's batch is still built on the frame a safe slides in (about 3 ms on the desktop): its
+  lights' sockets follow the next safe's combination length.
+
+**On the bike, watch:** the `frame fps=` lines in the intro and in play in all six places (the
+rider gets one at random: use the Place option); a crack (3.6 screens) and an alarm; the frame
+the next safe slides in; that the room is sharp (one texel a pixel at 1792x1008) and never black
+for a frame; `tracker=` in the intro's lines (Safe runs with the tracker off; if it reads on in
+the intro, the camera is still winding down from the segment before and the intro's fps is the
+tracker's, not Safe's).

@@ -122,7 +122,16 @@ func test_the_mesh_feathers_and_closes_its_shapes() -> void:
 	m.glow(Vector2.ZERO, Vector2(400, 300), Color.WHITE)
 	m.ring(Vector2.ZERO, 10.0, 20.0, Color.WHITE, 0.0, PI)
 	m.line(Vector2.ZERO, Vector2(10, 10), 3.0, Color.WHITE)
+	m.glow(Vector2.ZERO, Vector2(300, 300), Color.WHITE, 10, 0.5, 200.0)
+	m.holed_round_rect(Rect2(-100, -80, 200, 160), 12.0, Color.WHITE, Color.BLACK, Vector2.ZERO, 60.0)
+	m.round_frame(Rect2(-100, -80, 200, 160), 20.0, Rect2(-80, -60, 160, 120), 12.0, Color.WHITE, Color.BLACK)
+	m.soft_shadow(Rect2(-100, -80, 200, 160), 12.0, 20.0, Color.BLACK, 30.0)
 	_assert_batch(m, "shapes")
+	# A hollow glow leaves its middle empty: no triangle reaches the centre.
+	m.clear()
+	m.glow(Vector2.ZERO, Vector2(300, 300), Color.WHITE, 10, 0.5, 200.0)
+	for p in m.points:
+		assert_float(p.length()).is_greater(150.0)
 	assert_int(SafeMesh.round_rect_outline(Rect2(0, 0, 10, 10), 3.0).size()).is_equal(SafeMesh.round_rect_outline(Rect2(0, 0, 90, 50), 20.0).size())
 
 
@@ -155,9 +164,12 @@ func test_the_needle_and_the_swing_never_redraw_the_door_or_dial() -> void:
 	var mat := dial.door.material as ShaderMaterial
 	assert_float(float(mat.get_shader_parameter("angle"))).is_equal_approx(SafeDial.OPEN_ANGLE, 0.0001)
 	assert_bool(dial.spill.visible).is_true()
+	assert_bool(dial.vault.visible).is_true()
 	dial.door_open = 0.0
 	assert_float(float(mat.get_shader_parameter("angle"))).is_equal(0.0)
 	assert_bool(dial.spill.visible).is_false()
+	# Shut, the door covers the vault: it isn't drawn at all.
+	assert_bool(dial.vault.visible).is_false()
 
 
 func test_each_place_shows_only_its_own_ambient_life() -> void:
@@ -192,3 +204,44 @@ func test_the_alarm_washes_the_room_and_glows_round_the_safe() -> void:
 	await await_millis(500)
 	assert_bool(wash.visible).is_false()
 	assert_bool(dial.alarm_glow.visible).is_false()
+
+
+## The tablet pays for every blended pixel: the room and its vignette are one baked texture,
+## rendered once per place, never a frame.
+func test_the_room_is_baked_once_per_place() -> void:
+	var game := _game()
+	var backdrop: SafeBackdrop = game.get("_backdrop")
+	await _frames(3)
+	assert_int(backdrop.bake.render_target_update_mode).is_not_equal(SubViewport.UPDATE_ALWAYS)
+	assert_bool(backdrop.bake.transparent_bg).is_false()
+	assert_object(backdrop.view.texture).is_same(backdrop.bake.get_texture())
+	var before := backdrop.bakes
+	var draws := [0]
+	backdrop.room.draw.connect(func() -> void: draws[0] += 1)
+	await _frames(5)
+	assert_int(draws[0]).override_failure_message("the room redrew with nothing changed").is_equal(0)
+	backdrop.set_place(2)
+	await _frames(2)
+	assert_int(backdrop.bakes).is_equal(before + 1)
+	assert_int(draws[0]).is_equal(1)
+
+
+## A place's room and body are built once, and the next safe's while the cracked door stands
+## open, so the frame it slides in on builds nothing big.
+func test_the_next_place_is_built_while_the_door_stands_open() -> void:
+	var game := _game()
+	SafeMesh.forget_built()
+	game._handle({"type": "vault_open", "points": 1000.0})
+	var next: int = game.get("_next_place")
+	assert_int(next).is_not_equal(game.get("_place"))
+	assert_bool(SafeMesh.is_built("room:%d" % next)).is_false()
+	await await_millis(int((_door_sec() + 0.6) * 1000.0))
+	assert_bool(SafeMesh.is_built("room:%d" % next)).override_failure_message("the next room wasn't built ahead").is_true()
+	assert_bool(SafeMesh.is_built("body:%d" % next)).is_true()
+	game._handle({"type": "new_vault"})
+	assert_int(game.get("_place")).is_equal(next)
+	assert_int(game.get("_next_place")).is_equal(-1)
+
+
+static func _door_sec() -> float:
+	return load("res://games/safe_cracker/SafeCracker.gd").DOOR_SEC
