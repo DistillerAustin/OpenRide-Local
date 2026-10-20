@@ -1134,8 +1134,14 @@ GL Compatibility) took, measured with the mock build:
 - **The road and verges are unshaded**, lit and fogged by hand. They cover most of the screen,
   and the engine's per-pixel light and fog cost about a third of the frame.
 - **Shaders sample a 64×64 noise texture** instead of hashing with `sin()` per pixel.
-- **Scenery is lit per vertex, without specular.** The Kenney nature-kit materials are fully
-  metallic (near-black without reflections), so they're replaced by matte ones.
+- **Everything in the world lights itself** with the shared `WorldLook` (Dodge's grade in
+  `shaders/look.gdshaderinc`): the road, verges, sky, scenery (per vertex, painted AO, one
+  material per surface look shared by every chunk), the far horizon mesh and the handlebars
+  (one merged mesh). `DodgeWorld.look_for` builds the look from the time-of-day preset. Only the
+  balls use the engine sun. The Kenney kit's metallic materials are dropped for this.
+- **Bursts and sparks are one pooled MultiMesh** (`shaders/fx.gdshader`): a burst writes its
+  instances once and the vertex shader moves them, so they cost no main-thread simulation.
+  The pool hides itself when idle. The fence is one mesh for the whole road, not one a chunk.
 - **The full-screen effect overlay is hidden while idle**, and HUD labels only change when
   their value does. A theme override every frame re-laid-out the HUD.
 - **Release builds don't check for null.** A GDScript call on a null node crashed the exported
@@ -1150,6 +1156,12 @@ For measuring, set `DEV_TUNING` in `DodgeBall.gd` (off in every build). The game
 (`[render] scale=0.67 msaa=0`) and switches parts off (`[world] sky=false road=false
 verges=false scenery=false balls=false rig=false fog=false screenfx=false`). Write it with
 `adb shell run-as dev.digitalducktape.openride …`.
+
+On the desktop, `tests/capture_dodge.gd` takes the look's captures (`--nohud`, `--scenes=`,
+`--mode=catch`, `--close` for a ball near the bars, `--bonus`) and with `--perf` prints each
+preset's mean frame time with vsync off, draw calls and triangles. `dodge_world_look_test`
+covers the look's materials, meshes and FX packing. The art direction is
+`games/dodge_ball/ART_BIBLE.md`.
 
 ## Tug of War (#40)
 

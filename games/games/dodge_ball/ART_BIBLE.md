@@ -1,6 +1,7 @@
 # Dodge Ball: art bible
 
-> **Status:** v1, 2026-10-19, from the graphics review of `games-polish` at 6ef6fab (code and
+> **Status:** v2, 2026-10-20 (the polish pass: every v1 Target is built except the 0.66 render
+> scale). v1 2026-10-19, from the graphics review of `games-polish` at 6ef6fab (code and
 > the before captures). **Owner:** whoever changes the look. Change this file in the same commit
 > as any change to the palette, the light, the scenery or the effects. **Sources of truth:**
 > `DodgeWorld.gd` (world, FX), `shaders/*.gdshader`, `tod/*.tres` (written by
@@ -29,13 +30,14 @@ cooler and crisper: a morning-fresh park road.
 | Preset | Target mood | Sun (elev, azim) | Sky top / horizon | Haze | Notes |
 | --- | --- | --- | --- | --- | --- |
 | day (hero) | Fresh, high clarity | 52°, 150° (behind) | `#3375EB` / `#B8D6F5` | `#BDD6F2`, 0.0055 | The look every other preset is judged against |
-| dawn | Soft, pastel, quiet | 9°, -35° | lilac / peach | warm, 0.012 | **Target:** no stars, a sun disc 1/3 of today's |
-| dusk | Warm, glowing | 5°, 30° | rose / orange | warm, 0.012 | **Target:** stars off (0.3 today reads as noise on a pink sky), smaller disc |
+| dawn | Soft, pastel, quiet | 9°, -35° | lilac / peach | warm, 0.012 | No stars; a 3.8° disc (`sun_size` 0.033) |
+| dusk | Warm, glowing | 5°, 30° | rose / orange | warm, 0.012 | No stars; a 4° disc (`sun_size` 0.035) |
 | night | Cool, safe, lamp-lit | moon 38°, 25° | `#03040D` / `#0F142B` | `#0A0D1A`, 0.013 | Lamps and the headlight carry the road; balls self-light (`ball_glow`) |
 
-The sun's disc today is about 25° across at dawn and dusk (`sky.gdshader` fills
-`dot(dir, sun) > 1 - sun_size * 0.6`, a 13° radius at 0.045), so it covers a third of the sky
-behind the trees. **Target:** a 3-4° disc, with the glow carried by the halo.
+The disc's radius is `sun_size` in radians (3-4° across); the warmth is carried by the halo
+(`pow(s, 8)`) and a horizon glow toward the sun's azimuth that fades as the sun climbs. Clouds
+are cumulus, lit on the side toward the sun over a `cloud_shade` base (`cloud_color` toward the
+sky top, ×0.82).
 
 ## 3. Palette
 
@@ -45,8 +47,10 @@ behind the trees. **Target:** a 3-4° disc, with the glow carried by the halo.
 | Lines, kerb | `#F2EDD9`; kerb `#D93330` / `#EBEBEB` | The kerb's red is darker and less saturated than any ball. |
 | Verge grass a / b | `#3D732E` / `#4D8533` | Mown stripes 9 m, a dirt shoulder `#6B5C42`. |
 | Foliage | `#528F33`, `#427A2B`, `#295C33`, `#61993B` | Cool greens. Trunks `#6B4A30`. |
-| Rock | `#80807A` | **Target:** lighter top, darker base (painted AO), never a flat slab. |
-| Lamp posts | city-kit colours, matte | **Target:** the lamp head self-lit at dusk and night. |
+| Rock | `#8F8F87` top, `#757370` base | Painted AO over its whole height (`ao_height` 0.9), a contact disc. |
+| Lamp posts | city-kit colours, matte | The head (its tip, marked in vertex alpha) self-lit by `lamp_glow`. |
+| Fence | posts `#9E8769`, rails `#C7B391` | Weathered park wood, never white (a thin bright sliver aliases). |
+| Horizon | hills `#5C854D` → `#3D5C38`, tree line `#335C33` → `#244226` | Hazed nearly to the haze cap. |
 | Dodge balls | `#FA3829` plain, `#D92673` curve, `#FF6B1A` double | The warmest, most saturated things on screen. |
 | Catch balls | `#FFCC2E`, `#FF9E1A`, `#F2E659` | Shimmer; never used by scenery. |
 | Shield, dodge sparks | cyan `#4DBFFF` | Matches the UI accent. |
@@ -57,11 +61,13 @@ must stay that hue. Red and gold are never chrome.
 
 ## 4. Lighting, materials and shading
 
-- **One hand light** (Target): every world surface uses `framework/shaders/world_look.gdshaderinc`
-  (`sun_light`, `haze`, `grade`), `unshaded, fog_disabled`. Today the road and verges light
-  themselves but the trees, rocks, lamps and cones use the engine's per-vertex light and engine
-  fog, so their haze doesn't match the road's (see the far trees in `dodge_day.png`).
-- **Dodge's grade** (Target, the `LOOK_*` defines, in every world shader):
+- **One hand light:** every world surface (road, verges, scenery, horizon, sky, handlebars,
+  blob shadows) includes `shaders/look.gdshaderinc` (Dodge's grade over
+  `framework/shaders/world_look.gdshaderinc`) and is `unshaded, fog_disabled`.
+  `DodgeWorld.look_for(tod)` builds the look (sun from `WorldLook.sun_dir`, ambient as the sky
+  colour and 0.7 of it as the ground, fog as haze, energies scaled in linear light) and
+  `set_time_of_day` hands it to `WorldLook.apply`. Only the balls take the engine sun and fog.
+- **Dodge's grade** (the `LOOK_*` defines, once, in `shaders/look.gdshaderinc`):
 
   | Define | Value |
   | --- | --- |
@@ -72,9 +78,10 @@ must stay that hue. Red and gold are never chrome.
   | `LOOK_VIGNETTE` | 0.25, tint `vec3(0.85, 0.9, 1.05)` |
 
   The sky repeats it without the vignette. Don't fork it per material.
-- **Surfaces.** Road and verges: procedural in road space (`scroll`), max 3 noise reads. Scenery:
-  per-vertex light, matte, painted AO by height (darker at the foot), sway on foliage by vertex
-  height. Balls: per-pixel toon (`ball.gdshader`) with a rim, two seams and the near-glow; they
+- **Surfaces.** Road and verges: procedural in road space (`scroll`), max 3 noise reads. Scenery
+  (`shaders/scenery.gdshader`, `DodgeWorld._hand_lit`, one material per surface look shared by
+  every chunk): per-vertex light, matte, painted AO by height (darker at the foot), sway on
+  foliage by height squared. Balls: per-pixel toon (`ball.gdshader`) with a rim, two seams and the near-glow; they
   are the only per-pixel-lit objects. Handlebars: hand-lit matte metal with a fixed rim, never
   engine specular.
 - **Shadows.** Blob shadows only (the balls). Trees and lamps get a painted dark disc at their
@@ -95,10 +102,11 @@ must stay that hue. Red and gold are never chrome.
 - **Construction:** one road plane, two verge planes and three 50 m scenery chunks that leapfrog
   (`CHUNK_LEN`, `CHUNKS`), each a few MultiMeshes. Nothing moves per instance.
 - **Bands:** 0-4 m off the road: kerb, shoulder, cones, lamp posts every 25 m (staggered). 4-32 m:
-  trees and bushes. **Target** 32 m to the horizon: a band of low rolling hills and a distant
-  tree line (one hazed mesh), so the verge planes' far edge never shows as a flat line.
+  trees and bushes. 32 m to the horizon: hills at 155 m and a tree line at 125 m (one hazed mesh
+  that follows the rider sideways only), so the verge planes' far edge never shows.
 - **Rhythm:** something passes at the edge of vision at least every 2 s at 60 rpm (9 m/s): lamps
-  at 25 m, plus **Target** fence posts or hedges at 4-6 m spacing.
+  at 25 m, and a post-and-rail fence 4.5 m off the kerb, posts every 3.125 m (one mesh the
+  length of the view that scrolls and steps back a post spacing).
 
 ## 7. VFX language
 
@@ -112,8 +120,10 @@ must stay that hue. Red and gold are never chrome.
 | Warning | Additive chevron strip in the arrival lane, brightening with urgency |
 
 Rules: additive only in cyan, gold or the ball's colour; debris never flies at the rider's face;
-nothing crosses the centre of the road. **Target:** sparks as velocity streaks (Kart's
-`spark.gdshader` idea, not its code) instead of round blobs and cubes.
+nothing crosses the centre of the road. Bursts and sparks are velocity streaks and tumbling
+chunks in one pooled MultiMesh (`shaders/fx.gdshader`, Kart's streak idea, our own code),
+written once per burst and moved by the vertex shader; debris leaves at most 17° toward the
+rider. A bouncing ball squashes faintly as it lands and its shadow tightens.
 
 ## 8. Camera
 
@@ -127,12 +137,12 @@ add bob, pitch or rotation for effect.
 | --- | --- | --- |
 | fps | 60 with the tracker on | 55-60 measured at 0.67 before the HUD fix |
 | Render scale | 0.62 (`DodgeBall.RENDER_SCALE`); 0.66 only after a tablet measurement | 0.62 |
-| Draw calls in play | ≤ 110 with the HUD (world ≤ 85) | 101-113 |
-| Visible triangles | ≤ 120k | well under |
+| Draw calls in play | ≤ 110 with the HUD (world ≤ 85) | 101-113 with the HUD; world 54-57 |
+| Visible triangles | ≤ 120k | about 19k |
 | Per pixel on road/verge/sky | ≤ 3 noise reads, no `sin()` hashing, no loops | 2-3 |
 | Full-screen passes | only `screen_fx`, hidden while idle | as is |
-| Per-frame GDScript | ball MultiMesh writes and the chunk leapfrog only; motion in shaders or tweens | as is |
-| Particles | ≤ 120 alive; prefer one pooled MultiMesh to more `CPUParticles3D` (they simulate on the main thread) | 7 emitters, ≤ 140 |
+| Per-frame GDScript | ball MultiMesh writes and the chunk leapfrog only; motion in shaders or tweens | plus the fence's scroll, the horizon's x and the FX clock |
+| Particles | ≤ 120 alive; prefer one pooled MultiMesh to more `CPUParticles3D` (they simulate on the main thread) | the FX pool (64) and 2 emitters (shards 30, speed streaks 40): ≤ 134 at once in theory, about 50 in a shield hit |
 | MSAA | off (2× halved the frame rate; black on Kart's SubViewport) | off |
 
 The tablet with the tracker is CPU-bound on the main thread (Kart Race, docs/GAMES.md): new
