@@ -17,6 +17,10 @@ extends Control
 ## current scene and brings this scene back on the result card's "Back to games"
 ## (`hub_entered`). Cheap by design (spec §8.4): baked cards, no _process, 30 fps.
 
+## Every hub button clicks as it goes down (the rider's bike-test ask): one hook here rather
+## than in each button factory, so cards, icon buttons and option cards all get it.
+const TAP_SOUND := "click"
+const TAP_DB := -6.0
 const ACTIVITY_MSEC := 60000  ## hub_activity at most once a minute (spec §3.3)
 const REJECT_TEXT := {
 	"unknown_game": "That game isn't available",
@@ -57,10 +61,13 @@ var _saved_title: Label
 var _saved_line: Label
 var _exiting := false
 var _idle_saved := false
+var taps := 0  ## button-down clicks played (for tests)
 
 
 func _ready() -> void:
 	name = "Hub"
+	get_tree().node_added.connect(_on_node_added)
+	SfxSynth.stream.call_deferred(TAP_SOUND)  # render the click now, not on the first tap
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	queue.per_frame = 2
@@ -198,7 +205,6 @@ func _show_top() -> void:
 	# No fade: the bakes draw premultiplied (a faded parent would brighten them), and each
 	# card appears as its bake renders (two a frame) anyway.
 	_screens.add_child(screen)
-	AudioDirector.play_sfx("click", -12.0)
 
 
 func _start(request: Dictionary) -> void:
@@ -439,3 +445,13 @@ func note_activity() -> void:
 	if now - _last_activity_msec >= ACTIVITY_MSEC:
 		_last_activity_msec = now
 		Session.hub_activity()
+
+
+func _on_node_added(node: Node) -> void:
+	if node is BaseButton and is_ancestor_of(node) and not node.button_down.is_connected(_tap):
+		(node as BaseButton).button_down.connect(_tap)
+
+
+func _tap() -> void:
+	taps += 1
+	AudioDirector.play_sfx(TAP_SOUND, TAP_DB)

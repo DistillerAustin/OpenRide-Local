@@ -63,6 +63,13 @@ class GameHostActivity : GodotActivity() {
         startSession(intent)
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Edge to edge, like MainActivity: hiding the bars alone leaves the window fitted to the
+        // nav-bar inset (1920x1008 on the bike), and Godot's 16:9 "keep" stretch then letterboxes
+        // the hub and the games with black bars at the sides and bottom.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         hideSystemBars()
         showLoadingView()
         Log.i(TAG, "game host created")
