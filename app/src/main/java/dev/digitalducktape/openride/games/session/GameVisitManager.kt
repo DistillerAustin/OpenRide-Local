@@ -87,6 +87,8 @@ class GameVisitManager(
     private val catalog: GameCatalog = GameCatalog.DEFAULT,
     private val otherMusicActive: () -> Boolean = { false },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Where the app goes when the rider leaves (the ride summary, or the profile editor). */
+    private val navigator: VisitNavigator = VisitNavigator(),
     private val log: (String) -> Unit = {},
 ) : GameSession {
     private enum class Phase { IDLE, WAITING, HUB, PLAN, SAVING, ENDED }
@@ -108,6 +110,7 @@ class GameVisitManager(
     private var gameplaySec = 0
     private var pending: Ending? = null
     private var lastEnd: Ending? = null
+    private var lastRideId: Long? = null
     private var idleSec = 0
     private val rows = mutableListOf<GameResult>()
     private val visitResults = mutableListOf<VisitResult>()
@@ -159,6 +162,7 @@ class GameVisitManager(
         gameplaySec = 0
         pending = null
         lastEnd = null
+        lastRideId = null
         idleSec = 0
         rows.clear()
         visitResults.clear()
@@ -454,8 +458,20 @@ class GameVisitManager(
                 pending = ending
                 runner.finishNow()
             }
+            Phase.ENDED -> leaveAfterIdleSave(ending)
             else -> Unit
         }
+    }
+
+    /**
+     * The idle guard saved the visit while Godot kept showing the hub; the rider now leaves
+     * without playing again. The ride is saved already (and `visit_ended` sent), so just leave.
+     */
+    private fun leaveAfterIdleSave(ending: Ending) {
+        if (!ending.leave || lastEnd?.next != NEXT_HUB) return
+        lastEnd = ending
+        navigator.visitEnded(lastRideId, ending.next)
+        onExit(ending.next)
     }
 
     private fun finishVisit(ending: Ending) {
@@ -496,7 +512,9 @@ class GameVisitManager(
             log("visit_ended $id: ride $rideId (${ending.reason})")
             signals.visitEnded(BridgeMessages.encode(message))
             if (gen == generation) phase = Phase.ENDED
+            lastRideId = rideId
             if (rideId != null) _finishedRideId.value = rideId
+            navigator.visitEnded(rideId, ending.next)
             if (ending.leave) onExit(ending.next)
         }
     }

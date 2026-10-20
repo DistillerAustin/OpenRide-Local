@@ -57,6 +57,7 @@ import dev.digitalducktape.openride.games.bridge.toTrackerReading
 import dev.digitalducktape.openride.games.session.BitmapAvatarRenderer
 import dev.digitalducktape.openride.games.session.GameSessionManager
 import dev.digitalducktape.openride.games.session.GameVisitManager
+import dev.digitalducktape.openride.games.session.VisitNavigator
 import dev.digitalducktape.openride.games.session.GamesSettingsStore
 import dev.digitalducktape.openride.games.session.SharedPrefsGamesSettingsStore
 import dev.digitalducktape.openride.games.session.OtherMusicDetector
@@ -300,9 +301,13 @@ class AppContainer(private val applicationContext: Context) {
             pedalling = { bikeDataSource.metrics.value.cadenceRpm > 0 },
             avatar = BitmapAvatarRenderer(applicationContext.cacheDir)::render,
             otherMusicActive = otherMusicDetector::otherMusicActive,
+            navigator = visitNavigator,
             log = gamesLog,
         )
     }
+
+    /** Where the app goes after a games visit (the ride summary, or the profile editor): consumed by the NavHost. */
+    val visitNavigator: VisitNavigator by lazy { VisitNavigator() }
 
     /**
      * The camera permission as the hub shows it. Android can't tell "never asked" from "denied

@@ -1,7 +1,9 @@
 package dev.digitalducktape.openride.games
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
@@ -18,10 +20,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.digitalducktape.openride.R
 import dev.digitalducktape.openride.appContainer
+import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.GameBridge
 import dev.digitalducktape.openride.games.bridge.OpenRideBridgePlugin
 import dev.digitalducktape.openride.games.session.GameVisitManager
-import dev.digitalducktape.openride.games.session.JustRideMode
 import dev.digitalducktape.openride.games.session.SessionRequest
 import dev.digitalducktape.openride.games.session.toPlanRequest
 import org.godotengine.godot.Godot
@@ -147,19 +149,34 @@ class GameHostActivity : GodotActivity() {
     override fun getHostPlugins(engine: Godot): Set<GodotPlugin> = setOf(OpenRideBridgePlugin(engine, bridge))
 
     private fun startSession(intent: Intent) {
-        val request = SessionRequest.fromJson(intent.getStringExtra(EXTRA_REQUEST)) ?: DEFAULT_REQUEST
-        Log.i(TAG, "game session: $request")
+        val autostart = intent.getStringExtra(EXTRA_AUTOSTART)?.let(BridgeMessages::parsePlanRequest)
+            ?: SessionRequest.fromJson(intent.getStringExtra(EXTRA_REQUEST))?.toPlanRequest()
+        Log.i(TAG, "games visit${autostart?.let { ", autostart $it" } ?: ""}")
         // A live visit (the rider left without Exit, and the app never came forward) is kept.
-        visit.begin(autostart = request.toPlanRequest(), onExit = { exitToApp() })
+        visit.begin(autostart = autostart, onExit = ::exitToApp)
+        visit.permissionRequester = { requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA) }
         bridge.attach(visit)
     }
 
-    /** Back to the app, keeping the engine alive: never `finish()` (see the class comment). */
-    private fun exitToApp() {
-        // The session saves its ride app-scoped, so leaving never cuts that short.
+    /** The hub's `request_camera_permission`: Android's prompt over the engine, then `hub_state`. */
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_CAMERA) return
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        // Refused and Android won't ask again: the hub says "Camera not allowed" instead of asking.
+        appContainer.gamesCameraPermissionRefused = !granted && !shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+        visit.onPermissionResult(granted)
+    }
+
+    /**
+     * Back to the app, keeping the engine alive: never `finish()` (see the class comment). The
+     * visit has saved its ride already; the app shows what comes [next] (`VisitNavigator`).
+     */
+    private fun exitToApp(next: String) {
         bridge.detach(visit)
+        visit.permissionRequester = null
         moveTaskToBack(true)
-        Log.i(TAG, "game host moved to back")
+        Log.i(TAG, "game host moved to back (next: $next)")
     }
 
     companion object {
@@ -170,10 +187,22 @@ class GameHostActivity : GodotActivity() {
 
         private const val EXTRA_REQUEST = "dev.digitalducktape.openride.games.SESSION_REQUEST"
 
-        /** Until the Games hub (#38) picks: a 20-minute Just Ride of the demo. */
-        val DEFAULT_REQUEST: SessionRequest = SessionRequest.JustRide("demo", JustRideMode.Timed(20))
+        /**
+         * Dev and the headless checks: a `start_plan` request (its snake_case JSON) that starts
+         * as soon as the hub is up, e.g. `adb shell am start -n <pkg>/dev.digitalducktape.openride.games.GameHostActivity
+         * --es dev.digitalducktape.openride.games.AUTOSTART '{"kind":"just_ride","game_id":"kart_race","mode":"minutes","length":5}'`.
+         */
+        const val EXTRA_AUTOSTART = "dev.digitalducktape.openride.games.AUTOSTART"
 
-        fun intent(context: Context, request: SessionRequest = DEFAULT_REQUEST): Intent =
-            Intent(context, GameHostActivity::class.java).putExtra(EXTRA_REQUEST, request.toJson())
+        private const val REQUEST_CAMERA = 0x0CA4
+
+        /** Opens the Games hub: a new visit, or the live one. */
+        fun intent(context: Context): Intent = Intent(context, GameHostActivity::class.java)
+
+        /**
+         * The Compose Games tab, until the hub replaces its picker (plan phase F): the hub with
+         * [request] autostarted as the visit's first plan.
+         */
+        fun intent(context: Context, request: SessionRequest): Intent = intent(context).putExtra(EXTRA_REQUEST, request.toJson())
     }
 }

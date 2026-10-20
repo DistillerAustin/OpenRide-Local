@@ -321,11 +321,22 @@ So the foundation uses the spec's fallback: **the host stays alive for the app's
 The `OpenRideApplication` owns the `AppContainer`, so the games host shares the app's database,
 sensor binding and ride session.
 
-`GameHostActivity.intent(context, request)` starts games with a `SessionRequest` (a Just Ride,
-a circuit or a custom circuit, and a difficulty). Each entry calls `GameVisitManager.begin`
-with the request as the visit's autostart plan (until the hub replaces the Compose tab's
-picker, plan phases B and F) and attaches the visit to the bridge. A visit still live when the
-host comes forward again is kept, and its `hub_state` resent.
+`GameHostActivity.intent(context)` opens the Games hub: each entry calls
+`GameVisitManager.begin` and attaches the visit to the bridge. A visit still live when the host
+comes forward again (the rider never reached the app) is kept, and its `hub_state` resent.
+
+- `intent(context, request)` is the Compose Games tab's entry until the hub replaces its picker
+  (plan phases B and F): the `SessionRequest` autostarts as the visit's first plan.
+- `EXTRA_AUTOSTART` (dev, adb and headless checks) does the same with a `start_plan` request's
+  snake_case JSON.
+- `request_camera_permission` shows Android's prompt from the host
+  (`requestPermissions` → `GameVisitManager.onPermissionResult` → `hub_state`). A refusal
+  Android won't ask again reads as `denied`.
+- Leaving (`exit_hub` / `request_exit`) moves the task to the back once the ride is saved.
+  `VisitNavigator` (app-scoped, consumed once by the NavHost) then opens the ride summary, or
+  the profile editor for `exit_hub("edit_profile")`.
+- `MainActivity.onResume` calls `endIfLive("app_resumed")`, so no visit stays live behind the
+  app.
 
 ## Sessions and recording
 

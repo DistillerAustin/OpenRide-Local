@@ -87,7 +87,10 @@ class GameVisitManagerTest {
     private val headTracker = FakeHeadTracker()
     private val trackerLink = TrackerLink(headTracker, signals, scope)
 
+    private val navigator = VisitNavigator()
+
     private fun visit(profileId: Long? = riderId, tracker: TrackerLink? = null) = GameVisitManager(
+        navigator = navigator,
         signals = signals,
         scope = scope,
         runner = GameSessionManager(signals, scope, tracker = tracker, random = Random(7)),
@@ -603,4 +606,31 @@ class GameVisitManagerTest {
         assertEquals("", hub()["camera"]!!.jsonObject.str("calibrated"))
     }
 
+
+    // --- Where the app goes next ------------------------------------------------------------
+
+    @Test
+    fun `leaving games queues the ride summary, or the profile editor for the FTP nudge`() {
+        val v = visit().enter().playQuickMinute().call { onExitHub("app") }
+        assertEquals(VisitDestination.RideSummary(allRides().single().id), navigator.pending.value)
+
+        navigator.consume(navigator.pending.value!!)
+        v.enter().call { onExitHub("edit_profile") }
+        assertEquals(VisitDestination.EditProfile, navigator.pending.value)
+    }
+
+    @Test
+    fun `after the idle guard saved the visit, Exit still leaves games`() {
+        val v = visit().enter().playQuickMinute()
+        bike.setMetrics(cadenceRpm = 0, resistancePercent = 40, powerWatts = 0)
+        seconds(20 * 60 + 5)
+        assertEquals("idle", ended().str("reason"))
+        assertEquals(null, navigator.pending.value) // the rider is still in games
+
+        v.call { onExitHub("app") }
+
+        assertEquals(listOf("app"), exits)
+        assertEquals(1, signals.names.count { it == "visit_ended" })
+        assertEquals(VisitDestination.RideSummary(allRides().single().id), navigator.pending.value)
+    }
 }
