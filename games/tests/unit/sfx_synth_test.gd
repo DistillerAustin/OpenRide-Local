@@ -1,10 +1,22 @@
 extends GdUnitTestSuite
 ## SfxSynth (#36): every library preset renders, deterministically, cleanly (starts and ends
-## at silence, no clipping), and the cache, overrides and loops behave.
+## at silence, no clipping), and the cache, overrides and loops behave. The games' preset folders
+## are added up front, so every game's presets are checked whichever suites ran first.
 
 const Dsp := preload("res://audio/Dsp.gd")
 const STARTER := ["whoosh", "thud", "click", "chime", "alarm_soft", "boost", "countdown_beep", "go"]
 const CUES := ["segment_end", "pause", "resume", "summary"]
+const GAME_DIRS := [
+	"res://games/dodge_ball/sfx",
+	"res://games/tug_of_war/sfx",
+	"res://games/safe_cracker/sfx",
+	"res://games/cadence_karaoke/sfx",
+]
+
+
+func before() -> void:
+	for dir in GAME_DIRS:
+		SfxSynth.add_preset_dir(dir)
 
 
 func after_test() -> void:
