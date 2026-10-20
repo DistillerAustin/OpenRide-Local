@@ -6,7 +6,7 @@ import org.godotengine.godot.plugin.SignalInfo
 import org.godotengine.godot.plugin.UsedByGodot
 
 /**
- * The `OpenRideBridge` engine singleton (Bridge contract v1, docs/GAMES.md), registered by
+ * The `OpenRideBridge` engine singleton (Bridge contract v1 plus the hub's v1.1, docs/GAMES.md), registered by
  * `GameHostActivity` as a host plugin. GDScript reaches it only through the `InputBus` and
  * `Session` autoloads, as `Engine.get_singleton("OpenRideBridge")`.
  *
@@ -51,6 +51,29 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
     @UsedByGodot
     fun request_exit() = bridge.requestExit()
 
+    // v1.1, the Games hub.
+
+    @UsedByGodot
+    fun start_plan(requestJson: String) = bridge.startPlan(requestJson)
+
+    @UsedByGodot
+    fun update_setting(key: String, valueJson: String) = bridge.updateSetting(key, valueJson)
+
+    @UsedByGodot
+    fun hub_calibrate(mode: String, full: Boolean) = bridge.hubCalibrate(mode, full)
+
+    @UsedByGodot
+    fun cancel_calibration() = bridge.cancelCalibration()
+
+    @UsedByGodot
+    fun request_camera_permission() = bridge.requestCameraPermission()
+
+    @UsedByGodot
+    fun exit_hub(next: String) = bridge.exitHub(next)
+
+    @UsedByGodot
+    fun hub_activity() = bridge.hubActivity()
+
     // --- Kotlin → Godot signals (GodotPlugin queues them onto Godot's thread) ---
 
     override fun sessionStarted(planJson: String) = emitSignal(SESSION_STARTED.name, planJson)
@@ -68,6 +91,9 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
         progress.retryReason,
     )
     override fun sessionFinished(summaryJson: String) = emitSignal(SESSION_FINISHED.name, summaryJson)
+    override fun hubState(stateJson: String) = emitSignal(HUB_STATE.name, stateJson)
+    override fun planRejected(reasonJson: String) = emitSignal(PLAN_REJECTED.name, reasonJson)
+    override fun visitEnded(resultJson: String) = emitSignal(VISIT_ENDED.name, resultJson)
 
     companion object {
         const val NAME = "OpenRideBridge"
@@ -87,10 +113,13 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
             String::class.java, // retry_reason
         )
         private val SESSION_FINISHED = SignalInfo("session_finished", String::class.java)
+        private val HUB_STATE = SignalInfo("hub_state", String::class.java)
+        private val PLAN_REJECTED = SignalInfo("plan_rejected", String::class.java)
+        private val VISIT_ENDED = SignalInfo("visit_ended", String::class.java)
 
         private val SIGNALS = setOf(
             SESSION_STARTED, SEGMENT_STARTED, SEGMENT_ENDING, SESSION_PAUSED, SESSION_RESUMED,
-            CALIBRATION_PROGRESS, SESSION_FINISHED,
+            CALIBRATION_PROGRESS, SESSION_FINISHED, HUB_STATE, PLAN_REJECTED, VISIT_ENDED,
         )
     }
 }

@@ -19,6 +19,13 @@ private class RecordingSession(override val segmentTimeLeftSec: Double = 33.0) :
     override fun onRequestResume() { calls += "request_resume" }
     override fun onRequestEnd() { calls += "request_end" }
     override fun onRequestExit() { calls += "request_exit" }
+    override fun onStartPlan(requestJson: String) { calls += "start_plan:$requestJson" }
+    override fun onUpdateSetting(key: String, valueJson: String) { calls += "update_setting:$key=$valueJson" }
+    override fun onHubCalibrate(mode: String, full: Boolean) { calls += "hub_calibrate:$mode:$full" }
+    override fun onCancelCalibration() { calls += "cancel_calibration" }
+    override fun onRequestCameraPermission() { calls += "request_camera_permission" }
+    override fun onExitHub(next: String) { calls += "exit_hub:$next" }
+    override fun onHubActivity() { calls += "hub_activity" }
 }
 
 private class RecordingEmitter : GameSignals {
@@ -34,6 +41,9 @@ private class RecordingEmitter : GameSignals {
             ":${progress.attempt}:${progress.retryReason}"
     }
     override fun sessionFinished(summaryJson: String) { events += "session_finished:$summaryJson" }
+    override fun hubState(stateJson: String) { events += "hub_state:$stateJson" }
+    override fun planRejected(reasonJson: String) { events += "plan_rejected:$reasonJson" }
+    override fun visitEnded(resultJson: String) { events += "visit_ended:$resultJson" }
 }
 
 class GameBridgeTest {
@@ -157,6 +167,40 @@ class GameBridgeTest {
             ),
             emitter.events,
         )
+    }
+
+    @Test
+    fun `the hub's calls are routed to the attached session`() {
+        val session = RecordingSession()
+        bridge.attach(session)
+
+        bridge.startPlan("""{"kind":"circuit"}""")
+        bridge.updateSetting("music", "\"off\"")
+        bridge.hubCalibrate("lean_x", true)
+        bridge.cancelCalibration()
+        bridge.requestCameraPermission()
+        bridge.hubActivity()
+        bridge.exitHub("edit_profile")
+
+        assertEquals(
+            listOf(
+                """start_plan:{"kind":"circuit"}""", "update_setting:music=\"off\"", "hub_calibrate:lean_x:true",
+                "cancel_calibration", "request_camera_permission", "hub_activity", "exit_hub:edit_profile",
+            ),
+            session.calls,
+        )
+    }
+
+    @Test
+    fun `the hub's signals reach Godot`() {
+        val emitter = RecordingEmitter()
+        bridge.emitter = emitter
+
+        bridge.hubState("{}")
+        bridge.planRejected("""{"reason":"busy"}""")
+        bridge.visitEnded("{}")
+
+        assertEquals(listOf("hub_state:{}", """plan_rejected:{"reason":"busy"}""", "visit_ended:{}"), emitter.events)
     }
 
     @Test

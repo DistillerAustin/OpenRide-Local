@@ -47,6 +47,9 @@ var _extremes := {}  # modes with "same-day" extremes: lean_x, lean_2d (kept acr
 var _calibration_mode := ""
 ## Calibrations started since launch, automatic or requested (for tests: one per session start).
 var calibrations_started := 0
+## The hub's v1.1 calls, recorded as [method, args…]. The desktop hub (LocalHub, plan phase B1)
+## will play them; until then they're only logged.
+var hub_calls: Array = []
 
 
 func _init(session: Node) -> void:
@@ -96,6 +99,41 @@ func start(plan: Dictionary = {}) -> void:
 		sent["rider_name"] = RIDER_NAME
 	_session._on_session_started(_wire(sent))
 	_start_segment(0)
+
+
+# --- The Games hub (v1.1): recorded only, until LocalHub (plan B1) ---
+
+func start_plan(request: Dictionary) -> void:
+	_hub_call(["start_plan", request])
+
+
+func update_setting(key: String, value: Variant) -> void:
+	_hub_call(["update_setting", key, value])
+
+
+func hub_calibrate(mode: String, full: bool) -> void:
+	_hub_call(["hub_calibrate", mode, full])
+
+
+func cancel_calibration() -> void:
+	_hub_call(["cancel_calibration"])
+
+
+func request_camera_permission() -> void:
+	_hub_call(["request_camera_permission"])
+
+
+func exit_hub(next: String) -> void:
+	_hub_call(["exit_hub", next])
+
+
+func hub_activity() -> void:
+	_hub_call(["hub_activity"])
+
+
+func _hub_call(call: Array) -> void:
+	hub_calls.append(call)
+	print("LocalSession: %s (no desktop hub yet)" % call[0])
 
 
 func time_left() -> float:

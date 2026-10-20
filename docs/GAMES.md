@@ -125,7 +125,8 @@ GDScript accesses it only through the `InputBus` and `Session` autoloads, never 
 
 - `segment_finished(result_json)`: `{game_id, score, stars (0-3), won (bool|null), skipped (bool),
   stats:{effort_avg, …}, variant}`. `variant` is optional (`""`): a game's own variant, such as
-  Dodge Ball's `catch` mode. A skip is reported as `skipped: true` during the intro card; Kotlin then
+  Dodge Ball's `catch` mode. (Before the hub work Kotlin never read it, so every result was
+  recorded with `""`; fixed in v1.1.) A skip is reported as `skipped: true` during the intro card; Kotlin then
   advances to the next segment.
 - `request_calibration(mode)`: `mode` ∈ `lean_x | lean_2d`. The rider asked to recalibrate:
   every step runs again.
@@ -201,6 +202,74 @@ These describe how the foundation (#32) implements v1. They don't change the con
   through `TrackerLink` (`games/bridge/`). See "Sessions and recording" below.
 - **Head-tracker fields** come from `AppContainer.headTracker` on every poll
   (`HeadTrackerState.toTrackerReading()`).
+
+### Games hub (v1.1)
+
+The Games hub (spec `docs/superpowers/specs/2026-10-19-games-hub-design.md`, §3) adds to v1
+without changing it: every v1 signal and method keeps its name, arguments and meaning *within a
+plan*. In a hub visit, `session_*` means "one plan", and the visit holds many plans. The input
+frame stays version 1. Kotlin accepts floats for integers and ignores unknown keys; Godot treats
+a missing key as its default. `Session` re-emits the new signals with the JSON parsed, and
+connects them only if the plugin declares them (so a pack run against an older app still
+starts).
+
+**Kotlin → Godot signals (new):**
+
+- `hub_state(state_json)`, as `Session.hub_state_changed(state)`, kept in `Session.hub`: a full
+  snapshot every time, never a delta. It is sent on the first input-frame poll of a visit (the
+  v1 readiness rule), then after anything in it changes, at most once per 250 ms.
+  - `hub_version` (1), `visit_id` (new per visit; `Session.visit_changed` fires on a change),
+    `phase` (`hub | plan | saving | ended`).
+  - `rider`: `{id, name, avatar_png, avatar_color, ftp_watts, ftp_is_default}`. With no active
+    rider, `id` is null and `name` is `""`. `avatar_png` is a 256×256 PNG path, or null.
+  - `settings`: `{camera_games, music: auto | on | off, music_volume, sfx_volume}`; `audio`:
+    the same resolved now (`{music, music_volume, sfx_volume}`), for the hub's own music.
+  - `camera`: `{permission: granted | denied | ask, available, calibrated: "" | lean_x |
+    lean_2d, same_day_extremes}`.
+  - `catalog`: `[{id, title, supports, min_sec, max_sec, min_rounds, max_rounds, round_sec,
+    roles, uses_camera, minute_steps, circuit_role}]`, `GameCatalog` without the demo.
+  - `circuits`: `[{id, minutes, total_sec, slots: [{game_id, role, duration_sec}]}]`, the
+    presets as they would play now (with the camera-off substitution applied).
+  - `bests`: `{games: [{game_id, plan_id, difficulty, variant, score, stars, plays}], plans:
+    [{plan_id, difficulty, score, stars}]}`, with this visit's finished plans merged in.
+  - `visit`: `{recording, ride_sec, gameplay_sec, plans: [{plan_id, difficulty, score, stars,
+    game_ids}]}`.
+- `plan_rejected(reason_json)`: `{request (as sent), reason: unknown_game | unsupported_mode |
+  camera_unavailable | busy | empty_circuit | too_long}`, sent instead of `session_started`.
+- `visit_ended(result_json)`: `{visit_id, ride_id (or null), saved, discarded_reason: "" |
+  too_short | no_pedalling | not_recording, next: app | edit_profile | hub, reason: exit | idle |
+  app_resumed | replaced}`. Sent after the ride is saved or discarded. Godot calls nothing after
+  it, except that with `next: hub` (the idle guard saved the ride while the hub showed) a tap
+  sends `hub_activity()`, which starts a new visit.
+
+**Changes to v1 payloads (additive, only in a visit):**
+
+- `session_started` adds `visit_id`, `plan_index` (0-based count of plans started this visit)
+  and `calibrated` (the visit's calibration, as in `hub_state.camera`).
+- `session_finished` adds `visit_id`, `plan_index`, `plan_id` and `difficulty`, and its
+  `ride_id` is always null: the ride is saved on exit and its id comes in `visit_ended`.
+  `totals.elapsed_sec` is the plan's own seconds (pauses excluded).
+- Outside a visit none of these keys is sent.
+
+**Godot → Kotlin methods (new):**
+
+| Method | Valid in | Kotlin does |
+| --- | --- | --- |
+| `start_plan(request_json)` | hub | Builds and runs the plan (`session_started` …), or sends `plan_rejected` |
+| `update_setting(key, value_json)` | any | `camera_games` (bool), `music` (`"auto"`/`"on"`/`"off"`), `music_volume`, `sfx_volume` (0..1, clamped); stores it, then `hub_state`. Unknown keys and bad values are logged and ignored. |
+| `hub_calibrate(mode, full)` | hub | Camera on, calibrate (`force = full`), camera off when it ends; `calibration_progress`, then `hub_state` |
+| `cancel_calibration()` | hub | Stops a hub calibration; the visit's earlier calibration stays |
+| `request_camera_permission()` | hub | The host shows Android's prompt, then `hub_state` |
+| `exit_hub(next)` | hub | `app` or `edit_profile`: ends the visit, saves, `visit_ended`, task to back |
+| `hub_activity()` | hub | The rider touched the hub (at most once per 60 s): resets the idle guard |
+
+`start_plan` requests: `{kind: "just_ride", game_id, mode: minutes | rounds | open, length,
+difficulty}`, `{kind: "circuit", preset_id, difficulty}` or `{kind: "custom", difficulty, slots:
+[{game_id, duration_sec}]}`. A missing `difficulty` is `standard`.
+
+`request_exit()` in a visit: in the hub it means `exit_hub("app")`. During a plan it ends the
+plan at once and then the visit (v1's "early exit"). The hub's result card returns to the hub
+locally and must **not** call it.
 
 ## Hosting the engine
 

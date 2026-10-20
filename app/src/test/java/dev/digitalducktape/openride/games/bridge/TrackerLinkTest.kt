@@ -24,6 +24,9 @@ private class ProgressRecorder : GameSignals {
     override fun sessionResumed() = Unit
     override fun calibrationProgress(progress: CalibrationProgressSignal) { this.progress += progress }
     override fun sessionFinished(summaryJson: String) = Unit
+    override fun hubState(stateJson: String) = Unit
+    override fun planRejected(reasonJson: String) = Unit
+    override fun visitEnded(resultJson: String) = Unit
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

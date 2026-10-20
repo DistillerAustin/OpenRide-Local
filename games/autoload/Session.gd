@@ -25,6 +25,17 @@ signal session_resumed
 ## the step failed 3 times and calibration moves on with the previous or default value.
 signal calibration_progress(step: String, fraction: float, step_index: int, step_count: int, attempt: int, retry_reason: String)
 signal session_finished(summary: Dictionary)
+## Bridge v1.1, the Games hub (docs/GAMES.md "Games hub (v1.1)"). A full snapshot every time,
+## never a delta; also kept in `hub`.
+signal hub_state_changed(state: Dictionary)
+## {request, reason}: sent instead of session_started when a start_plan can't be played.
+signal plan_rejected(reason: Dictionary)
+## {visit_id, ride_id, saved, discarded_reason, next, reason}: the visit's ride is saved or
+## discarded. Call nothing after it, except hub_activity() when `next` is "hub" (the idle guard
+## saved the ride and the rider taps to keep playing: Kotlin starts a new visit).
+signal visit_ended(result: Dictionary)
+## The visit id changed (a new visit): visit-scoped state (calibration, results) resets.
+signal visit_changed(visit_id: String)
 
 const BRIDGE := "OpenRideBridge"
 const LocalSession := preload("res://autoload/LocalSession.gd")
@@ -39,6 +50,10 @@ var tracker_mode := "off"  ## the last set_tracker_mode
 ## attempt, retry_reason, at_msec}; empty before the first.
 var calibration: Dictionary = {}
 var director: SessionDirector
+## The last hub_state snapshot; empty outside a hub visit (and before the first).
+var hub: Dictionary = {}
+## The current hub visit's id, from hub_state or a visit's session_started; "" outside a visit.
+var visit_id := ""
 
 var _bridge: Object = null
 var _local: Node = null
@@ -57,6 +72,11 @@ func _ready() -> void:
 		_bridge.connect("session_resumed", _on_session_resumed)
 		_bridge.connect("calibration_progress", _on_calibration_progress)
 		_bridge.connect("session_finished", func(json: String): _on_session_finished(_parse(json)))
+		# v1.1: guarded, so a pack run against an older app build still starts.
+		if _bridge.has_signal("hub_state"):
+			_bridge.connect("hub_state", func(json: String): _on_hub_state(_parse(json)))
+			_bridge.connect("plan_rejected", func(json: String): _on_plan_rejected(_parse(json)))
+			_bridge.connect("visit_ended", func(json: String): _on_visit_ended(_parse(json)))
 	else:
 		_local = LocalSession.new(self)
 		add_child(_local)
@@ -134,6 +154,73 @@ func request_exit() -> void:
 		_local.start()
 
 
+# --- Godot → Kotlin, the Games hub (v1.1) ---
+
+## Starts a plan from the hub (valid only there): {kind: "just_ride", game_id, mode: "minutes" |
+## "rounds" | "open", length, difficulty}, {kind: "circuit", preset_id, difficulty} or
+## {kind: "custom", difficulty, slots: [{game_id, duration_sec}]}. Kotlin answers with
+## session_started, or plan_rejected.
+func start_plan(request: Dictionary) -> void:
+	print("OPENRIDE_GAMES -> start_plan %s" % JSON.stringify(request))
+	if _bridge:
+		_bridge.start_plan(JSON.stringify(request))
+	else:
+		_local.start_plan(request)
+
+
+## key: "camera_games" (bool), "music" ("auto" | "on" | "off"), "music_volume" or "sfx_volume"
+## (0..1). Kotlin stores it and sends hub_state.
+func update_setting(key: String, value: Variant) -> void:
+	print("OPENRIDE_GAMES -> update_setting %s %s" % [key, JSON.stringify(value)])
+	if _bridge:
+		_bridge.update_setting(key, JSON.stringify(value))
+	else:
+		_local.update_setting(key, value)
+
+
+## Calibrates from the hub. full: false takes the centre only when the rider's extremes are
+## from today; true runs every step (Recalibrate). Progress comes as calibration_progress.
+func hub_calibrate(mode: String, full: bool) -> void:
+	print("OPENRIDE_GAMES -> hub_calibrate %s full=%s" % [mode, full])
+	if _bridge:
+		_bridge.hub_calibrate(mode, full)
+	else:
+		_local.hub_calibrate(mode, full)
+
+
+func cancel_calibration() -> void:
+	print("OPENRIDE_GAMES -> cancel_calibration")
+	if _bridge:
+		_bridge.cancel_calibration()
+	else:
+		_local.cancel_calibration()
+
+
+func request_camera_permission() -> void:
+	print("OPENRIDE_GAMES -> request_camera_permission")
+	if _bridge:
+		_bridge.request_camera_permission()
+	else:
+		_local.request_camera_permission()
+
+
+## Ends the visit: next is "app" or "edit_profile". Kotlin saves the ride, then sends visit_ended.
+func exit_hub(next: String) -> void:
+	print("OPENRIDE_GAMES -> exit_hub %s" % next)
+	if _bridge:
+		_bridge.exit_hub(next)
+	else:
+		_local.exit_hub(next)
+
+
+## The rider touched the hub. Send it at most once every 60 s: it resets Kotlin's idle guard.
+func hub_activity() -> void:
+	if _bridge:
+		_bridge.hub_activity()
+	else:
+		_local.hub_activity()
+
+
 ## The simulator's segment_time_left, for InputBus.
 func local_time_left() -> float:
 	return _local.time_left() if _local else -1.0
@@ -169,6 +256,8 @@ func _on_session_started(new_plan: Dictionary) -> void:
 	print("OPENRIDE_GAMES <- session_started %s" % JSON.stringify(new_plan))
 	# A fresh session: the engine outlives the host activity, so state from the last one lingers.
 	plan = new_plan
+	if new_plan.get("visit_id") is String:
+		_set_visit_id(new_plan.visit_id)
 	segment = {}
 	summary = {}
 	calibration = {}
@@ -224,6 +313,31 @@ func _on_session_finished(new_summary: Dictionary) -> void:
 	active = false
 	paused = false
 	session_finished.emit(summary)
+
+
+func _on_hub_state(state: Dictionary) -> void:
+	print("OPENRIDE_GAMES <- hub_state %s %s" % [state.get("visit_id", ""), state.get("phase", "")])
+	hub = state
+	if state.get("visit_id") is String:
+		_set_visit_id(state.visit_id)
+	hub_state_changed.emit(hub)
+
+
+func _on_plan_rejected(reason: Dictionary) -> void:
+	print("OPENRIDE_GAMES <- plan_rejected %s" % JSON.stringify(reason))
+	plan_rejected.emit(reason)
+
+
+func _on_visit_ended(result: Dictionary) -> void:
+	print("OPENRIDE_GAMES <- visit_ended %s" % JSON.stringify(result))
+	visit_ended.emit(result)
+
+
+func _set_visit_id(id: String) -> void:
+	if id == visit_id:
+		return
+	visit_id = id
+	visit_changed.emit(id)
 
 
 # --- Input ---

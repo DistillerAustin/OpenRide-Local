@@ -4,7 +4,7 @@ import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.StateFlow
 
-/** Kotlin → Godot signals of the v1 Bridge contract. JSON arguments are JSON text. */
+/** Kotlin → Godot signals of the Bridge contract (v1 plus the hub's v1.1). JSON arguments are JSON text. */
 interface GameSignals {
     fun sessionStarted(planJson: String)
     fun segmentStarted(segmentJson: String)
@@ -13,6 +13,11 @@ interface GameSignals {
     fun sessionResumed()
     fun calibrationProgress(progress: CalibrationProgressSignal)
     fun sessionFinished(summaryJson: String)
+
+    // v1.1, the Games hub (spec §3.1).
+    fun hubState(stateJson: String)
+    fun planRejected(reasonJson: String)
+    fun visitEnded(resultJson: String)
 }
 
 /**
@@ -35,6 +40,27 @@ interface GameSession {
     fun onRequestResume()
     fun onRequestEnd()
     fun onRequestExit()
+
+    // v1.1, the Games hub (spec §3.3). Defaults ignore them, for sessions without a hub.
+
+    /** `start_plan(request_json)`: valid in the hub only. */
+    fun onStartPlan(requestJson: String) {}
+
+    /** `update_setting(key, value_json)`. */
+    fun onUpdateSetting(key: String, valueJson: String) {}
+
+    /** `hub_calibrate(mode, full)`. */
+    fun onHubCalibrate(mode: String, full: Boolean) {}
+
+    fun onCancelCalibration() {}
+
+    fun onRequestCameraPermission() {}
+
+    /** `exit_hub(next)`: `app` or `edit_profile`. */
+    fun onExitHub(next: String) {}
+
+    /** The rider touched the hub (at most once a minute): resets the idle guard. */
+    fun onHubActivity() {}
 }
 
 /**
@@ -97,6 +123,13 @@ class GameBridge(
     fun requestResume() { session?.onRequestResume() }
     fun requestEnd() { session?.onRequestEnd() }
     fun requestExit() { session?.onRequestExit() }
+    fun startPlan(requestJson: String) { session?.onStartPlan(requestJson) }
+    fun updateSetting(key: String, valueJson: String) { session?.onUpdateSetting(key, valueJson) }
+    fun hubCalibrate(mode: String, full: Boolean) { session?.onHubCalibrate(mode, full) }
+    fun cancelCalibration() { session?.onCancelCalibration() }
+    fun requestCameraPermission() { session?.onRequestCameraPermission() }
+    fun exitHub(next: String) { session?.onExitHub(next) }
+    fun hubActivity() { session?.onHubActivity() }
 
     // --- Kotlin → Godot ---
 
@@ -107,4 +140,7 @@ class GameBridge(
     override fun sessionResumed() { emitter?.sessionResumed() }
     override fun calibrationProgress(progress: CalibrationProgressSignal) { emitter?.calibrationProgress(progress) }
     override fun sessionFinished(summaryJson: String) { emitter?.sessionFinished(summaryJson) }
+    override fun hubState(stateJson: String) { emitter?.hubState(stateJson) }
+    override fun planRejected(reasonJson: String) { emitter?.planRejected(reasonJson) }
+    override fun visitEnded(resultJson: String) { emitter?.visitEnded(resultJson) }
 }
