@@ -157,3 +157,19 @@ func test_the_crowd_sprite_has_two_frames_arms_up_in_the_second() -> void:
 					up[frame] += 1
 	assert_int(up[0]).is_equal(0)
 	assert_int(up[1]).is_greater(0)
+
+
+func test_prewarm_draws_the_hidden_effects_then_hides_them() -> void:
+	world.update_view(0.0, 0.0, 0.5, "", 80.0)
+	world.prewarm()
+	# Drawn (so their shaders compile behind the intro card), but invisible to the rider.
+	assert_bool(world._steam.visible).is_true()
+	assert_bool(world._ring.visible).is_true()
+	assert_float(world._steam_mat.get_shader_parameter("steam")).is_equal(0.0)
+	assert_float(world._foam_mat.get_shader_parameter("progress")).is_equal(1.0)
+	assert_float(world._splash.global_position.y).is_less(0.0)  # under the river
+	for i in TugWorld.WARM_FRAMES + 2:
+		await get_tree().process_frame
+	assert_bool(world._steam.visible).is_false()
+	assert_bool(world._ring.visible).is_false()
+	assert_bool(world._splash.emitting).is_false()
