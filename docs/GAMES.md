@@ -17,9 +17,9 @@ game and every builder depends on:
 | Where | What |
 | --- | --- |
 | `games/` | The Godot 4.7.2 project (Compatibility renderer, 1920x1080, landscape) |
-| `games/Main.tscn` | The idle scene: shown before a session's first game loads and behind the summary |
+| `games/hub/` | The Games hub (`Hub.tscn`): the project's main scene and the idle scene, where the rider picks and starts plans. See "The Games hub on screen". |
 | `games/autoload/InputBus.gd` | Polls the input frame every frame, or runs the keyboard simulator |
-| `games/autoload/Session.gd` | Session signals and methods, with JSON already parsed. Its `SessionDirector` child runs the session on screen. On a desktop, `LocalSession.gd` plays a local plan. |
+| `games/autoload/Session.gd` | Session signals and methods, with JSON already parsed. Its `SessionDirector` child runs the session on screen. On a desktop, `LocalSession.gd` plays a local plan, and its `LocalHub.gd` plays the hub's visit. |
 | `games/autoload/Effort.gd` | Scoring with the effort multiplier: games award points only through it |
 | `games/autoload/AudioDirector.gd` | Buses, music stems, effects and cues; the generators (#36) register with it |
 | `games/framework/` | `Game` (the base class), `GameInfo` (declarations), `SessionDirector`, `EffortMeter`, `Stars`, the HUD kit (`hud/`) and the intro card, pause, calibration and summary screens (`ui/`) |
@@ -500,11 +500,77 @@ so a game only plays. None of this changes the Bridge contract.
    game, whether the rider paused or Kotlin auto-paused. The HUD's Pause button calls
    `request_pause`/`request_resume`. Its End button, and the pause screen's, ask for
    confirmation, then call `request_end`.
-8. **`session_finished`**: it goes back to the idle scene, sets the tracker off, and shows the
-   **summary** over an opaque backdrop: each segment's result and stars, the totals, and any
-   bests. Its **Done** button (or Android back) calls `request_exit`. Circuit mode (#37) adds
+8. **`session_finished`**: it goes back to the idle scene (the hub), sets the tracker off, and
+   shows the **summary** over an opaque backdrop: each segment's result and stars, the totals,
+   and any bests. Its **Done** button (or Android back) calls `request_exit`. **In a hub visit**
+   (`Session.visit_id` set) the button reads **Back to games** and returns to the hub locally
+   (`SessionDirector.return_to_hub()`); it never calls `request_exit`. The visit's calibration
+   (`session_started.calibrated`) carries into the next plan, so a later camera game doesn't
+   recalibrate. Circuit mode (#37) adds
    its sections with `SummaryScreen.add_section()` (under the list on a circuit, in the column
    on a one-game summary).
+
+### The Games hub on screen (`res://hub/`)
+
+The hub (spec `docs/superpowers/specs/2026-10-19-games-hub-design.md`, §8) is the project's main
+scene and `SessionDirector.IDLE_SCENE`. A visit's first `hub_state` shows it
+(`SessionDirector.Phase.HUB`, `hub_entered`); a game's result card returns to it. It runs at
+`Engine.max_fps = 30` (`HUB_MAX_FPS`); a segment lifts the cap. Each return logs
+`OPENRIDE_GAMES memory static=… objects=… nodes=… orphans=… viewports=…`.
+
+```
+Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Session
+├ Backdrop                   one gradient (HubTheme.backdrop)
+├ Screens                    HubNav's top screen only: HomeScreen, GameScreen, CircuitScreen, SettingsScreen
+├ ConfirmDialog, Toast       CanvasLayers 35 and 36
+├ Saved                      CanvasLayer 37: "Saving…", and "We saved your ride · Tap to keep playing" (idle guard)
+└ HubMusic                   the hub's theme through AudioDirector
+```
+
+- **Navigation:** `HubNav` is a stack of screen ids with their args (home at the bottom). Only the
+  top screen is built; a screen is freed when left and rebuilt from `Session.hub` and `HubPrefs`
+  when shown again. The stack survives a plan (same visit only), so "Back to games" lands on the
+  screen the rider started from. Android back (`Session.back()`, and Esc on a desktop) closes a
+  dialog, pops a screen, and on home asks to exit; it never exits by itself.
+- **Screens** (`hub/screens/`, each a `HubScreen`) never call `Session`: they emit `open`,
+  `back`, `start(request)`, `exit_requested`, `set_ftp_requested`, `setting(key, value)` and
+  `Hub.gd` acts. Home has the header (`HubHeader`: avatar, name, ride so far, live rpm · W at
+  2 Hz, the camera's state, Settings, Exit games), the FTP nudge, a card per game (the catalog
+  intersected with `GameRegistry`; a camera game is dimmed when the camera is unavailable and
+  explains on a tap) and a card per preset circuit. A game's screen: its picture and how-to,
+  its options (`GameInfo.options` as cycle buttons, saved in `GameOptions` per rider), Length
+  (the catalog's modes and `minute_steps` or rounds), Difficulty and Start (it waits for
+  `session_started` or `plan_rejected`). A circuit's screen: its lineup, Difficulty, its best and
+  Start. Settings: camera games, game music, and the volumes as 10% steppers (heard at once).
+- **Confirmations:** Exit games ("Your ride (12:30, 2 games) will be saved", or "Nothing's
+  been recorded yet"), Set FTP (it leaves games) and the camera explanations use
+  `ConfirmDialog`: the safe button left, the acting one right, far apart.
+- **Picks:** `HubPrefs` (`user://hub_prefs.cfg`, section `<rider>/hub`) keeps the last mode,
+  length and difficulty per game and the difficulty per circuit.
+- **Look:** the shared kit's house look (`HubTheme` on `GameTheme.house()`), each game's card in
+  its accent (`HubTheme.LOOKS`, from UI_STYLE.md §4). Cards show `res://games/<id>/hub_card.png`
+  (512x288, rendered from the game's own world by `tests/capture_hub_cards.gd`; re-run it when
+  a game's look changes), masked to the card's rounded outline by
+  `framework/ui/shaders/rounded_mask.gdshader` (radius R − inset). Bike rules: targets at least
+  120 px (cards 180), 24 px apart, text at least 34 px, Exit and Start never on one screen.
+- **Cost:** cards, the header's parts, the poster and the circuit's lineup are baked
+  (`framework/ui/BakedView.gd` and `BakeQueue.gd`, promoted from Kart Race, whose `KartBaked`
+  and `KartBakeQueue` are now aliases): one draw call each, rendered only when they change. No
+  screen has a `_process`. Measured on the desktop (`tests/measure_hub.gd`): home 21 draw calls
+  (25 with the FTP nudge), a game's screen 47-50, a circuit's 25, Settings 57, and no bake
+  renders on an idle frame.
+- **Activity:** any touch in the hub sends `hub_activity()` (at most once a minute) for
+  Kotlin's idle guard. After `visit_ended` with `next: hub` the hub shows "We saved your ride",
+  and a tap sends `hub_activity()`, which starts a new visit.
+- **Music:** `HubMusic` plays "Lobby Loop" (`hub/music/`, `HubMusicIndex.gd`, rendered from
+  `tools/music/songs/hub.py`): the bed always, the harmony from 0.3 and the lead from 0.7 of an
+  intensity that follows pedalling (0 still, 0.5 at 60 rpm, 1 at 90 rpm). It honours
+  `hub_state.audio` (`AudioDirector.set_volumes`), puts `GameMix.master_effects()` on Master,
+  ducks while a dialog shows and under messages, and crossfades with the games' themes.
+- **Hooks for later phases:** the camera chip is display-only until phase E (`HubHeader.
+  camera_pressed` is declared for it); a game's options column is where phase C's `cards`,
+  `segmented` and "More options" go (`GameScreen`); circuits get "My circuits" and the builder
+  in phase D (`HubNav` takes new screen ids).
 
 ### Adding a game
 
@@ -859,7 +925,9 @@ Every game's theme and effects are produced offline by `games/tools/music/render
 (numpy, scipy and soundfile; deterministic; all synthesis written for this repo, no samples), one
 song module per game in `songs/`. See that folder's README. A game's rendered files live in
 `games/games/<game>/music/` and its index, `<Prefix>Music.gd`, is generated next to its scene:
-`STEM_FILES`, `LOOP_FROM`, `BPM`, `KEY` and `SOUNDS`.
+`STEM_FILES`, `LOOP_FROM`, `BPM`, `KEY` and `SOUNDS`. The Games hub's theme, "Lobby Loop"
+(`songs/hub.py`), goes to `games/hub/music/` with the index `hub/HubMusicIndex.gd` (the module's
+`DIR`, `INDEX` and `CLASS_NAME`).
 
 - **The theme** is a short intro and a loop of about 50-60 s in real song form (verse, chorus,
   bridge; fills, builds and risers), mixed with sends, a kick-keyed pump, glue compression and a
@@ -1122,7 +1190,10 @@ Packaging:
 ## Running on a desktop
 
 Open `games/project.godot` in the Godot 4.7.2 editor and press Play. With no bridge present,
-`InputBus` shows "keyboard simulator" and `Session` starts a local Just Ride.
+`InputBus` shows "keyboard simulator", and the main scene (the hub) starts a desktop visit
+(`LocalHub`): a `hub_state` from `GameRegistry` and a desktop catalog, `start_plan` played
+through `LocalSession` with the visit's keys, exit (then a new visit after 1.5 s) and the 20
+min idle save. A game scene run on its own (F6) still gets a local Just Ride.
 
 | Key | Input |
 | --- | --- |
@@ -1132,12 +1203,13 @@ Open `games/project.godot` in the Godot 4.7.2 editor and press Play. With no bri
 | `[` / `]` | resistance |
 | Space | stand (toggle) |
 | P | pause / resume |
-| Esc | end session |
+| Esc | end session (in the hub and on a visit's result card: as Android back) |
 
 On a desktop:
 
 - The local Just Ride is of the demo game.
-- `request_exit()` (the summary's Done) restarts the local plan.
+- `request_exit()` (the summary's Done) restarts the local plan outside a visit; in the hub it
+  exits the visit.
 - A game scene run on its own (F6) gets a Just Ride of that game.
 - The simulator also stands in for the head tracker and `TrackerLink`. `tracker_state`
   follows the game's tracker mode. The session's first camera mode plays a scripted
@@ -1176,7 +1248,16 @@ $GODOT_BIN --headless --path games -s -d --remote-debug tcp://127.0.0.1:0 \
 $GODOT_BIN --headless --path games -s res://tests/sim_lifecycle_check.gd  # session lifecycle
 $GODOT_BIN --headless --path games -s res://tests/sim_keyboard_check.gd   # the keys above
 $GODOT_BIN --headless --path games -s res://tests/sim_demo_check.gd       # the demo, end to end
+$GODOT_BIN --headless --path games -s res://tests/sim_hub_check.gd        # the Games hub, end to end
 ```
+
+The Games hub's suites: `local_hub_test` (the desktop visit), `hub_nav_test`, `hub_state_test`
+(defaults for an old or partial payload, the helpers, `HubPrefs`), `hub_layout_test` (every
+screen at 1920x1080 with long strings: 120 px targets 24 px apart, text at 34 px or more, no
+bake overflowing, Exit and Start apart, quiet bakes), `hub_music_test`, and the hub cases in
+`session_director_test`. With a window: `tests/capture_hub.gd -- --out=DIR` screenshots every
+hub screen, `tests/measure_hub.gd` checks the draw-call budget (run both with
+`--resolution 1920x1080`), and `tests/capture_hub_cards.gd` re-renders the games' card pictures.
 
 For generated audio (#36):
 

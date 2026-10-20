@@ -208,6 +208,7 @@ func circuit_card(c: Dictionary) -> Control:
 	top.add_child(minutes)
 	var time := HubTheme.label(HubTheme.duration(int(c.get("total_sec", -1))), HudTheme.SMALL, GameTheme.MUTED, true)
 	time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	time.clip_text = true  # never wider than the card (its bake would cut the edge)
 	time.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	time.size_flags_vertical = Control.SIZE_FILL

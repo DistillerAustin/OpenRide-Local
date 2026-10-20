@@ -152,6 +152,10 @@ func _check_screen(what: String) -> void:
 	var names := targets.map(func(t): return str(t.name))
 	assert_bool("Exit" in names and "Start" in names).override_failure_message("%s: Exit and Start on one screen" % what).is_false()
 	_check_text(what, screen)
+	for card in screen.find_children("*", "Control", true, false).filter(func(n): return n is HubCard):
+		var c: HubCard = card
+		assert_bool(c.content.size.x <= c.size.x + 0.5 and c.content.size.y <= c.size.y + 0.5) \
+			.override_failure_message("%s: %s's content %s overflows its bake %s" % [what, c.name, c.content.size, c.size]).is_true()
 
 
 func _check_targets(what: String, targets: Array) -> void:
