@@ -97,6 +97,37 @@ func test_a_row_pick_is_saved_per_rider_at_once() -> void:
 	assert_str((screen.option_controls["scene"] as OptionRow).value).is_equal(now)
 
 
+func test_kart_race_shows_eight_kart_cards_and_four_track_cards() -> void:
+	var screen := await _open("kart_race")
+	var karts: OptionCards = screen.option_controls["driver"]
+	var tracks: OptionCards = screen.option_controls["track"]
+	assert_int(karts.cards.size()).is_equal(8)
+	assert_int(tracks.cards.size()).is_equal(4)
+	assert_int(karts.grid.columns).is_equal(4)
+	for k in ["assist", "camera", "auto_items"]:  # secondary: under More options
+		assert_bool(screen.option_controls.has(k)).is_false()
+	assert_object(screen.more_button).is_not_null()
+	# The chosen kart wears the rider's name; a tap saves the kart and moves the name.
+	var info := GameRegistry.info("kart_race")
+	var shown := HubTheme.short_name(str(hub.state.rider.name))
+	assert_bool(karts.badge("fox").visible).is_true()
+	assert_str((karts.badge("fox").get_child(0) as Label).text).is_equal(shown)
+	karts.cards["penguin"].hit.pressed.emit()
+	assert_str(GameOptions.get_value(info, "driver", rider)).is_equal("penguin")
+	assert_bool(karts.badge("penguin").visible).is_true()
+	assert_bool(karts.badge("fox").visible).is_false()
+	tracks.cards["frost_pass"].hit.pressed.emit()
+	assert_str(GameOptions.get_value(info, "track", rider)).is_equal("frost_pass")
+	# Every track card's thumbnail is masked to the card's outline.
+	for v in tracks.cards:
+		var mat := tracks.picture(v).material as ShaderMaterial
+		assert_float(float(mat.get_shader_parameter("radius"))).is_equal(float(HubTheme.CARD_RADIUS - HubTheme.PICTURE_INSET))
+	screen.open_more()
+	await _settle(2)
+	for k in ["assist", "camera", "auto_items"]:
+		assert_object((screen.option_controls[k] as OptionRow).segmented).is_not_null()
+
+
 func test_the_pause_screen_shows_only_pause_options() -> void:
 	var info := GameInfo.new()
 	info.options = [

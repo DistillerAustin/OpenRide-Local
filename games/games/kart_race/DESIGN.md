@@ -45,7 +45,6 @@ KartRace (Node2D, KartRace.gd: extends Game)
 ├─ KartHud (CanvasLayer 8: lap badge, clock, racer list, minimap, ride strip, item button
 │           with the drift arc, place, countdown, banners, speed lines)
 ├─ KartRaceBoard (CanvasLayer 9: the results board and the podium)
-├─ KartPicker (CanvasLayer 9: the kart and track pick, gameplay's first state)
 └─ KartAudio (music stems, engine/screech/crowd loops, one-shots)
 (the framework's Hud, CanvasLayer 10, in Kart Race's skin: clock and score, Recalibrate |
 Pause | End at the top right; its ride panel is hidden for KartHud's ride strip)
@@ -415,28 +414,26 @@ when a kart breaks a pod: KartItemViews bursts it.
   never reached before.
 - **Finish**: the race ends when the rider finishes; karts still running are placed by
   progress. Karts drive on through the results board.
-- **The pick** (`ui/KartPicker`, rider request 2026-10-19): gameplay opens on one screen with
-  the eight karts (portrait, name, kart colour, class), the chosen kart up close (the rider's
-  name, "driving Ripple the otter", the class's feel, the tagline), the four tracks (baked
-  thumbnails) and a big START!. It preselects the rider's last kart and track (the `driver` and
-  `track` options, so the pause screen shows them too) and starts by itself after 20 s, a count
-  any tap on a choice restarts. Taps are remembered at once. The flow is `PICK`, then `LOADING`
-  only when the chosen track isn't the one built in `_on_prepare` (the remembered one, behind
-  the intro card and the picker): the loading card shows for two frames, then the world
-  rebuilds (desktop: about 235 ms for Canyon Dash, plus the racers when the kart changed; the
-  tablet's main thread runs 20-30× slower on GDScript, so expect 2-5 s behind the card). Then
-  the title fly-over and 3-2-1-GO as before. `_tick` skips `PICK` and `LOADING`: pedalling
-  moves and scores nothing, and the 3D view holds its last frame (`UPDATE_DISABLED`) under
-  the picker's wash. The session clock runs (a warm-up), so the GP's first race is sized to
-  the time left after the pick. Headless runs skip the picker (`picker_enabled`) unless a test
-  or sim turns it on; `sim_kart_check` lets it auto-start.
-  - Layout (1920×1080): every touch target is a bare Button over five bakes (header, kart grid,
-    detail, track row, START!), at least 180 px (START! 550×254), all more than 120 px from
-    End, and above the bottom band where the camera strip goes. The bakes render only on a
-    selection or a new whole second of the count.
+- **The pick** (Games hub plan phase C, rider request 2026-10-20: "after calibration it takes
+  you to the get ready screen then drops you in the course selection"): the kart and the
+  starting track are chosen in the Games hub before Start, not in the game. They are the
+  `driver` and `track` options with `where: hub` and `kind: cards` (docs/GAMES.md "Game
+  options"): eight kart cards (the baked portrait, name, class, the kart's colour on the edge;
+  the chosen one wears the rider's name) and four track cards (the baked thumbnail, masked to
+  the card's rounded outline, title and lap length). Gameplay goes loading → calibration → the
+  intro card's "Get ready" → the title fly-over → 3-2-1-GO. `_on_prepare` builds the chosen
+  track once, behind the intro card; nothing else is ever built first, so there's no loading
+  card or rebuild. The flow has no `PICK` or `LOADING` state.
+  - The portraits are each racer's head (`KartPortraits`, as the HUD renders it) over the round
+    backdrop in the kart's colour with a white ring, baked by `tests/capture_kart_portraits.gd`
+    (windowed) into `ui/portraits/<racer>.png` (256 px, transparent outside the disc): rerun it
+    when a racer's look changes. The hub never loads Kart Race's 3D.
   - The track thumbnails are each track's title shot, rendered by the game
     (`tests/capture_track_thumbs.gd`, windowed) into `ui/tracks/<id>.png`: rerun it when a
     track's look changes.
+  - Rejected: keeping an in-game picker. It ran on the session clock (hence its 20 s
+    auto-start), sat between the intro card and the race, and could make the game build a second
+    track; the hub runs on no clock and knows the track before the world is built.
 - **GP**: `next_race(time_left, est_lap)` before each race. The cup starts at the picked track
   (`KartGrandPrix.cup_from`), the others following in cup order. Timed: the final race is the one
   that starts with under 1.6 × (3 laps + 25 s) left, with `clamp(round(time_left / est_lap), 1,
@@ -571,9 +568,10 @@ when a kart breaks a pod: KartItemViews bursts it.
   (`HeadTrackingEngine` runs `StandingDetector` whatever the mode; 0.5 s to stand, 1.5 s to sit),
   so `InputBus.standing` works here; the simulator toggles it with Space. Calibration is the
   `lean_x` one.
-- Options (`GameOptions`, per rider): `driver` (the roster), `assist` (off / low / high, default
-  high), `camera` (chase / close), `auto_items` (off / on: `KartItemLogic.auto_rider`), `track`
-  (the starting track; the picker sets it and `driver`). The rider's kart carries their profile
+- Options (`GameOptions`, per rider): `driver` (the roster) and `track` (the starting track),
+  both picture cards in the hub only; `assist` (off / low / high, default high), `camera`
+  (chase / close) and `auto_items` (off / on: `KartItemLogic.auto_rider`), segmented, under the
+  hub's "More options" and on the pause screen. The rider's kart carries their profile
   name (`session_started`'s optional `rider_name`, `KartRoster.rider_label`).
 - Result `stats`: `position` (GP standing), `races`, `wins`, `podiums`, `best_lap` (s),
   `race_time` (s), `boosts`, `items_hit`, `avg_power` (W), `ghost_trace` (the rider's distance
@@ -629,8 +627,8 @@ behind): results 171 → 76, podium 145 → 60.
 - `tests/unit/` (GdUnit4): `kart_track_model_test`, `kart_physics_test`, `kart_handling_test`,
   `kart_chase_camera_test`, `kart_race_logic_test`, `kart_grand_prix_test`, `kart_race_scene_test`,
   `kart_bot_driver_test`, `kart_item_logic_test`, `kart_item_views_test`, `kart_scoring_test`,
-  `kart_racers_test`, `kart_presentation_test`, `kart_tracks_test`, `kart_world_test`,
-  `kart_picker_test`. Shared tracks:
+  `kart_racers_test`, `kart_presentation_test`, `kart_tracks_test`, `kart_world_test`; the hub's
+  `hub_options_test` covers the kart and track cards. Shared tracks:
   `preload("res://tests/kart_fixtures.gd")` (circle, oval, meadow).
 - `tests/sim_kart_check.gd`: a 5-minute local GP at 4× with the keys; must end on the finish
   line and show the summary (`PASS sim kart`). The keys steer on the kart's position half a

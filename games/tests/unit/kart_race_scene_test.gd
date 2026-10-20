@@ -1,7 +1,9 @@
 extends GdUnitTestSuite
 ## Kart Race's scene with the framework (#43): the race runs from the grid, the rider drives
 ## forward on the road, pause freezes everything, `request_finish` ends at once with the
-## result's stats, and the rider's options apply.
+## result's stats, and the rider's options apply. The kart and track are picked in the hub
+## (plan C2): gameplay opens straight on the fly-over and 3-2-1-GO, on the chosen track with the
+## chosen kart, and never builds another track first.
 
 const SEGMENT := {"game_id": "kart_race", "role": "free", "difficulty": "standard", "duration_sec": 1200,
 	"end_mode": "game", "seed": 7, "effort": true,
@@ -135,6 +137,44 @@ func test_request_finish_during_the_countdown_still_has_valid_stats() -> void:
 	assert_bool(result.won).is_false()
 	for key in STATS:
 		assert_bool(result.stats.has(key)).is_true()
+
+
+func test_gameplay_opens_on_the_flyover_with_the_hubs_kart_and_track() -> void:
+	var info := GameRegistry.info("kart_race")
+	GameOptions.set_value(info, "driver", "otter", _rider)
+	GameOptions.set_value(info, "track", "harbor_lights", _rider)
+	var game: Game = auto_free(load("res://games/kart_race/KartRace.tscn").instantiate())
+	game.hud = auto_free(Hud.new())
+	add_child(game)
+	game.prepare(SEGMENT)
+	assert_str(game.get("current").track_id).is_equal("harbor_lights")
+	assert_str(game.get("track").def.id).is_equal("harbor_lights")
+	assert_str(game.get("_built_track")).is_equal("harbor_lights:false")
+	assert_str(str(game.get("lineup")[0].id)).is_equal("otter")
+	assert_str(game.get("lineup")[0].name).is_equal("Ed")
+	assert_int(game.get("flow")).is_equal(game.Flow.IDLE)  # the grid behind the intro card
+	assert_bool("PICK" in game.Flow.keys() or "LOADING" in game.Flow.keys()).is_false()
+	assert_object(game.get_node_or_null("Picker")).is_null()
+	var built := str(game.get("_built_track"))
+	game.start()  # the intro card's "Get ready" ends: the fly-over, then the grid's countdown
+	assert_int(game.get("flow")).is_equal(game.Flow.COUNTDOWN)
+	var race: KartRaceLogic = game.get("race")
+	assert_float(race.countdown).is_greater(game.COUNTDOWN_SEC)  # the title fly-over first
+	_frames(game, 30)
+	assert_str(str(game.get("_built_track"))).is_equal(built)  # no rebuild
+
+
+func test_the_hub_picks_are_hub_only() -> void:
+	var info := GameRegistry.info("kart_race")
+	var hub_keys := info.hub_options().map(func(o): return o.key)
+	var pause_keys := info.pause_options().map(func(o): return o.key)
+	assert_array(hub_keys).contains(["driver", "track", "assist", "camera", "auto_items"])
+	assert_array(pause_keys).contains_exactly(["assist", "camera", "auto_items"])
+	assert_str(_thousands(1148)).is_equal("1,148")
+
+
+static func _thousands(n: int) -> String:
+	return load("res://games/kart_race/KartRace.gd").thousands(n)
 
 
 func test_options_apply() -> void:

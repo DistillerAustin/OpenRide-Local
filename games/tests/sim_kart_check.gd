@@ -1,8 +1,8 @@
 extends SceneTree
 ## Headless playthrough of Kart Race (#43) with the keyboard simulator:
 ##   $GODOT_BIN --headless --path games -s res://tests/sim_kart_check.gd
-## A 5-minute local Just Ride at 4× speed: the intro card and calibration, the kart and track
-## picker (left to start by itself), then a Grand Prix
+## A 5-minute local Just Ride at 4× speed: the intro card and calibration, then straight to the
+## title fly-over and 3-2-1-GO (the kart and track are picked in the hub, plan C2), then a Grand Prix
 ## driven with the keys (cadence up, the arrows steering toward the racing line using the track
 ## model). It must end on the final race's finish line (the game ends the segment, before the
 ## 1.5× hard stop), and the summary must appear.
@@ -46,15 +46,15 @@ func _run() -> void:
 			"place": game.race.karts[0].place,
 		})
 
-	# The kart and track picker opens first (headless runs skip it unless asked) and starts by
-	# itself with the remembered choices; its seconds come off the ride.
-	game.picker_enabled = true
+	# No picker: gameplay opens on the title fly-over and the countdown, on the remembered track.
 	await _until(func(): return _director.phase_name() == "PLAYING", 30.0)
 	_check(_director.phase_name() == "PLAYING", "gameplay starts")
 	await _frames(2)
-	_check(game.flow == game.Flow.PICK and game._picker.visible, "the picker opens first (flow %s)" % game.flow)
-	await _until(func(): return game.flow == game.Flow.COUNTDOWN, 40.0)
-	_check(game.flow == game.Flow.COUNTDOWN and not game._picker.visible, "the picker starts the race by itself")
+	_check(not ("PICK" in game.Flow.keys()) and game.get_node_or_null("Picker") == null, "there is no picker")
+	_check(game.flow == game.Flow.COUNTDOWN, "gameplay opens on the fly-over and countdown (flow %s)" % game.flow)
+	var built: String = game._built_track
+	await _until(func(): return game.flow == game.Flow.RACING, 40.0)
+	_check(game.flow == game.Flow.RACING and game._built_track == built, "the race starts on the track built at prepare")
 	# Pedal up: about 100 rpm at 35% resistance (~190 W in the simulator).
 	_key(KEY_EQUAL, true)
 	await create_timer(0.5).timeout

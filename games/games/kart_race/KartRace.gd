@@ -18,14 +18,16 @@ extends Game
 ## Each race's logic is announced by `race_began(race)` before its countdown: hook its `events`
 ## there rather than editing `_begin_race`.
 ##
-## GP flow (enum FSM, `flow`): IDLE (the grid behind the intro card) → PICK (KartPicker: the kart
-## and the starting track; LOADING while a newly chosen track builds) → COUNTDOWN → RACING →
-## RESULTS (8 s, karts drive on) → the next race's COUNTDOWN, or PODIUM after the final race →
-## DONE (end_segment). `request_finish` ends at once with the standings so far.
+## GP flow (enum FSM, `flow`): IDLE (the grid behind the intro card) → COUNTDOWN (the title
+## fly-over, then 3-2-1-GO) → RACING → RESULTS (8 s, karts drive on) → the next race's COUNTDOWN,
+## or PODIUM after the final race → DONE (end_segment). `request_finish` ends at once with the
+## standings so far. The kart and the starting track are picked in the Games hub before Start
+## (the `driver` and `track` options, `where: hub`), so `_on_prepare` builds the chosen track
+## once and gameplay opens straight on the fly-over.
 
 signal race_began(race: KartRaceLogic)
 
-enum Flow { IDLE, PICK, LOADING, COUNTDOWN, RACING, RESULTS, PODIUM, DONE }
+enum Flow { IDLE, COUNTDOWN, RACING, RESULTS, PODIUM, DONE }
 
 ## The 3D view renders into a SubViewport at this share of 1080p, drawn scaled under the HUD
 ## (Dodge Ball's pattern: the tablet's GPU is fill-rate bound; scaling_3d_scale < 1 hangs it).
@@ -86,6 +88,10 @@ const BOT_PCTS := {
 }
 const BOT_LINES := [-1.5, 1.5, -0.5, 0.5, -2.0, 2.0, 0.0]
 const ASSIST := {"off": 0.0, "low": 0.5, "high": 1.0}
+## The hub's card pictures (spec §7.2): the racers' baked portraits
+## (tests/capture_kart_portraits.gd) and the tracks' thumbnails (tests/capture_track_thumbs.gd).
+const PORTRAITS := "res://games/kart_race/ui/portraits/%s.png"
+const THUMBS := "res://games/kart_race/ui/tracks/%s.png"
 
 var race: KartRaceLogic
 var gp: KartGrandPrix
@@ -103,19 +109,10 @@ var ftp_w := DEFAULT_FTP
 var sim_time := 0.0  ## seconds simulated this segment
 ## Tests: the rider's input, instead of InputBus.
 var test_input: KartInput = null
-## Whether gameplay opens on the kart and track picker. Headless runs (the unit tests and the
-## scripted sims) start racing at once unless they turn it on.
-var picker_enabled := DisplayServer.get_name() != "headless"
-## The picker's auto-start, seconds (KartPicker.AUTO_SEC; tests shorten it).
-var picker_sec := KartPicker.AUTO_SEC
-## Desktop: how long the last track rebuild after the pick took, ms (0: none).
-var rebuild_ms := 0.0
 
 var _view: SubViewport
 var _status: KartStatus
 var _board: KartRaceBoard
-var _picker: KartPicker
-var _load_frames := 0  ## LOADING: frames left before the build (so the loading card shows first)
 var _kart_hud: KartHud
 var _fx: KartFx
 var _item_views: KartItemViews  # race-systems
@@ -129,7 +126,6 @@ var _flow_left := 0.0
 var _est_lap := 60.0
 var _race_total := 0  ## the races this GP plans (presentation: "Race 2/4"); 0 when open-ended
 var _built_track := ""
-var _last_built := ""  ## `_built_track` before the last `_begin_race`
 var _rider_input := KartInput.new()
 var _input_list := []  ## reused every tick
 ## What the views, the camera and the item views draw: each kart between its last two ticks.
@@ -198,20 +194,50 @@ func info() -> GameInfo:
 	# 1.0×, 3 stars takes podiums and effort. Provisional until the bike.
 	i.star_thresholds = KartScoring.STAR_THRESHOLDS
 	i.options = [
-		# Racers agent: "Juniper the fox".
-		{"key": "driver", "label": "Driver", "choices": KartRoster.ids(), "labels": KartRoster.option_labels(),
-			"default": "fox"},
-		{"key": "assist", "label": "Steering assist", "choices": ["off", "low", "high"],
-			"labels": ["Off", "Low", "High"], "default": "high"},
-		{"key": "camera", "label": "Camera", "choices": ["chase", "close"],
-			"labels": ["Chase", "Close"], "default": "chase"},
-		{"key": "auto_items", "label": "Auto items", "choices": ["off", "on"],
-			"labels": ["Off", "On"], "default": "off"},
-		# The picker's starting track, remembered per rider like the driver.
+		# Picked in the Games hub before Start (spec §7.2): a card per racer, then per track. The
+		# chosen kart wears the rider's name, as it does on the grid.
+		{"key": "driver", "label": "Your kart", "choices": KartRoster.ids(), "labels": KartRoster.option_labels(),
+			"default": "fox", "where": "hub", "kind": "cards", "columns": 4, "rider_badge": true, "cards": kart_cards()},
 		{"key": "track", "label": "Starting track", "choices": KartTracks.CUP, "labels": KartTracks.titles(),
-			"default": KartTracks.CUP[0]},
+			"default": KartTracks.CUP[0], "where": "hub", "kind": "cards", "columns": 4, "cards": track_cards()},
+		{"key": "assist", "label": "Steering assist", "choices": ["off", "low", "high"],
+			"labels": ["Off", "Low", "High"], "default": "high", "kind": "segmented", "group": "More options"},
+		{"key": "camera", "label": "Camera", "choices": ["chase", "close"],
+			"labels": ["Chase", "Close"], "default": "chase", "kind": "segmented", "group": "More options"},
+		{"key": "auto_items", "label": "Auto items", "choices": ["off", "on"],
+			"labels": ["Off", "On"], "default": "off", "kind": "segmented", "group": "More options"},
 	]
 	return i
+
+
+## The hub's kart cards: portrait, name, class ("Light kart"), the kart's colour.
+static func kart_cards() -> Array:
+	var out := []
+	for r in KartRoster.RACERS:
+		out.append({"value": r.id, "title": r.name, "subtitle": "%s kart" % KartRoster.kart_class(r).capitalize(),
+			"image": PORTRAITS % r.id, "accent": r.color})
+	return out
+
+
+## The hub's track cards: thumbnail, title, lap length ("1,148 m").
+static func track_cards() -> Array:
+	var out := []
+	var titles := KartTracks.titles()
+	for i in KartTracks.CUP.size():
+		var id: String = KartTracks.CUP[i]
+		out.append({"value": id, "title": titles[i], "subtitle": "%s m" % thousands(roundi(KartTracks.length_of(id))),
+			"image": THUMBS % id})
+	return out
+
+
+## "1,148" for 1148.
+static func thousands(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
 
 
 func target_text(seg: Dictionary) -> String:
@@ -297,8 +323,8 @@ func _on_prepare(seg: Dictionary) -> void:
 	sim_time = 0.0
 	_acc = 0.0
 	_built_track = ""
-	# The remembered starting track's grid shows behind the intro card and the picker; the
-	# picker's choice rebuilds only when it differs (_on_picked).
+	# The starting track the rider chose in the hub (GameOptions) is the only one built: its
+	# grid shows behind the intro card, then the fly-over and 3-2-1-GO.
 	gp = KartGrandPrix.new(float(seg.get("duration_sec", -1)), KartGrandPrix.cup_from(KartTracks.CUP, option("track")), RACERS)
 	scoring = KartScoring.new()
 	scoring.rider_id = RIDER
@@ -319,10 +345,7 @@ func _on_prepare(seg: Dictionary) -> void:
 
 
 func _on_start() -> void:
-	if picker_enabled:
-		_open_picker()
-	else:
-		_start_countdown()
+	_start_countdown()
 
 
 func _on_option_changed(key: String, _value: String) -> void:
@@ -336,20 +359,10 @@ func _on_option_changed(key: String, _value: String) -> void:
 		"auto_items":  # race-systems
 			if items:
 				items.auto_rider = option("auto_items") == "on"
-		"driver":
-			if flow == Flow.PICK:  # changed on the pause screen over the picker
-				_picker.racer_id = option("driver")
-				_picker._restyle()
-				return
+		"driver":  # hub-only (`where: hub`): only a test or a later pause card changes it here
 			_lineup_dirty = true
 			if playing:
 				_show_message("New driver from the next race", 2.0)
-		"track":
-			if flow == Flow.PICK:
-				_picker.track_id = option("track")
-				_picker._restyle()
-			elif playing:
-				_show_message("New starting track from the next Grand Prix", 2.0)
 
 
 func _on_finish_requested() -> void:
@@ -441,13 +454,6 @@ func _build_hud() -> void:
 	_board = KartRaceBoard.new()
 	_board.portrait_maker = _kart_hud.portrait_rect
 	add_child(_board)
-	if _picker == null:
-		_picker = KartPicker.new()
-		_picker.name = "Picker"
-		_picker.started.connect(_on_picked)
-		_picker.changed.connect(_on_pick_changed)
-		add_child(_picker)
-	_picker.portrait_maker = _kart_hud.portrait_rect
 	race_began.connect(func(r: KartRaceLogic):
 		var key := ",".join(lineup.map(func(x): return str(x.id)))
 		if key != _hud_lineup:
@@ -488,60 +494,6 @@ func _build_fx() -> void:
 		_fx.listen(r.events))
 
 
-# --- The pick (KartPicker) ---
-
-## Gameplay opens on the picker over the still grid: the session clock runs (a warm-up); nothing
-## moves or scores until GO (`_tick` skips PICK and LOADING).
-func _open_picker() -> void:
-	flow = Flow.PICK
-	_picker.open(KartRoster.RACERS, KartTracks.CUP, option("driver"), option("track"), rider_label())
-	_picker.auto_left = picker_sec
-	_status_area(true)  # the camera strip takes the bottom band, under the picker's cards
-	_status.visible = false
-	# The grid holds still behind the picker: the 3D view keeps its last frame.
-	_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
-
-
-## A tap on the picker: remembered at once (the pause screen's options show it), and a new kart
-## toots its horn.
-func _on_pick_changed(racer_id: String, track_id: String) -> void:
-	if racer_id != option("driver") and _audio:
-		AudioDirector.play_sfx(KartSfx.horn(racer_id), -6.0)
-	GameOptions.set_value(declared(), "driver", racer_id)
-	GameOptions.set_value(declared(), "track", track_id)
-
-
-## Start (or the count): remember the pick, and race from the chosen track. A track other than the
-## one built behind the picker builds behind a short loading card, a couple of frames later.
-func _on_picked(racer_id: String, track_id: String) -> void:
-	GameOptions.set_value(declared(), "driver", racer_id)
-	GameOptions.set_value(declared(), "track", track_id)
-	if racer_id != str(lineup[RIDER].id):
-		_lineup_dirty = true
-	# A fresh plan, the chosen track first; the first race is sized to the time left now.
-	gp = KartGrandPrix.new(float(segment.get("duration_sec", -1)), KartGrandPrix.cup_from(KartTracks.CUP, track_id), RACERS)
-	if "%s:%s" % [track_id, false] != _built_track:
-		flow = Flow.LOADING
-		_load_frames = 2
-		_picker.show_loading(KartPicker._track_title(track_id), track_id)
-		return
-	_start_first_race()
-
-
-func _start_first_race() -> void:
-	var t0 := Time.get_ticks_usec()
-	_begin_race()
-	if _built_track != _last_built:
-		rebuild_ms = (Time.get_ticks_usec() - t0) / 1000.0
-		print("OPENRIDE_GAMES kart_race built %s after the pick in %.0f ms" % [current.track_id, rebuild_ms])
-	_picker.close()
-	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_status_area(false)
-	_status.visible = true
-	stats = scoring.stats(gp)
-	_start_countdown()
-
-
 # --- The Grand Prix ---
 
 ## Sets up the next race on its grid (the countdown starts separately).
@@ -559,7 +511,6 @@ func _begin_race() -> void:
 	if _tuned and int(_tuning.get_value("world", "laps", 0)) > 0:  # measuring: short races
 		current.laps = int(_tuning.get_value("world", "laps", 0))
 	var key := "%s:%s" % [current.track_id, current.reversed]
-	_last_built = _built_track
 	if key != _built_track:
 		track = KartTrackModel.new(KartTracks.build(current.track_id), current.reversed)
 		world.build(track)  # keeps the quality trims in force
@@ -866,12 +817,6 @@ func _frame(delta: float) -> void:
 		_apply_quality()
 		var step: Dictionary = quality.steps.back()
 		print("OPENRIDE_GAMES kart_race quality tier=%d (%s) after %.1f fps on %s" % [step.tier, quality.tier_name(), step.fps, track.def.id if track else "-"])
-	if flow == Flow.PICK:
-		_picker.advance(delta)  # may start: _on_picked
-	elif flow == Flow.LOADING:
-		_load_frames -= 1
-		if _load_frames <= 0:
-			_start_first_race()
 	var key := InputBus.is_simulated() and Input.is_key_pressed(KEY_E)
 	_item_edge = _item_edge or (key and not _item_key)
 	_item_key = key
@@ -934,7 +879,7 @@ func _view_size(scale: float) -> Vector2i:
 func _tick(dt: float) -> void:
 	sim_time += dt
 	match flow:
-		Flow.IDLE, Flow.PICK, Flow.LOADING, Flow.DONE:
+		Flow.IDLE, Flow.DONE:
 			return
 		Flow.RESULTS, Flow.PODIUM:
 			_flow_left -= dt
@@ -986,7 +931,7 @@ func _sync_views(delta: float) -> void:
 	var k: KartState = _draw[RIDER]
 	# The countdown fell a tick at the last step; drawn, it falls smoothly.
 	var countdown := race.countdown + TICK * (1.0 - alpha) if race.phase == KartRaceLogic.Phase.COUNTDOWN else race.countdown
-	if flow == Flow.IDLE or flow == Flow.PICK or flow == Flow.LOADING:
+	if flow == Flow.IDLE:
 		camera.flyover(k, 0.0, track)
 	elif flow == Flow.COUNTDOWN and countdown > COUNTDOWN_SEC:
 		camera.flyover(k, 1.0 - (countdown - COUNTDOWN_SEC) / FLYOVER_SEC, track)

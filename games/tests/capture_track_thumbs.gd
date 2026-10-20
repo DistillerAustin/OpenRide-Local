@@ -24,7 +24,6 @@ func _run() -> void:
 		"segments": [{"game_id": "kart_race", "role": "free", "duration_sec": -1}]})
 	await process_frame
 	var game: Node = _director.game
-	game.set("picker_enabled", false)
 	var deadline := Time.get_ticks_msec() + 30000
 	while _director.phase_name() != "PLAYING" and Time.get_ticks_msec() < deadline:
 		await process_frame
