@@ -38,10 +38,12 @@ models listed above (loaded from `games/dodge_ball/models/`, recoloured and bake
 riverside mesh at runtime), its bots are named from plain
 material and animal words, and its music is the repo's own `heave` style.
 | `games/safe_cracker/sfx/*.tres` (5 `SfxPreset` parameter sets: tumbler_click, proximity_tick, soft_alarm, vault_open, door_creak; synth settings, no samples) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| Every shape in `SafePlaces.gd`, `SafeBody.gd` and `SafeDial.gd` (six rooms, the safe, its dial and the gold, drawn in code) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| Every shape in `SafePlaces.gd`, `SafeBackdrop.gd`, `SafeBody.gd`, `SafeDoor.gd` and `SafeDial.gd` (six rooms with their props and key lights, the safe, its door, hardware, dial, vault and gold, drawn in code through `SafeMesh.gd`) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/safe_cracker/safe_door.gdshader`, `safe_rain.gdshader`, `safe_sea.gdshader`, `safe_shimmer.gdshader` (the door's perspective swing, the office rain, the porthole sea, the flasks' shimmer) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
-Safe Cracker (#41) adds no recorded or imported asset: it draws everything in code, uses Godot's
-default font and the repo's own `noir` music style.
+Safe Cracker (#41) adds no recorded or imported asset: it draws everything in code (the dust
+and sparkle dot is a `GradientTexture2D` made at run time), uses the framework's display font and
+the repo's own `noir` music style.
 | `games/cadence_karaoke/sfx/*.tres` (4 `SfxPreset` parameter sets: beat_tick, streak_up, band_exit, ease_off_chime; synth settings, no samples) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `games/cadence_karaoke/shaders/*` (the tunnel grid include and its floor, wall and ceiling wrappers, `cadence_look.gdshaderinc`, ring, orb, orb halo, orb pool, portal and spark shaders) and every mesh in `CadenceWorld.gd` (tunnel, the beat rings' frame mesh, the box, orb, halo, pool, portal card and sparks; shaders, primitive meshes and a mesh built in code, no textures beyond the shared runtime noise) | Written for this repo (#42) | The OpenRide Authors | Apache-2.0, the repo's licence |
 

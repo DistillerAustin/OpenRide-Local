@@ -1,5 +1,8 @@
 # Safe Cracker: graphics polish punch list
 
+> **Status:** every item done on branch `gfx-safe` (2026-10-20) except the cabin's tilt (item 6);
+> the notes under each say how. In play: 51 draw calls with the HUD (86 before).
+
 From the graphics review of 2026-10-19 against `ART_BIBLE.md` (this folder) and Kart Race's
 polish. UI is out of scope (`UI_POLISH.md`: the dial's type, the target plate, the banner), and
 so are gameplay and tuning.
@@ -35,6 +38,10 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
    hold ring, lights and text. Cost: fewer canvas commands rebuilt per reading change (CPU),
    +1 draw at most. Verify: `safe_scene_test` passes unchanged; the captures are identical.
    This makes room for item 2's detail without a per-step cost.
+   **Done** (2026-10-20), further than asked: `SafeDoor` holds the static door; `SafeDial` keeps
+   only the bands, ring, lights and the target's number; the reading's number is its own
+   text-only layer; the numerals are a static layer; the needle is a static drawing turned by
+   `rotation`, so a needle step redraws nothing. Every shape is batched by `SafeMesh`.
 2. **Steel, bevels and hardware** (`SafeBody._draw`, the new `SafeDoor._draw`). Flat fills read as
    a gauge panel. Draw:
    - a top-lit value gradient on the body and the door (a vertical `draw_polygon` with per-vertex
@@ -49,6 +56,8 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
      away from the room's key light (item 3), instead of today's hard offset rect.
    Cost: a few hundred vertices, redrawn only on a place change. Verify: every place capture
    reads as a heavy safe; the layout test still passes.
+   **Done:** all of it, plus a machined groove, recessed light sockets, bolt keepers and the
+   door's dark seam; the shadow is a soft mesh band (not a StyleBox), so it batches with the body.
 3. **One key light per room** (`SafePlaces.draw_room`, `_office`, `_cabin`, `SafeCracker._vignette`).
    The lamp glows are concentric circles that band. Give each place a key light (ART_BIBLE §3:
    position, colour, radius) drawn as one additive `TextureRect` with a smooth radial
@@ -57,6 +66,9 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
    a third full-screen layer costs frames on the bike. Cost: +1 draw, one full-screen additive
    layer: measure. Verify: no banding; each room has a light direction that the safe's shading
    agrees with.
+   **Done, differently:** the pool is a many-ring vertex-colour glow in the room's own batch
+   (`SafeMesh.glow`), not a TextureRect: no extra draw call, no texture, and it fills only the
+   light's area, not the screen. The vignette stays (its curve smoothed, no visible edge).
 4. **The door swings open** (`SafeDial._draw`'s squash transform, `SafeBody._draw`'s vault). Today
    the door squashes horizontally. Draw it as a perspective swing about the hinge: the far edge
    moves toward the hinge and grows taller as it turns toward the viewer, with a 24-30 px
@@ -65,6 +77,10 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
    shelf, gold bars with a lit top face and a front face, and a warm gradient spill out of the
    opening as `door_open` rises. Cost: the same redraw count as today's swing. Verify:
    `safe_door_half.png` and `safe_cracked.png` read as a heavy door opening onto a lit vault.
+   **Done, cheaper than asked:** `safe_door.gdshader` turns every door layer about the hinge in
+   perspective (to 72°, short of edge-on) from one uniform, so the swing redraws nothing; the
+   thickness band is marked by UV depth. Plus a shelf of coin stacks; the capture adds
+   `safe_open.png` (the door all the way open).
 
 ## P1: rooms with a story
 
@@ -75,30 +91,45 @@ full-screen blended layers; the CPU cost is redrawing big `_draw()` lists.
    lines converging toward the safe). Props stay outside the safe's footprint. Cost: redrawn
    only on a place change. Verify: each place capture is recognisable with the safe covering the
    middle.
+   **Done**, plus a certificate (office), deposit boxes and a strip light (bank), wainscot,
+   spotlight cones and a pedestal vase (museum), ribs and a lantern bracket (cabin), wall tiles,
+   a fume hood and fluorescent tubes (lab), a rug and a reading-lamp table (library). The bank
+   fell from 258 draw calls to 50 and the lab from 125 to 51 (with the HUD).
 6. **Slow ambient motion, not redraws.** Rain on the office window (a `canvas_item` shader on
    one `ColorRect`, scrolling streaks from `TIME`), a lantern sway in the cabin (a rotation tween
    on a small Node2D), dust motes in the key light (one `CPUParticles2D`, 16 particles, slow, 3-6
    px, alpha 0.25), a flask shimmer in the lab (a shader on the flasks' rects). Each lives in its
    place and is hidden in the others. Cost: +1-2 draws per place; no per-frame `queue_redraw`.
    Verify: a 10 s look at each place shows gentle life; fps unchanged on the desktop.
+   **Done** (`SafeBackdrop`); the porthole's sea line moves too (a shader). Skipped: the cabin's
+   whole-room tilt (the bible allows it off; a moving room is motion a recovery ride can do
+   without).
 7. **The next light's pulse off the redraw path** (`SafeDial.refresh`'s `pulse` key). The
    breathing outline forces a full dial redraw 6 times a second. Draw that one outline in a tiny
    child node and breathe it with a modulate tween. Cost: a CPU saving. Verify: the
    `safe_tumbler_pop.png` look is unchanged.
+   **Done:** `NextLight`, a looping modulate tween, 1 s each way (never faster than the bible's
+   twice a second).
 
 ## P2: if there is time
 
 8. **Dial glass and bezel** (`SafeDoor`). A soft diagonal glass highlight across the dial face
    (one arc band at 10-15% white, clear of the numerals' centres) and a knurled bezel ring
    (short radial ticks on `R + 24`). Cost: negligible.
+   **Done**, with a glint on the glass while on target (`Cover`).
 9. **Tumbler bolts.** Each clicked tumbler slides one bolt end back on the door's edge (a tween
    on a small node per bolt), so progress shows on the safe itself.
+   **Done:** five bolts in one `Bolts` layer, eased over 0.45 s (a small redraw only while one
+   slides); they slide out again for the next safe.
 10. **Crack sparkle and alarm wash.** 12-20 gold sparkles rising from the vault on a crack (one
     `CPUParticles2D` burst), and a red additive gradient from the room's side while the alarm is
     on (a modulate tween). Cost: +2 draws while active.
+    **Done:** 18 additive sparkles 0.45 s into the swing; the wash breathes with the safe's red.
 11. **Lab accent.** The lab's green accent is close to the reading's on-target green; shift it to
     a brass-teal (`#5CC7B0`) in `PLACES`, or keep it off the dial (the target plate's edge and
     the lights take the accent).
+    **Done**, as `#4FB4C8`: `#5CC7B0` is only 0.18 from GOOD in RGB; `safe_gfx_test` holds the
+    lab's accent more than 0.2 away.
 
 ## Out of scope / rejected
 

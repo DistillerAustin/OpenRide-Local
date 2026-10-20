@@ -1233,8 +1233,8 @@ calls (57 in play on the desktop after the graphics pass, 99-101 before). The in
 A recovery game played with the resistance knob: dial it to each number of a combination and
 hold it there to click a tumbler. `SafeLogic` holds the rules (headless-tested by
 `safe_logic_test`); the picture is 2D shapes drawn in code (`SafePlaces` for the six rooms,
-`SafeBody` and `SafeDial` for the safe), `SafeStatus` is the HUD widget, `SafeBanner` the game's
-callouts and `SafeAudio` the sounds.
+`SafeBackdrop` for their ambient life, `SafeBody`, `SafeDoor` and `SafeDial` for the safe),
+`SafeStatus` is the HUD widget, `SafeBanner` the game's callouts and `SafeAudio` the sounds.
 
 **Look** (`framework/ui/UI_STYLE.md`, punch list `games/safe_cracker/UI_POLISH.md`): a noir heist
 in brass `#E8B04A` and soot `#14110D`, upright (`SafeCracker.look`, a `GameTheme`, also styles
@@ -1245,8 +1245,25 @@ status widget is a "VAULT n" badge, a brass pip per safe cracked and "MAX 120 W"
 in amber). The alarm ("ALARM: EASE OFF", breathing, with the safe glowing red) and "CRACKED!
 +n" (a gold hero) show in `SafeBanner`, a layer under the HUD between its top bar and the safe,
 never in the HUD's centre message, which would cover the dial. `safe_scene_test` checks the
-layout (no overlaps, the needle's sweep, the status budget) and the events. In play: 88 draw
-calls on the desktop (105 before the polish: the dial's text is now two batches).
+layout (no overlaps, the needle's sweep, the status budget) and the events.
+
+**Graphics** (`games/safe_cracker/ART_BIBLE.md`, punch list `GFX_POLISH.md`): one heavy steel
+safe in a pool of light. Every shape goes through `SafeMesh`, which batches a node's shapes into
+one `canvas_item_add_triangle_array` with per-vertex colours and a 1.2 px feather for
+antialiasing. In Compatibility each `draw_circle`, `draw_colored_polygon` or `draw_arc` is a draw
+call of its own (the bank's rivets alone were 168), so a whole room, body or door is one call.
+Each place has one key light (`SafePlaces.PLACES[i].light`): a smooth pool drawn in the room's
+batch, with the safe's steel (`SafePlaces.steel_shade`), bevels and cast shadow agreeing with it.
+The door's layers (`SafeDial` docs) redraw only on a change: the needle is a static drawing turned
+by `rotation`; the reading's number has its own text-only layer; the door swing is a perspective
+turn about the hinge in `safe_door.gdshader` (a uniform; the door's thickness comes from UV
+depth). Ambient life never redraws: rain on the office window and the porthole's sea are
+shaders on one rect each, the cabin's lantern sways on a rotation tween, the lab's flasks shimmer
+in a shader, and 16 dust motes drift in the key light (`CPUParticles2D`). A crack fires 18 gold
+sparkles; the alarm adds a red side wash. `safe_gfx_test` checks the hardware's clearances, the
+batches, that the needle and the swing redraw nothing, and each place's ambient nodes. In play:
+51 draw calls on the desktop with the HUD (86 before the graphics pass; the bank was 258, the
+lab 125).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click
@@ -1273,8 +1290,9 @@ the bike.
 
 **Options** (per rider): Place (random or one fixed place), Target number (show or hide it) and
 Click sounds. Stats: `vaults`, `fastest_crack`, `alarms`, `avg_power`. `tests/capture_safe.gd`
-takes desktop screenshots and, with `--play=SECONDS`, cracks safes with a scripted rider for a
-recording.
+takes desktop screenshots (each with its draw calls; `--nohud` hides the HUD; `--measure=SECONDS`
+prints the desktop frame time, render CPU time and draw calls with vsync off) and, with
+`--play=SECONDS`, cracks safes with a scripted rider for a recording.
 
 ## Cadence Karaoke (#42)
 
