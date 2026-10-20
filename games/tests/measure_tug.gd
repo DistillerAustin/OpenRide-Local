@@ -56,6 +56,15 @@ func _run() -> void:
 		await process_frame
 	game.logic._next_surge = 100000.0
 	await _phase_stats("play", view)
+	if _shot != "":
+		# The screen as the rider sees it (the view scaled up, vignette and all), without the HUD.
+		director.hud.visible = false
+		await process_frame
+		await process_frame
+		var screen := root.get_viewport().get_texture().get_image()
+		screen.resize(screen.get_width() / 2, screen.get_height() / 2)
+		screen.save_png(_shot.replace(".png", "_screen.png"))
+		director.hud.visible = true
 	# GDScript per frame, steady state (the game's own _process stepped by hand).
 	game.set_process(false)
 	var t0 := Time.get_ticks_usec()

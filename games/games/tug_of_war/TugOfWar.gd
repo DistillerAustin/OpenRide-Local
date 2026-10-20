@@ -45,7 +45,7 @@ var world: TugWorld
 
 var _view: SubViewport
 var _status: TugStatus
-var _shown: TextureRect
+var _shown: MeshInstance2D
 var _flash := 0.0  ## 0-1: the lost-round flash
 var _creak_left := 0.0
 var _message_left := 0.0
@@ -141,14 +141,13 @@ func _ready() -> void:
 	_view.audio_listener_enable_3d = false
 	add_child(_view)
 	_view.add_child(world)
-	var shown := TextureRect.new()
+	# The view scaled up to the screen: a grid with the vignette in its vertex colours
+	# (TugMeshes.view_image), one draw like a TextureRect, and no vignette left per pixel.
+	var shown := MeshInstance2D.new()
 	shown.name = "View3DImage"
+	shown.mesh = TugMeshes.view_image(Vector2(HudTheme.W, HudTheme.H))
 	shown.texture = _view.get_texture()
-	shown.size = Vector2(HudTheme.W, HudTheme.H)
-	shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
 	_shown = shown
 

@@ -169,6 +169,22 @@ func test_the_sky_is_drawn_once_into_its_cubemap_and_sampled() -> void:
 	assert_str(code).not_contains("TIME *").not_contains("TIME)")  # TIME would rebuild it every frame
 
 
+func test_the_vignette_is_in_the_view_grid_not_per_pixel() -> void:
+	var inc: String = FileAccess.get_file_as_string(SHADERS + "tug_look.gdshaderinc")
+	assert_str(inc).not_contains("#define LOOK_VIGNETTE")
+	var mesh := TugMeshes.view_image(Vector2(1920, 1080))
+	var a := mesh.surface_get_arrays(0)
+	var verts: PackedVector2Array = a[Mesh.ARRAY_VERTEX]
+	var cols: PackedColorArray = a[Mesh.ARRAY_COLOR]
+	assert_int(verts.size()).is_equal((TugMeshes.VIEW_COLS + 1) * (TugMeshes.VIEW_ROWS + 1))
+	assert_vector(verts[verts.size() - 1]).is_equal(Vector2(1920, 1080))
+	var centre := cols[(TugMeshes.VIEW_ROWS / 2) * (TugMeshes.VIEW_COLS + 1) + TugMeshes.VIEW_COLS / 2]
+	assert_float(centre.r).is_greater(0.99)
+	# The corners are darker and warmer (less blue than red).
+	assert_float(cols[0].r).is_less(0.95)
+	assert_float(cols[0].b).is_less(cols[0].r)
+
+
 func test_prewarm_draws_the_hidden_effects_then_hides_them() -> void:
 	world.update_view(0.0, 0.0, 0.5, "", 80.0)
 	world.prewarm()
