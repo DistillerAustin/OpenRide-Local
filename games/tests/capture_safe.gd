@@ -101,6 +101,8 @@ func _run() -> void:
 	game._handle({"type": "vault_open", "points": 1150.0})
 	await create_timer(0.5).timeout
 	_shot(out, "safe_cracked")
+	await create_timer(1.1).timeout
+	_shot(out, "safe_open")  # the door all the way open, sparkles rising
 	quit()
 
 
