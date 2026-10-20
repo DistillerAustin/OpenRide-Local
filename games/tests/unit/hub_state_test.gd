@@ -62,7 +62,7 @@ func test_bests_read_floats() -> void:
 
 
 func test_the_ride_line() -> void:
-	assert_str(HubState.ride_line(HubState.normalized({}))).is_equal("Pick a game to start your ride")
+	assert_str(HubState.ride_line(HubState.normalized({}))).is_equal("Ride starts with a game")
 	var s := HubState.normalized({"rider": {"id": 1}, "visit": {"ride_sec": 754.0, "plans": [{"game_ids": ["a"]}, {"game_ids": ["b", "c"]}]}})
 	assert_str(HubState.ride_line(s)).is_equal("Ride so far 12:34 · 3 games")
 	assert_str(HubState.ride_line(HubState.normalized({"visit": {"recording": false}}))).is_equal("Not recording: pick a rider in the app")

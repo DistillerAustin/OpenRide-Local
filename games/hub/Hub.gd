@@ -7,6 +7,8 @@ extends Control
 ##   ├ Backdrop (TextureRect: one baked gradient)
 ##   ├ Screens (Control): the top screen of HubNav, built when shown, freed when left
 ##   ├ Waiting (Label): before the visit's first hub_state
+##   ├ Calibration (CalibrationOverlay in hub mode, CanvasLayer 25): built on the first
+##   │   calibration, full screen with Cancel while the hub calibrates
 ##   ├ Dialog (ConfirmDialog, CanvasLayer 35), Toast (CanvasLayer 36)
 ##   └ Saved (CanvasLayer 37): "We saved your ride" after the idle guard, and the exit shade
 ##
@@ -45,6 +47,9 @@ var dialog: ConfirmDialog
 var toast: Toast
 var music: HubMusic
 var queue := BakeQueue.new()
+## Calibrating from the hub (plan phase E): the chip's tap, the permission, the overlay.
+var calibration := HubCalibration.new()
+var calibration_overlay: CalibrationOverlay
 var _screens: Control
 var _waiting: Label
 var _saved_layer: CanvasLayer
@@ -86,7 +91,7 @@ func _ready() -> void:
 	Session.visit_changed.connect(_on_visit_changed)
 	Session.session_started.connect(_on_session_started)
 	Session.director.hub_entered.connect(_on_hub_entered)
-	dialog.visibility_changed.connect(func(): music.set_dialog(dialog.visible))
+	dialog.visibility_changed.connect(_update_duck)
 
 	if not Session.visit_id.is_empty() and Session.visit_id == _saved_visit:
 		nav.restore(_saved_stack)
@@ -108,6 +113,8 @@ func _exit_tree() -> void:
 func back() -> void:
 	if dialog.visible:
 		dialog.close()
+	elif calibration.running():
+		cancel_calibration()
 	elif _saved_layer.visible:
 		pass
 	elif screen and screen.handle_back():
@@ -132,6 +139,7 @@ func _apply_state(raw: Dictionary) -> void:
 	state = HubState.normalized(raw)
 	_waiting.visible = false
 	music.apply_audio(state.audio)
+	_calibration_state()
 	if _idle_saved or _exiting:
 		return
 	if first or screen == null:
@@ -146,6 +154,10 @@ func _on_visit_changed(_id: String) -> void:
 	_exiting = false
 	_idle_saved = false
 	_saved_layer.visible = false
+	if calibration.running():
+		calibration.cancel()
+		_close_calibration()
+	calibration = HubCalibration.new()
 	nav.restore([])
 	if not state.is_empty():
 		_show_top()
@@ -180,6 +192,7 @@ func _show_top() -> void:
 	screen.confirm_requested.connect(_confirm)
 	if screen is HomeScreen:
 		(screen as HomeScreen).camera_explain.connect(_explain_camera)
+		(screen as HomeScreen).calibrate_requested.connect(calibrate)
 	if screen is SettingsScreen:
 		(screen as SettingsScreen).volume_preview.connect(music.preview_volume)
 	# No fade: the bakes draw premultiplied (a faded parent would brighten them), and each
@@ -253,6 +266,86 @@ func _confirm(heading: String, text: String, keep_text: String, act_text: String
 	_disconnect_dialog()
 	dialog.ask(heading, text, keep_text, act_text, act_kind)
 	dialog.confirmed.connect(on_confirm, CONNECT_ONE_SHOT)
+
+
+# --- Calibration (spec §6) ---
+
+## The camera chip: calibrate (centre only with today's extremes), recalibrate once the visit
+## is calibrated, or first ask for the permission, or explain what's in the way.
+func calibrate() -> void:
+	match calibration.tap(state, Time.get_ticks_msec()):
+		"calibrate":
+			_begin_calibration()
+		"ask":
+			toast.show_text("Allow the camera when Android asks", 3.0)
+			Session.request_camera_permission()
+		"camera_off":
+			_disconnect_dialog()
+			dialog.ask("Camera games are off", "Turn them on to steer by leaning, then calibrate.", "Not now",
+				"Turn them on", GameTheme.PRIMARY)
+			dialog.confirmed.connect(func(): Session.update_setting("camera_games", true), CONNECT_ONE_SHOT)
+		"denied":
+			_disconnect_dialog()
+			dialog.ask("Camera not allowed", "Allow the camera for OpenRide in Android's settings, then come back.", "OK", "")
+
+
+func cancel_calibration() -> void:
+	if not calibration.running():
+		return
+	calibration.cancel()
+	Session.cancel_calibration()
+	_close_calibration()
+	toast.show_text("Calibration cancelled", 2.0)
+
+
+## Whether the hub's calibration overlay is up (for tests).
+func calibrating() -> bool:
+	return calibration.running()
+
+
+func _begin_calibration() -> void:
+	if calibration_overlay == null:
+		calibration_overlay = CalibrationOverlay.new()
+		calibration_overlay.name = "Calibration"
+		calibration_overlay.use_hub_mode()
+		calibration_overlay.cancel_pressed.connect(cancel_calibration)
+		add_child(calibration_overlay)
+	calibration_overlay.begin_hub()
+	_update_duck()
+	Session.hub_calibrate(HubCalibration.MODE, calibration.full)
+
+
+func _close_calibration() -> void:
+	if calibration_overlay:
+		calibration_overlay.end_hub()
+	_update_duck()
+
+
+## A hub_state: did the permission come, or the hub's calibration end? One that can't tell yet
+## (too soon after the start, or the tracker's state not polled since) is looked at once more
+## shortly: Kotlin may send no other.
+func _calibration_state(again := false) -> void:
+	if calibration.running() and not again and (Time.get_ticks_msec() - calibration.started_msec < HubCalibration.MIN_RUN_MSEC
+			or InputBus.tracker_state == InputBus.TRACKER_CALIBRATING):
+		get_tree().create_timer(0.4).timeout.connect(_calibration_state.bind(true), CONNECT_ONE_SHOT)
+		return
+	match calibration.on_state(state, InputBus.tracker_state, Time.get_ticks_msec()):
+		"calibrate":
+			_begin_calibration()
+		"refused":
+			toast.show_text("The camera isn't allowed: camera games stay off", 3.0, GameTheme.WARN.darkened(0.35))
+		"done":
+			_close_calibration()
+			toast.show_text("Camera ready: every camera game uses it", 3.0, GameTheme.GOOD.darkened(0.45))
+			music.duck_moment(1.0)
+		"failed":
+			_close_calibration()
+			toast.show_text("Couldn't see you: face the screen in good light, then try again", 4.0, GameTheme.WARN.darkened(0.35))
+
+
+## The hub's music ducks under a dialog and under the calibration (spec §8.5).
+func _update_duck() -> void:
+	music.set_dialog(dialog.visible or calibration.running())
 
 
 func _disconnect_dialog() -> void:

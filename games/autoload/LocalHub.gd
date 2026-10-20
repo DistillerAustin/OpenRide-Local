@@ -102,7 +102,7 @@ func state() -> Dictionary:
 		"settings": settings.duplicate(),
 		"audio": audio(),
 		"camera": {"permission": permission, "available": camera_available(), "calibrated": calibrated,
-			"same_day_extremes": false},
+			"same_day_extremes": _local.has_extremes("lean_x")},
 		"catalog": catalog(),
 		"circuits": circuits(),
 		"bests": {"games": game_bests.values(), "plans": _plan_best_rows()},
@@ -325,13 +325,27 @@ func update_setting(key: String, value: Variant) -> void:
 	send_state()
 
 
-## Hub calibration is plan phase E; the desktop records the call only.
-func hub_calibrate(_mode: String, _full: bool) -> void:
+## As TrackerLink.hubCalibrate: the camera on, a scripted calibration (centre only with
+## "same-day" extremes unless `full`), the camera off at its end, then hub_state.
+func hub_calibrate(mode: String, full: bool) -> void:
 	_touch()
+	if phase != "hub" or permission != "granted" or not bool(settings.camera_games):
+		return
+	_local.start_hub_calibration(mode, full)
 
 
 func cancel_calibration() -> void:
 	_touch()
+	if _local.cancel_hub_calibration():
+		send_state()
+
+
+## LocalSession's hub calibration ended: the visit is calibrated (the camera works again).
+func hub_calibration_ended(mode: String) -> void:
+	if calibrated != "lean_2d":
+		calibrated = mode
+	camera_failed = false
+	send_state()
 
 
 ## The desktop has no permission prompt: it grants at once.

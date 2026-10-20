@@ -12,6 +12,7 @@ extends HubScreen
 ##   └ Circuits: heading, HBox of HubCard: the presets, My circuits, Build your own
 
 signal camera_explain(game_id: String)  ## a dimmed card was tapped
+signal calibrate_requested  ## the header's camera chip (calibrate, recalibrate, or allow)
 
 const NUDGE_SIZE := Vector2(1400, 104)
 
@@ -26,6 +27,7 @@ func build() -> void:
 	header = HubHeader.new(queue)
 	header.settings_pressed.connect(func(): open.emit(HubNav.SETTINGS, {}))
 	header.exit_pressed.connect(func(): exit_requested.emit())
+	header.camera_pressed.connect(func(): calibrate_requested.emit())
 	add_child(header)
 	header.set_state(state)
 	_column = VBoxContainer.new()

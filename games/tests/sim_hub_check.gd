@@ -7,7 +7,8 @@ extends SceneTree
 ## result shows on Kart Race's card → the 20 min circuit → Start → End mid-way → back to the hub
 ## (calibrated once for the whole visit) → a custom circuit built, saved as My circuit 1 and played
 ## to its end (its best on its card) → Settings (music off) → Exit games → confirm →
-## exit_hub("app") → visit_ended → a new visit. Prints PASS or FAIL and exits non-zero on failure.
+## exit_hub("app") → visit_ended → a new visit → calibrate from the camera chip → Dodge Ball starts
+## without calibrating again. Prints PASS or FAIL and exits non-zero on failure.
 
 const SPEED := 4.0
 
@@ -170,6 +171,28 @@ func _run() -> void:
 	await _until(func(): return _session.visit_id != first_visit, 10.0, "a new visit starts (re-entry)")
 	await _frames(5)
 	_expect(hub.nav.top_id() == "home" and not hub._saved_layer.visible, "the new visit opens home")
+
+	# The new visit: calibrate from the hub, then a camera game starts with no calibration.
+	hub = current_scene
+	hub.screen.header.camera_card.hit.pressed.emit()
+	await _frames(3)
+	_expect(hub.calibrating() and hub.calibration_overlay.visible, "the camera chip calibrates in the hub")
+	_expect(_local.hub_calls.back() == ["hub_calibrate", "lean_x", false], "a first calibration isn't a full one")
+	await _until(func(): return not hub.calibrating(), 30.0, "the hub's calibration ends")
+	_expect(str(hub.state.camera.calibrated) == "lean_x", "hub_state says the visit is calibrated")
+	_expect(hub.screen.header.camera_label.text == "Recalibrate", "the chip offers Recalibrate")
+	var before_game: int = _local.calibrations_started
+	hub.screen.game_cards["dodge_ball"].hit.pressed.emit()
+	await _frames(3)
+	hub.screen.start_button.pressed.emit()
+	await _until(func(): return _director.phase_name() == "PLAYING", 30.0, "Dodge Ball starts")
+	_expect(_local.calibrations_started == before_game, "the camera game didn't calibrate again")
+	_expect(str(_session.plan.calibrated) == "lean_x", "the plan carries the hub's calibration")
+	_expect(not _director.calibration.visible, "no calibration screen in the game")
+	_director.pause_overlay.end_confirmed.emit()
+	await _until(func(): return not _session.active and _director.summary_screen.visible, 30.0, "Dodge Ball ends")
+	_director.summary_screen.done_button.pressed.emit()
+	await _frames(10)
 
 	Engine.time_scale = 1.0
 	if _failures.is_empty():

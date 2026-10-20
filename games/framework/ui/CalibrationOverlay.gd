@@ -27,6 +27,8 @@ extends CanvasLayer
 ##   strip: PanelContainer > HBox: camera icon, what to do, "TAP TO RETRY"
 
 signal recalibrate_requested
+## Hub mode only: the rider tapped Cancel.
+signal cancel_pressed
 
 const LAYER := 25
 const STRIP_HEIGHT := 80.0
@@ -60,6 +62,13 @@ const ARROWS := {"left": Vector2.LEFT, "right": Vector2.RIGHT, "in": Vector2.UP,
 
 ## Set by Session: whether the game on screen uses the camera.
 var camera_game := false
+## The Games hub's calibration (plan phase E, `use_hub_mode`): full screen while the hub's
+## calibration runs (`begin_hub` .. `end_hub`), with Cancel; no strips, no "tap to calibrate",
+## and no processing at all while idle.
+var hub_mode := false
+var cancel_button: Button
+var _hub_running := false
+var _hub_since_msec := 0
 var mode := ""  ## "", "calibrating", "needs", "lost" or "unavailable": what is showing
 ## The look on screen: the game's, or the house look.
 var theme: GameTheme
@@ -204,6 +213,44 @@ func apply_theme(new_theme: GameTheme) -> void:
 		_style_strip()
 
 
+## Turns this overlay into the hub's: a Cancel button under the figure, and idle until
+## `begin_hub`.
+func use_hub_mode() -> void:
+	hub_mode = true
+	cancel_button = theme.button("Cancel", func(): cancel_pressed.emit(), GameTheme.SECONDARY)
+	cancel_button.name = "Cancel"
+	cancel_button.custom_minimum_size = Vector2(320, 120)
+	cancel_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_tap_pill.get_parent().add_child(cancel_button)
+	_card.size = Vector2(CARD_SIZE.x, CARD_SIZE.y + 120)
+	_card.position = (Vector2(HudTheme.W, HudTheme.H) - _card.size) / 2
+	set_process(false)
+	_show("")
+
+
+## The hub's calibration started: show it (progress older than now is the last game's).
+func begin_hub() -> void:
+	_hub_running = true
+	_hub_since_msec = Time.get_ticks_msec()
+	_shown = false
+	_show("calibrating")
+	_detail.text = "CAMERA"
+	_dots.set_steps(0, 0, false)
+	_prompt.text = "Starting the camera…"
+	_count.text = ""
+	_count.visible = false
+	_retry.text = "Sit centred and look at the screen"
+	_set_retry_colour(GameTheme.MUTED)
+	_figure.show_pose("centre", 0.0, false)
+	set_process(true)
+
+
+func end_hub() -> void:
+	_hub_running = false
+	_show("")
+	set_process(false)
+
+
 func _process(_delta: float) -> void:
 	_show(_mode_now())
 	_place_strip()
@@ -213,6 +260,8 @@ func _process(_delta: float) -> void:
 
 ## What to show for the tracker's state and the latest progress.
 func _mode_now() -> String:
+	if hub_mode:
+		return "calibrating" if _hub_running else ""
 	if not camera_game or not Session.active:
 		return ""
 	var progress: Dictionary = Session.calibration
@@ -255,7 +304,7 @@ func _show(new_mode: String) -> void:
 	mode = new_mode
 	visible = not mode.is_empty()
 	_full.visible = mode == "calibrating" or mode == "needs"
-	_strip.visible = mode == "lost" or mode == "unavailable"
+	_strip.visible = not hub_mode and (mode == "lost" or mode == "unavailable")
 	_tap_pill.visible = mode == "needs"
 	GameTheme.pulse(_tap_pill, false)
 	if mode != "calibrating":
@@ -299,7 +348,7 @@ func _style_strip() -> void:
 
 ## Draws the latest calibration_progress (Session.calibration).
 func _update_progress(progress: Dictionary) -> void:
-	if progress.is_empty():
+	if progress.is_empty() or (hub_mode and int(progress.get("at_msec", 0)) < _hub_since_msec):
 		return  # tracker_state is 2 but the first progress hasn't arrived yet
 	var step: String = progress.step
 	var attempt := int(progress.attempt)

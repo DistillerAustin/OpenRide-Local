@@ -53,6 +53,8 @@ var _extremes := {}  # modes with "same-day" extremes: lean_x, lean_2d (kept acr
 var _calibration_mode := ""
 ## Calibrations started since launch, automatic or requested (for tests: one per session start).
 var calibrations_started := 0
+## A hub calibration is running (LocalHub's hub_calibrate): the camera goes off at its end.
+var hub_calibrating := false
 ## The hub's v1.1 calls, recorded as [method, args…] (for tests), then played by `hub`.
 var hub_calls: Array = []
 ## The desktop's stand-in for Kotlin's visit (GameVisitManager).
@@ -166,6 +168,29 @@ func exit_hub(next: String) -> void:
 func hub_activity() -> void:
 	hub_calls.append(["hub_activity"])
 	hub.hub_activity()
+
+
+## The hub's calibration (TrackerLink.hubCalibrate): the camera on in `mode`, then every step if
+## `full`, else the centre only with "same-day" extremes. LocalHub hears when it ends.
+func start_hub_calibration(mode: String, full: bool) -> void:
+	_tracker_mode = mode
+	hub_calibrating = true
+	_start_calibration(mode, full)
+
+
+## Stops a hub calibration (the camera off); true if one was running.
+func cancel_hub_calibration() -> bool:
+	if not hub_calibrating:
+		return false
+	hub_calibrating = false
+	_calibration_steps = []
+	_tracker_mode = "off"
+	return true
+
+
+## Whether this process holds "same-day" extremes covering `mode`.
+func has_extremes(mode: String) -> bool:
+	return _extremes.has(mode)
 
 
 ## The calibration this process's session holds now: "" (none), "lean_x" or "lean_2d".
@@ -401,6 +426,10 @@ func _calibrate(delta: float) -> void:
 			_extremes[_calibration_mode] = true
 			if _calibration_mode == "lean_2d":
 				_extremes["lean_x"] = true
+		if _calibration_steps.is_empty() and hub_calibrating:
+			hub_calibrating = false
+			_tracker_mode = "off"
+			hub.hub_calibration_ended(_calibration_mode)
 
 
 func _zero_result() -> Dictionary:

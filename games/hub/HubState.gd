@@ -114,7 +114,7 @@ static func ride_line(state: Dictionary) -> String:
 		return "Not recording: another ride is running"
 	var plans: Array = state.visit.plans
 	if plans.is_empty():
-		return "Pick a game to start your ride"
+		return "Ride starts with a game"
 	var games := 0
 	for p in plans:
 		games += (p.get("game_ids", []) as Array).size()

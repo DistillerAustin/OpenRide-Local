@@ -10,13 +10,13 @@ extends Control
 
 signal settings_pressed
 signal exit_pressed
-## The camera chip was tapped (plan phase E hosts the calibration here; until then the chip
-## only shows the state and this is not emitted).
+## The camera chip was tapped: the hub calibrates, recalibrates, asks for the permission or
+## explains (plan phase E).
 signal camera_pressed
 
-const RIDER_SIZE := Vector2(620, 120)
+const RIDER_SIZE := Vector2(560, 120)
 const METRICS_SIZE := Vector2(380, 104)
-const CAMERA_SIZE := Vector2(280, 104)
+const CAMERA_SIZE := Vector2(330, HubTheme.TARGET)
 const EXIT_SIZE := Vector2(300, HubTheme.TARGET)
 const METRICS_SEC := 0.5
 
@@ -25,6 +25,7 @@ var name_label: Label
 var ride_label: Label
 var metrics_label: Label
 var camera_label: Label
+var camera_card: HubCard
 var camera_dot: Panel
 var camera_caption: Label
 var settings_button: Button
@@ -84,9 +85,12 @@ func _init(queue: BakeQueue = null) -> void:
 	metrics.add_child(metrics_label)
 	_add_bake(row, metrics, METRICS_SIZE)
 
-	# The camera's state (a chip; a button from plan phase E).
+	# The camera: its state on top, what a tap does under it ("Calibrate", "Recalibrate").
 	var camera := PanelContainer.new()
-	camera.add_theme_stylebox_override("panel", HubTheme.look().panel_style(Color(HubTheme.look().ink, 0.7), 0.0, 22))
+	var cstyle := HubTheme.look().panel_style(Color(HubTheme.look().ink, 0.85), 0.0, 22)
+	cstyle.border_color = HubTheme.look().accent  # a pill's edge: it's a button
+	cstyle.set_border_width_all(4)
+	camera.add_theme_stylebox_override("panel", cstyle)
 	var crow := HBoxContainer.new()
 	crow.add_theme_constant_override("separation", 14)
 	crow.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -107,7 +111,10 @@ func _init(queue: BakeQueue = null) -> void:
 	words.add_child(camera_caption)
 	camera_label = HubTheme.label("", HudTheme.SMALL, GameTheme.INK, true)
 	words.add_child(camera_label)
-	_add_bake(row, camera, CAMERA_SIZE)
+	camera_card = _add_bake(row, camera, CAMERA_SIZE, true)
+	camera_card.name = "Camera"
+	camera_card.hit.name = "Camera"
+	camera_card.pressed.connect(func(): camera_pressed.emit())
 
 	settings_button = GearButton.new()
 	settings_button.pressed.connect(func(): settings_pressed.emit())
@@ -138,25 +145,27 @@ func set_state(state: Dictionary) -> void:
 	ride_label.text = HubState.ride_line(state)
 	var chip := camera_chip(state)
 	camera_label.text = chip.text
+	camera_caption.text = chip.caption
 	(camera_dot.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = chip.color
 	camera_dot.queue_redraw()
 
 
-## The camera chip's word and colour (never colour alone: the word says it).
+## The camera chip: its state (the caption), what a tap does (the text) and the dot's colour
+## (never colour alone: the words say it).
 static func camera_chip(state: Dictionary) -> Dictionary:
 	var cam: Dictionary = state.camera
 	if not bool(state.settings.get("camera_games", true)):
-		return {"text": "Off", "color": GameTheme.MUTED}
+		return {"caption": "CAMERA OFF", "text": "Turn on", "color": GameTheme.MUTED}
 	match str(cam.get("permission", "granted")):
 		"denied":
-			return {"text": "Not allowed", "color": GameTheme.WARN}
+			return {"caption": "NOT ALLOWED", "text": "How to allow", "color": GameTheme.WARN}
 		"ask":
-			return {"text": "Ask first", "color": GameTheme.WARN}
+			return {"caption": "CAMERA", "text": "Allow", "color": GameTheme.WARN}
 	if not bool(cam.get("available", true)):
-		return {"text": "Unavailable", "color": GameTheme.WARN}
+		return {"caption": "CAN'T SEE YOU", "text": "Try again", "color": GameTheme.WARN}
 	if not str(cam.get("calibrated", "")).is_empty():
-		return {"text": "Ready", "color": GameTheme.GOOD}
-	return {"text": "On", "color": GameTheme.GOOD}
+		return {"caption": "CAMERA READY", "text": "Recalibrate", "color": GameTheme.GOOD}
+	return {"caption": "CAMERA", "text": "Calibrate", "color": GameTheme.TARGET}
 
 
 ## "88 rpm · 142 W" from the input frame, changed only when the numbers change.
@@ -173,11 +182,12 @@ static func metrics_text(cadence: float, power: float) -> String:
 
 ## Every touch target in the header (for the layout test).
 func targets() -> Array[Control]:
-	return [settings_button, exit_button]
+	return [camera_card.hit, settings_button, exit_button]
 
 
-func _add_bake(parent: Control, content: Control, bake_size: Vector2) -> void:
-	var card := HubCard.new(content, bake_size, null, false)
+func _add_bake(parent: Control, content: Control, bake_size: Vector2, interactive := false) -> HubCard:
+	var card := HubCard.new(content, bake_size, null, interactive)
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	parent.add_child(card)
 	bakes.append(card)
+	return card
