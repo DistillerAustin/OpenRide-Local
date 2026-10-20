@@ -11,11 +11,13 @@ extends SceneTree
 ##   MEASURE tug frame_cpu  GDScript per frame: `_on_frame` (logic, world, status) in µs.
 ## The desktop GPU is 30-50 times the tablet's and barely notices most parts even at --scale=4
 ## (they land inside the noise): read the shares, not the absolute numbers. --shot=FILE.png saves
-## the intro's and the scaled view (FILE_intro.png, FILE.png); keep captures small.
+## the intro's and the scaled view (FILE_intro.png, FILE.png); keep captures small. --scene=night
+## (dawn, day, dusk) picks the lighting.
 
 var _frames := 120
 var _scale := 3.0
 var _shot := ""
+var _scene := ""
 
 
 func _initialize() -> void:
@@ -26,6 +28,8 @@ func _run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--frames="):
 			_frames = int(arg.get_slice("=", 1))
+		elif arg.begins_with("--scene="):
+			_scene = arg.get_slice("=", 1)
 		elif arg.begins_with("--shot="):
 			_shot = arg.get_slice("=", 1)
 		elif arg.begins_with("--scale="):
@@ -40,6 +44,8 @@ func _run() -> void:
 		await process_frame
 	var game: Node = director.game
 	var view: SubViewport = game.get_node("View3D")
+	if _scene != "":
+		game.change_option("scene", _scene)
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(view.get_viewport_rid(), true)
 	await _phase_stats("intro", view)

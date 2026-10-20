@@ -324,12 +324,16 @@ func _build_environment() -> void:
 	_sky_mat.set_shader_parameter("star_tex", WorldLook.noise_texture())
 	var sky := Sky.new()
 	sky.sky_material = _sky_mat
-	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	# The sky is drawn once into its radiance cubemap (when the time of day changes) and the
+	# background samples it (sky.gdshader). 256 a face keeps the disc, clouds and stars sharp at
+	# the view's 0.1° a pixel. The cubemap is only kept up to date while the sky is a reflection
+	# source; no material reads it (they're all unshaded).
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	# Everything lights itself (unshaded): no engine ambient, reflections or fog to pay for.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.fog_enabled = false
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	_env.environment = env

@@ -159,6 +159,16 @@ func test_the_crowd_sprite_has_two_frames_arms_up_in_the_second() -> void:
 	assert_int(up[1]).is_greater(0)
 
 
+func test_the_sky_is_drawn_once_into_its_cubemap_and_sampled() -> void:
+	var env: Environment = world._env.environment
+	# The cubemap is only kept up to date while the sky is a reflection source.
+	assert_int(env.reflected_light_source).is_equal(Environment.REFLECTION_SOURCE_SKY)
+	assert_int(env.sky.radiance_size).is_greater_equal(Sky.RADIANCE_SIZE_256)
+	var code: String = (load(SHADERS + "sky.gdshader") as Shader).code
+	assert_str(code).contains("AT_CUBEMAP_PASS").contains("texture(RADIANCE, EYEDIR)")
+	assert_str(code).not_contains("TIME *").not_contains("TIME)")  # TIME would rebuild it every frame
+
+
 func test_prewarm_draws_the_hidden_effects_then_hides_them() -> void:
 	world.update_view(0.0, 0.0, 0.5, "", 80.0)
 	world.prewarm()
