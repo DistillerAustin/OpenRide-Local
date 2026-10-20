@@ -3,6 +3,8 @@ extends SceneTree
 ##   $GODOT_BIN --path games --write-movie FILE.avi --fixed-fps 30 -s res://tests/capture_cadence.gd -- --play=45 --out=DIR
 ## A scripted rider follows the target with a little wobble, drifts off it for a while, then asks
 ## for a faster pace, so the clip shows the band, the streak, the ease-off and a pace change.
+## --nohud hides the HUD (the graphics review's stills). --looks=cyan,green,violet,pink instead
+## saves one still per tunnel colour (`cad_look_<name>.png`), 3 s into riding on the target.
 
 var _session: Node
 var _director: Node
@@ -16,6 +18,8 @@ func _run() -> void:
 	var out := "user://captures"
 	var play_sec := 45.0
 	var role := "free"
+	var hud := true
+	var looks: PackedStringArray = []
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			out = arg.get_slice("=", 1)
@@ -23,6 +27,10 @@ func _run() -> void:
 			play_sec = float(arg.get_slice("=", 1))
 		elif arg.begins_with("--role="):
 			role = arg.get_slice("=", 1)
+		elif arg == "--nohud":
+			hud = false
+		elif arg.begins_with("--looks="):
+			looks = arg.get_slice("=", 1).split(",")
 	DirAccess.make_dir_recursive_absolute(out)
 	_session = root.get_node("Session")
 	_director = _session.director
@@ -39,8 +47,18 @@ func _run() -> void:
 		quit(1)
 		return
 	var game: Node = _director.game
+	_director.hud.visible = hud
 	game.change_option("look", "auto")
 	var bus: Node = root.get_node("InputBus")
+	for look in looks:
+		game.change_option("look", look)
+		for frame in 90:
+			await process_frame
+		root.get_viewport().get_texture().get_image().save_png("%s/cad_look_%s.png" % [out, look])
+		print("CAPTURE %s/cad_look_%s.png fps=%d" % [out, look, Engine.get_frames_per_second()])
+	if not looks.is_empty():
+		quit()
+		return
 	var held := 0
 	var shots := {90: "a", 270: "b", 600: "c", 900: "d", 1200: "e"}
 	for frame in roundi(play_sec * 30.0):

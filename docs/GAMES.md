@@ -579,6 +579,27 @@ text, panel, badge and card styles, buttons, a HUD skin, and `pop` / `slam` / `f
   calibration step and strip, and the summary in its shapes (one game, a new best, no stars, a
   circuit, one ended early, a long one, Kart Race's house look).
 
+### World look (3D)
+
+The 3D games light their worlds by hand: every world surface is `unshaded, fog_disabled` (the
+engine's per-pixel light and fog cost the tablet about a third of its frame), and the colour
+grade is folded into each material (a full-screen pass cost about 5 fps). The shared pieces,
+generalised from Kart Race (which keeps its own `light.gdshaderinc`):
+
+- `framework/shaders/world_look.gdshaderinc`: the uniforms `sun_dir`, `sun_color`, `sky_color`,
+  `ground_color`, `haze_color`, `haze_density`, `haze_max` and `noise_tex`, and `vnoise(p)`,
+  `hemi(n)`, `sun_light(n)` (hemisphere plus Lambert sun; call it per vertex for scenery),
+  `haze(col, dist)` and `grade(col, SCREEN_UV)`. Each game sets its own grade with
+  `#define LOOK_SAT`, `LOOK_CONTRAST`, `LOOK_GAIN`, `LOOK_LIFT`, `LOOK_VIGNETTE` and
+  `LOOK_VIGNETTE_TINT` before the `#include`; with none defined the grade is a no-op.
+- `WorldLook` (`framework/WorldLook.gd`): `apply(materials, look)` sets those uniforms on a
+  list of materials from one Dictionary (unknown keys are ignored, so a time-of-day table can go
+  straight in), `sun_dir(elevation, azimuth)` in the time-of-day presets' convention, and
+  `noise_texture()`, the same 64×64 noise as Dodge Ball's.
+- `world_look_test` compiles the include with and without a game's defines.
+
+Each game's look is in its `ART_BIBLE.md`, and the planned graphics work in its `GFX_POLISH.md`.
+
 ### Calibration UI
 
 `CalibrationOverlay` shows only in camera games, in the game's look:
