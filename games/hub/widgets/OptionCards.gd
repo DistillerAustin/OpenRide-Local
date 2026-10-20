@@ -24,7 +24,8 @@ extends VBoxContainer
 
 signal changed(key: String, value: String)
 
-## The picture slot's height, as a share of its width (a 16:9 thumbnail is cropped a little).
+## The picture slot's height, as a share of its width (a 16:9 thumbnail is cropped a little);
+## an option may set its own (`slot_aspect`: the builder's flatter game tiles).
 const SLOT_ASPECT := 0.5
 const TITLE_H := 54.0
 const SUBTITLE_H := 40.0
@@ -83,13 +84,18 @@ static func columns_of(option: Dictionary) -> int:
 static func size_for(option: Dictionary, width: float) -> Vector2:
 	var cols := columns_of(option)
 	var w := floorf((width - HubTheme.GAP * (cols - 1)) / cols)
-	return Vector2(w, HubTheme.PICTURE_INSET + slot_size(w).y + TITLE_H + SUBTITLE_H + BOTTOM)
+	return Vector2(w, HubTheme.PICTURE_INSET + slot_size(w, aspect_of(option)).y + TITLE_H + SUBTITLE_H + BOTTOM)
+
+
+## The picture slot's height as a share of its width: the option's `slot_aspect`, or SLOT_ASPECT.
+static func aspect_of(option: Dictionary) -> float:
+	return float(option.get("slot_aspect", SLOT_ASPECT))
 
 
 ## The picture slot of a card `card_width` wide: inset evenly by PICTURE_INSET.
-static func slot_size(card_width: float) -> Vector2:
+static func slot_size(card_width: float, aspect := SLOT_ASPECT) -> Vector2:
 	var inner := card_width - 2.0 * HubTheme.PICTURE_INSET
-	return Vector2(inner, roundf(inner * SLOT_ASPECT))
+	return Vector2(inner, roundf(inner * aspect))
 
 
 ## The mask radius for a card's picture: concentric with the card's outline.
@@ -113,6 +119,13 @@ func pick(v: String) -> void:
 	changed.emit(key, v)
 
 
+## No card chosen (the builder's game tiles are actions, not a pick: each tap adds a game).
+func clear_pick() -> void:
+	var old := value
+	value = ""
+	_restyle([old])
+
+
 ## The picture node of a card (for tests): a TextureRect with the rounded mask.
 func picture(v: String) -> TextureRect:
 	return _parts[v].picture
@@ -131,7 +144,7 @@ func _card(v: String) -> Control:
 	box.add_theme_constant_override("separation", 0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(box)
-	var slot_rect := slot_size(card_size.x)
+	var slot_rect := slot_size(card_size.x, aspect_of(spec))
 	var slot := Control.new()
 	slot.name = "Slot"
 	slot.custom_minimum_size = slot_rect

@@ -129,3 +129,13 @@ static func short_name(profile_name: String) -> String:
 	if n.length() > NAME_MAX:
 		n = n.left(NAME_MAX - 1).strip_edges() + "…"
 	return n
+
+
+## A game's title for a slot `width` wide: its full title, or its short name ("Cadence") when
+## the full one doesn't fit even at SMALL.
+static func fit_title(game_id: String, width: float) -> String:
+	var info := GameRegistry.info(game_id)
+	var full: String = info.title if info else game_id.capitalize()
+	if GameTheme.display_font().get_string_size(full, HORIZONTAL_ALIGNMENT_LEFT, -1, SMALL).x <= width:
+		return full
+	return LineupStrip.SHORT.get(game_id, full)

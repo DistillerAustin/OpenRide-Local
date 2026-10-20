@@ -14,6 +14,8 @@ const HOME := "home"
 const GAME := "game"
 const CIRCUIT := "circuit"
 const SETTINGS := "settings"
+const MY_CIRCUITS := "my_circuits"
+const BUILDER := "builder"
 
 var _stack: Array = [{"id": HOME, "args": {}}]
 

@@ -11,6 +11,8 @@ signal exit_requested  ## Exit games (the hub confirms first)
 signal set_ftp_requested  ## the FTP nudge (the hub confirms first)
 signal setting(key: String, value: Variant)  ## an app setting (update_setting)
 signal notice(text: String)  ## a one-line message (a toast)
+## A confirmation (the hub's ConfirmDialog): `on_confirm` runs when the rider confirms.
+signal confirm_requested(heading: String, text: String, keep_text: String, act_text: String, act_kind: String, on_confirm: Callable)
 
 ## The normalized hub_state (HubState.normalized).
 var state: Dictionary = {}
@@ -49,6 +51,11 @@ func handle_back() -> bool:
 	return false
 
 
+## The top bar's Back: leaves the screen (a screen with unsaved work asks first).
+func back_pressed() -> void:
+	back.emit()
+
+
 ## A Start was answered (session_started, or plan_rejected): Start may be pressed again.
 func start_answered() -> void:
 	pass
@@ -77,7 +84,7 @@ func top_bar(title: String, look: GameTheme = null) -> HBoxContainer:
 	row.size = Vector2(HubTheme.W - 2 * HubTheme.MARGIN, HubTheme.TARGET)
 	row.add_theme_constant_override("separation", 40)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var back_button := HubTheme.button("‹  Back", func(): back.emit(), GameTheme.SECONDARY, HubTheme.BACK_SIZE)
+	var back_button := HubTheme.button("‹  Back", back_pressed, GameTheme.SECONDARY, HubTheme.BACK_SIZE)
 	back_button.name = "Back"
 	row.add_child(back_button)
 	var t := look if look else HubTheme.look()

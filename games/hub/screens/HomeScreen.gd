@@ -9,7 +9,7 @@ extends HubScreen
 ##   ├ HubHeader
 ##   ├ Nudge (HubCard, not a target) + Set FTP (Button)   only when ftp_is_default
 ##   ├ Games: heading, HBox of HubCard ×5
-##   └ Circuits: heading, HBox of HubCard ×3
+##   └ Circuits: heading, HBox of HubCard: the presets, My circuits, Build your own
 
 signal camera_explain(game_id: String)  ## a dimmed card was tapped
 
@@ -96,6 +96,17 @@ func _fill() -> void:
 		card.pressed.connect(func(): open.emit(HubNav.CIRCUIT, {"circuit_id": id}))
 		circuits.add_child(card)
 		circuit_cards[id] = card
+	# The rider's own: "My circuits" (the saved ones), then "Build your own" (spec §8.3).
+	var mine := HubCard.new(my_circuits_card(), HubTheme.CIRCUIT_CARD, queue)
+	mine.name = "Circuit_mine"
+	mine.pressed.connect(func(): open.emit(HubNav.MY_CIRCUITS, {}))
+	circuits.add_child(mine)
+	circuit_cards["mine"] = mine
+	var build_card := HubCard.new(build_card_content(), HubTheme.CIRCUIT_CARD, queue)
+	build_card.name = "Circuit_build"
+	build_card.pressed.connect(func(): open.emit(HubNav.BUILDER, {"index": -1}))
+	circuits.add_child(build_card)
+	circuit_cards["build"] = build_card
 
 
 ## The gap that spreads `count` cards of `width` across the column.
@@ -221,6 +232,51 @@ func circuit_card(c: Dictionary) -> Control:
 		best_row.add_child(HubTheme.label("Not ridden yet", HudTheme.SMALL, GameTheme.MUTED, true))
 	else:
 		best_row.add_child(HubTheme.label("Best %d" % best.score, HudTheme.SMALL, GameTheme.TARGET, true))
+	return panel
+
+
+## "My circuits": how many are saved, and the first one's lineup.
+func my_circuits_card() -> Control:
+	var panel := PanelContainer.new()
+	var style := card_style(HubTheme.look())
+	style.content_margin_left = 24
+	style.content_margin_right = 24
+	style.content_margin_top = 12
+	style.border_color = GameTheme.TARGET
+	panel.add_theme_stylebox_override("panel", style)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+	var title := "MY CIRCUITS"
+	box.add_child(HubTheme.look().label(title, fit_size(title, HudTheme.MEDIUM, HubTheme.CIRCUIT_CARD.x - 56), GameTheme.INK, false))
+	var saved := HubPrefs.custom_circuits(rider_id).filter(func(c): return c != null)
+	var first: Array = CircuitBuilder.new(state.catalog, saved[0].slots).lineup() if not saved.is_empty() else []
+	box.add_child(LineupStrip.new(first, Vector2(HubTheme.CIRCUIT_CARD.x - 48, 30)))
+	box.add_child(HubTheme.label("%d of %d saved" % [saved.size(), HubPrefs.CUSTOM_MAX] if not saved.is_empty() else "None saved yet",
+		HudTheme.SMALL, GameTheme.INK if not saved.is_empty() else GameTheme.MUTED, true))
+	box.add_child(HubTheme.label("Play or edit" if not saved.is_empty() else "Build one", HudTheme.SMALL, GameTheme.MUTED, true))
+	return panel
+
+
+## "+ Build your own".
+func build_card_content() -> Control:
+	var panel := PanelContainer.new()
+	var style := card_style(HubTheme.look())
+	style.content_margin_left = 24
+	style.content_margin_right = 24
+	style.content_margin_top = 12
+	style.bg_color = style.bg_color.lerp(HubTheme.look().accent, 0.25)
+	panel.add_theme_stylebox_override("panel", style)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(box)
+	var plus := HubTheme.look().label("+ BUILD", HudTheme.MEDIUM, GameTheme.INK, false)
+	plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(plus)
+	var line := HubTheme.label("your own circuit", HudTheme.SMALL, GameTheme.INK, true)
+	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(line)
 	return panel
 
 

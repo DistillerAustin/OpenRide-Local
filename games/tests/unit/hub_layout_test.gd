@@ -104,6 +104,46 @@ func test_every_circuit_screen() -> void:
 		await _settle(2)
 
 
+func test_the_builder_with_twelve_slots_scrolls() -> void:
+	hub.nav.push(HubNav.BUILDER, {"index": -1})
+	await _settle()
+	_check_screen("builder empty")
+	var s: BuilderScreen = hub.screen
+	for i in 12:
+		s.add_game(["cadence_karaoke", "dodge_ball", "tug_of_war", "safe_cracker"][i % 4])
+	await _wait(0.4)
+	assert_int(s.rows.size()).is_equal(12)
+	assert_float(s.scroll.get_v_scroll_bar().max_value).is_greater(s.scroll.size.y)  # it scrolls
+	_check_screen("builder 12 slots, scrolled to the end")
+	s.scroll.scroll_vertical = 0
+	await _settle(3)
+	_check_screen("builder 12 slots, top")
+	var visible_rows := 0
+	for r in s.rows:
+		if s.scroll.get_global_rect().encloses(r.remove.get_global_rect()):
+			visible_rows += 1
+	assert_int(visible_rows).is_greater_equal(3)
+	for i in 3:
+		HubPrefs.save_custom(HubPrefs.rider(hub.state), i, s.builder.to_saved())
+	s.builder.set_length(0, 120)
+	s.save()  # all three places taken: which to replace
+	await _wait(0.4)
+	assert_object(s.replace_panel).is_not_null()
+	_check_screen("builder replace")
+	s.close_replace()
+	HubPrefs.forget_rider(HubPrefs.rider(hub.state))
+
+
+func test_my_circuits() -> void:
+	var rider := HubPrefs.rider(hub.state)
+	HubPrefs.save_custom(rider, 1, CircuitBuilder.new(hub.state.catalog, [{"game_id": "cadence_karaoke", "duration_sec": 180},
+		{"game_id": "kart_race", "duration_sec": 600}, {"game_id": "dodge_ball", "duration_sec": 90}]).to_saved())
+	hub.nav.push(HubNav.MY_CIRCUITS)
+	await _settle()
+	_check_screen("my circuits")
+	HubPrefs.forget_rider(rider)
+
+
 func test_settings() -> void:
 	hub.nav.push(HubNav.SETTINGS)
 	await _settle()

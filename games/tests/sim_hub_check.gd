@@ -5,7 +5,8 @@ extends SceneTree
 ## Enter → the hub's home → Kart Race's card → 5 min → Start → the plan runs (calibration, intro
 ## card, racing) → End (confirmed) → the result card reads "Back to games" → the hub, where the
 ## result shows on Kart Race's card → the 20 min circuit → Start → End mid-way → back to the hub
-## (calibrated once for the whole visit) → Settings (music off) → Exit games → confirm →
+## (calibrated once for the whole visit) → a custom circuit built, saved as My circuit 1 and played
+## to its end (its best on its card) → Settings (music off) → Exit games → confirm →
 ## exit_hub("app") → visit_ended → a new visit. Prints PASS or FAIL and exits non-zero on failure.
 
 const SPEED := 4.0
@@ -96,6 +97,48 @@ func _run() -> void:
 	hub.screen.back.emit()
 	await _frames(3)
 	_expect(hub.nav.top_id() == "home", "Back leads home")
+
+	# A custom circuit: built, saved as My circuit 1, played to its end; its best on its card.
+	var prefs: Script = load("res://hub/HubPrefs.gd")
+	prefs.path = "user://hub_prefs_sim_hub.cfg"
+	prefs.reload()
+	prefs.forget_rider("1")
+	hub.screen.circuit_cards["build"].hit.pressed.emit()
+	await _frames(3)
+	_expect(hub.nav.top_id() == "builder", "Build your own opens the builder")
+	var builder: Node = hub.screen
+	builder.tiles.cards["safe_cracker"].hit.pressed.emit()
+	builder.tiles.cards["cadence_karaoke"].hit.pressed.emit()
+	await _frames(2)
+	builder.rows[0].stepper.step(-1)  # 1:30 → 1:00
+	builder.rows[1].stepper.step(-1)
+	builder.save_button.pressed.emit()
+	await _frames(2)
+	var custom_id: String = builder.builder.plan_id()
+	_expect(custom_id == "custom:safe_cracker.60,cadence_karaoke.60", "the lineup's plan id (%s)" % custom_id)
+	_expect(prefs.custom_circuit("1", 0) != null and builder._title.text == "MY CIRCUIT 1", "Save keeps it as My circuit 1")
+	builder.start_button.pressed.emit()
+	await _frames(3)
+	_expect(_session.active and _session.plan.plan_id == custom_id and _session.plan.kind == "circuit",
+		"the custom circuit plays as a circuit")
+	_expect(_session.plan.segments.map(func(s): return s.role) == ["recovery", "cooldown"], "its roles follow Kotlin's rule")
+	await _until(func(): return not _session.active and _director.summary_screen.visible, 240.0, "the custom circuit finishes")
+	_director.summary_screen.done_button.pressed.emit()
+	await _frames(10)
+	hub = current_scene
+	_expect(hub.nav.top_id() == "builder" and hub.screen.builder.plan_id() == custom_id, "the hub comes back on the builder")
+	_expect(hub.screen.best_label.text.begins_with("Your best"), "the builder shows the lineup's best")
+	hub.screen.back.emit()
+	await _frames(3)
+	hub.screen.circuit_cards["mine"].hit.pressed.emit()
+	await _frames(3)
+	_expect(hub.nav.top_id() == "my_circuits" and hub.screen.best_text(0).begins_with("Best "),
+		"its best shows on its card (%s)" % hub.screen.best_text(0))
+	hub.screen.back.emit()
+	await _frames(3)
+	prefs.forget_rider("1")
+	prefs.path = "user://hub_prefs.cfg"
+	prefs.reload()
 
 	# Settings: music off, through update_setting.
 	hub.screen.header.settings_button.pressed.emit()

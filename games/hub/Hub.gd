@@ -29,6 +29,8 @@ const SCREENS := {
 	HubNav.GAME: preload("res://hub/screens/GameScreen.gd"),
 	HubNav.CIRCUIT: preload("res://hub/screens/CircuitScreen.gd"),
 	HubNav.SETTINGS: preload("res://hub/screens/SettingsScreen.gd"),
+	HubNav.MY_CIRCUITS: preload("res://hub/screens/MyCircuitsScreen.gd"),
+	HubNav.BUILDER: preload("res://hub/screens/BuilderScreen.gd"),
 }
 
 ## The stack the rider left for a plan, restored when they come back (same visit only).
@@ -166,7 +168,7 @@ func _show_top() -> void:
 		top = nav.top()
 		id = HubNav.HOME
 	screen = SCREENS[id].new()
-	screen.name = id.capitalize() + "Screen"
+	screen.name = id.to_pascal_case() + "Screen"
 	screen.setup(state, top.args, queue)
 	screen.open.connect(func(sid: String, sargs: Dictionary): nav.push(sid, sargs))
 	screen.back.connect(func(): nav.pop())
@@ -175,6 +177,7 @@ func _show_top() -> void:
 	screen.set_ftp_requested.connect(_ask_set_ftp)
 	screen.setting.connect(func(key: String, value: Variant): Session.update_setting(key, value))
 	screen.notice.connect(func(text: String): toast.show_text(text))
+	screen.confirm_requested.connect(_confirm)
 	if screen is HomeScreen:
 		(screen as HomeScreen).camera_explain.connect(_explain_camera)
 	if screen is SettingsScreen:
@@ -243,6 +246,13 @@ func _explain_camera(game_id: String) -> void:
 		dialog.ask(title, "Allow the camera for OpenRide in Android's settings, then come back.", "OK", "")
 	else:
 		dialog.ask(title, "The camera isn't working right now. Try the other games.", "OK", "")
+
+
+## A screen's confirmation (replace or delete a saved circuit, leave the builder unsaved).
+func _confirm(heading: String, text: String, keep_text: String, act_text: String, act_kind: String, on_confirm: Callable) -> void:
+	_disconnect_dialog()
+	dialog.ask(heading, text, keep_text, act_text, act_kind)
+	dialog.confirmed.connect(on_confirm, CONNECT_ONE_SHOT)
 
 
 func _disconnect_dialog() -> void:

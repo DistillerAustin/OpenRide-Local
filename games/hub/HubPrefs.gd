@@ -1,12 +1,14 @@
 class_name HubPrefs
 extends RefCounted
 ## The hub's own picks per rider (spec §7.3): the last mode, length and difficulty per game,
-## and the last difficulty per circuit. Presentation only: app settings stay in Kotlin.
+## the last difficulty per circuit, and up to CUSTOM_MAX saved custom circuits. Presentation only: app settings stay in Kotlin.
 ## Stored next to GameOptions in `user://hub_prefs.cfg`, section `<rider>/hub`, with GameOptions'
 ## rider rule ("guest" without an active rider).
 
 const DEFAULT_PATH := "user://hub_prefs.cfg"
 const DIFFICULTIES := ["easy", "standard", "hard"]
+## Saved custom circuits per rider (spec §7.3).
+const CUSTOM_MAX := 3
 
 ## Tests point this elsewhere.
 static var path := DEFAULT_PATH
@@ -87,6 +89,44 @@ static func circuit_difficulty(rider_id: String, circuit_id: String) -> String:
 
 static func set_circuit_difficulty(rider_id: String, circuit_id: String, difficulty: String) -> void:
 	set_pick(rider_id, "%s.difficulty" % circuit_id, difficulty)
+
+
+## The rider's saved custom circuits (spec §8.3): CUSTOM_MAX places, each {v, slots: [{game_id,
+## duration_sec}], difficulty} or null (empty). Place n is "My circuit n+1": no keyboard, so no
+## names to type. Not in OpenRide's backup (`user://`; accepted by the rider).
+static func custom_circuits(rider_id: String) -> Array:
+	var out: Array = []
+	for i in CUSTOM_MAX:
+		var c = get_pick(rider_id, "custom.%d" % (i + 1), {})  # never a null default: ConfigFile errors on one
+		out.append(c if c is Dictionary and c.get("slots") is Array and not (c.slots as Array).is_empty() else null)
+	return out
+
+
+static func custom_circuit(rider_id: String, index: int) -> Variant:
+	return custom_circuits(rider_id)[index] if index >= 0 and index < CUSTOM_MAX else null
+
+
+## Saves `circuit` (CircuitBuilder.to_saved) in place `index` (0-based), replacing what's there.
+static func save_custom(rider_id: String, index: int, circuit: Dictionary) -> void:
+	if index >= 0 and index < CUSTOM_MAX:
+		set_pick(rider_id, "custom.%d" % (index + 1), circuit)
+
+
+static func delete_custom(rider_id: String, index: int) -> void:
+	var config := _config()
+	var key := "custom.%d" % (index + 1)
+	if config.has_section_key(_section(rider_id), key):
+		config.erase_section_key(_section(rider_id), key)
+		config.save(path)
+
+
+## The first empty place, or -1 when all CUSTOM_MAX are taken (Save then asks which to replace).
+static func free_custom(rider_id: String) -> int:
+	return custom_circuits(rider_id).find(null)
+
+
+static func custom_name(index: int) -> String:
+	return "My circuit %d" % (index + 1)
 
 
 ## Forgets everything stored for `rider_id` (tests clean up with this).

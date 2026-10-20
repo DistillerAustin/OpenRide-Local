@@ -269,18 +269,26 @@ func _custom(request: Dictionary, difficulty: String) -> Dictionary:
 		if info == null:
 			return {"reason": "unknown_game"}
 		var e := entry(info)
-		if e.uses_camera and not camera_available():
-			return {"reason": "camera_unavailable"}
-		var sec := clampi(int(slots[i].get("duration_sec", 0)), e.min_sec, e.max_sec)
-		sec = int(round(sec / 30.0)) * 30
+		var sec := clampi(int(roundf(int(slots[i].get("duration_sec", 0)) / 30.0)) * 30, e.min_sec, e.max_sec)
 		var role: String = e.circuit_role
 		if i == 0 and "warmup" in e.roles:
 			role = "warmup"
 		elif i == slots.size() - 1 and slots.size() > 1 and "cooldown" in e.roles:
 			role = "cooldown"
-		var seg := {"game_id": id, "role": role, "duration_sec": sec}
-		if role == "free":
-			seg["end_mode"] = info.timed_end_mode
+		# Camera off: the first camera-free game of the same circuit role plays it (the id keeps
+		# the requested game), as SessionPlans.customGame; none (Kart Race) rejects it.
+		var plays := id
+		if e.uses_camera and not camera_available():
+			plays = ""
+			for other_id in ORDER:
+				var other := entry(GameRegistry.info(other_id))
+				if not other.uses_camera and other.circuit_role == e.circuit_role:
+					plays = other_id
+					break
+			if plays.is_empty():
+				return {"reason": "camera_unavailable"}
+		var seg := {"game_id": plays, "role": role, "duration_sec": sec}
+		seg["end_mode"] = GameRegistry.info(plays).timed_end_mode
 		segments.append(seg)
 		parts.append("%s.%d" % [id, sec])
 	var gameplay := 0
