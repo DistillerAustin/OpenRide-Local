@@ -97,6 +97,38 @@ func test_a_row_pick_is_saved_per_rider_at_once() -> void:
 	assert_str((screen.option_controls["scene"] as OptionRow).value).is_equal(now)
 
 
+func test_a_segmented_pick_is_saved_per_rider_at_once() -> void:
+	var screen := await _open("tug_of_war")
+	var info := GameRegistry.info("tug_of_war")
+	var row: OptionRow = screen.option_controls["length"]
+	assert_object(row.segmented).is_not_null()
+	row.segmented.pick("5")
+	assert_str(GameOptions.get_value(info, "length", rider)).is_equal("5")
+	assert_str(GameOptions.get_value(info, "length", rider + "x")).is_equal("3")
+	hub.nav.pop()
+	await _settle(2)
+	screen = await _open("tug_of_war")
+	assert_str((screen.option_controls["length"] as OptionRow).segmented.value).is_equal("5")
+
+
+func test_more_options_saves_and_back_closes_it() -> void:
+	var screen := await _open("tug_of_war")
+	var info := GameRegistry.info("tug_of_war")
+	screen.open_more()
+	await _settle(2)
+	var row: OptionRow = screen.option_controls["brace"]
+	row.segmented.pick("on")
+	assert_str(GameOptions.get_value(info, "brace", rider)).is_equal("on")
+	var scene: OptionRow = screen.option_controls["scene"]
+	assert_object(scene.cycle).is_not_null()
+	scene.cycle.pressed.emit()
+	assert_str(GameOptions.get_value(info, "scene", rider)).is_equal("dawn")
+	assert_bool(screen.handle_back()).is_true()  # Android back closes the panel first
+	assert_object(screen.more_panel).is_null()
+	assert_bool(screen.left.visible).is_true()
+	assert_bool(screen.handle_back()).is_false()
+
+
 func test_kart_race_shows_eight_kart_cards_and_four_track_cards() -> void:
 	var screen := await _open("kart_race")
 	var karts: OptionCards = screen.option_controls["driver"]

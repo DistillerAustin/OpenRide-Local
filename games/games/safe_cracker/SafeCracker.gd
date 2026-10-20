@@ -79,9 +79,9 @@ func info() -> GameInfo:
 			"labels": ["Random", "Night office", "Bank vault", "Museum hall", "Ship's cabin", "Laboratory", "Old library"],
 			"default": "random"},
 		{"key": "hints", "label": "Target number", "choices": ["show", "hide"],
-			"labels": ["Show it", "Hide it"], "default": "show"},
+			"labels": ["Show it", "Hide it"], "default": "show", "kind": "segmented"},
 		{"key": "sound", "label": "Click sounds", "choices": ["on", "off"],
-			"labels": ["On", "Off"], "default": "on"},
+			"labels": ["On", "Off"], "default": "on", "kind": "segmented", "group": "More options"},
 	]
 	return i
 

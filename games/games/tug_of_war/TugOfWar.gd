@@ -79,13 +79,14 @@ func info() -> GameInfo:
 	i.variant_star_thresholds = {"ladder": i.star_thresholds.duplicate(true)}
 	i.options = [
 		{"key": "mode", "label": "Mode", "choices": ["match", "ladder"],
-			"labels": ["Match", "Ladder"], "default": "match"},
+			"labels": ["Match", "Ladder"], "default": "match", "kind": "segmented"},
 		{"key": "length", "label": "Match length", "choices": ["3", "5"],
-			"labels": ["Best of 3", "Best of 5"], "default": "3"},
+			"labels": ["Best of 3", "Best of 5"], "default": "3", "kind": "segmented"},
 		{"key": "scene", "label": "Scene", "choices": ["auto", "dawn", "day", "dusk", "night"],
-			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto"},
+			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto",
+			"group": "More options"},
 		{"key": "brace", "label": "Brace lean", "choices": ["off", "on"],
-			"labels": ["Off", "On"], "default": "off"},
+			"labels": ["Off", "On"], "default": "off", "kind": "segmented", "group": "More options"},
 	]
 	return i
 

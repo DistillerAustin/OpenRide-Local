@@ -537,10 +537,14 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   `Hub.gd` acts. Home has the header (`HubHeader`: avatar, name, ride so far, live rpm · W at
   2 Hz, the camera's state, Settings, Exit games), the FTP nudge, a card per game (the catalog
   intersected with `GameRegistry`; a camera game is dimmed when the camera is unavailable and
-  explains on a tap) and a card per preset circuit. A game's screen: its picture and how-to,
-  its options (`GameInfo.options` as cycle buttons, saved in `GameOptions` per rider), Length
-  (the catalog's modes and `minute_steps` or rounds), Difficulty and Start (it waits for
-  `session_started` or `plan_rejected`). A circuit's screen: its lineup, Difficulty, its best and
+  explains on a tap) and a card per preset circuit. A game's screen: its options on the left
+  (`GameInfo.options` with `where` hub or both, saved in `GameOptions` per rider at each tap;
+  see "Game options"), Length (the catalog's modes and `minute_steps` or rounds), Difficulty
+  and Start on the right (it waits for `session_started` or `plan_rejected`). A game with
+  `kind: cards` options (Kart Race's kart and track) fills its left column with the card grids
+  and shows its best under Difficulty; any other game shows its poster (picture, how-to, best),
+  then its options as rows. Grouped options sit under "More options" (top right), a panel over
+  the left column with Done (Android back closes it too). A circuit's screen: its lineup, Difficulty, its best and
   Start. Settings: camera games, game music, and the volumes as 10% steppers (heard at once).
 - **Confirmations:** Exit games ("Your ride (12:30, 2 games) will be saved", or "Nothing's
   been recorded yet"), Set FTP (it leaves games) and the camera explanations use
@@ -557,7 +561,8 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   (`framework/ui/BakedView.gd` and `BakeQueue.gd`, promoted from Kart Race, whose `KartBaked`
   and `KartBakeQueue` are now aliases): one draw call each, rendered only when they change. No
   screen has a `_process`. Measured on the desktop (`tests/measure_hub.gd`): home 21 draw calls
-  (25 with the FTP nudge), a game's screen 47-50, a circuit's 25, Settings 57, and no bake
+  (25 with the FTP nudge), a game's screen 48-57 (Kart Race's 53 with its 12 card bakes, 67 with
+  More options open), a circuit's 25, Settings 57, and no bake
   renders on an idle frame.
 - **Activity:** any touch in the hub sends `hub_activity()` (at most once a minute) for
   Kotlin's idle guard. After `visit_ended` with `next: hub` the hub shows "We saved your ride",
@@ -599,7 +604,7 @@ game is also playable on the desktop: run its scene with F6, or play the project
 | `star_thresholds` | `{easy: [1★, 2★, 3★], standard: […], hard: […]}`: the minimum score for each star |
 | `stars_per_minute` | When true, the thresholds are points per minute of gameplay, so one set fits a 90 s slot and a 30-minute ride |
 | `variant_star_thresholds` | Star thresholds for the game's variants, by variant (e.g. `{"catch": {…}}`); others use `star_thresholds` |
-| `options` | The game's own settings, shown in the pause screen's **Game options** card: `[{key, label, choices, labels, default}]`, values as strings. See "Game options". |
+| `options` | The game's own settings, shown on its hub screen and in the pause screen's **Game options** card: `[{key, label, choices, labels, default}]`, values as strings, plus the optional `where`, `kind`, `cards`, `columns`, `group` and `rider_badge`. See "Game options". |
 
 For work games, set the thresholds so that 3 stars needs about 1.3× effort. A perfect run at
 1.0× must stay short of 3 stars (epic #31). `demo_logic_test.gd` checks this for the demo.
@@ -652,8 +657,27 @@ For work games, set the thresholds so that 3 stars needs about 1.3× effort. A p
 A game can declare its own settings in `GameInfo.options`, for example Dodge Ball's scene
 lighting and camera tilt. They're generic and framework-owned:
 
-- The pause screen shows a **Game options** button when the game declares any. Its card has one
-  button per option that steps through the choices; **Back** returns to the pause card.
+- **Where they show** (`where`): `hub` (the hub's game screen only: a pick made before Start,
+  like Kart Race's kart and track), `pause` (the pause screen only) or `both` (the default).
+- **On the hub's game screen** (spec §7; `hub/screens/GameScreen.gd`), by `kind`:
+  - `cycle` (the default): one button that steps through the choices (`OptionCycle` in an
+    `OptionRow`, beside the option's label);
+  - `segmented`: every choice side by side (2-4 short ones; `Segmented` in an `OptionRow`);
+  - `cards`: a grid of picture cards (`OptionCards`, `columns` across, default 4), one per
+    choice from `cards: [{value, title, subtitle, image, accent}]` (`image` a `res://` texture,
+    `accent` a Color for the card's edge; a choice without a card shows its label). Each card is
+    baked (one draw call); the chosen card has a thicker gold edge and a gold title, and with
+    `rider_badge: true` wears the rider's name. A wide picture covers the card's picture slot,
+    a narrower one (a portrait) is fitted and centred, and both are inset evenly and masked to
+    the card's rounded outline (`rounded_mask.gdshader`, radius `CARD_RADIUS − PICTURE_INSET`).
+    Cards are hub-only (`where: hub`; `registry_test` checks it).
+  - `group`: any name other than `""` folds the option under the hub's **More options** panel
+    (the ones a rider sets once). `GameInfo.validate()` checks every key (`registry_test`).
+  The hub writes the pick at once with the hub's rider (`HubPrefs.rider(state)`), which is the
+  `rider_id` the game's session then reads.
+- The pause screen shows a **Game options** button when the game declares any option with
+  `where` pause or both. Its card has one button per such option that steps through the
+  choices; **Back** returns to the pause card.
 - `GameOptions` (`framework/GameOptions.gd`) stores the choices in `user://game_options.cfg`,
   one section per rider and game (`<rider_id>/<game_id>`, `guest/…` with no active rider).
   Unknown keys and values are ignored, and a missing value reads as the declared default.
@@ -1665,17 +1689,19 @@ sits mid-pack.
 finish. Stars are points a minute (standard 120, 205, 330): mid-pack earns one star, a podium
 two, and three takes podiums plus effort.
 
-**The pick.** Gameplay opens on a kart and track picker (`KartPicker`): loading, then
-calibration, then the "Get ready" card, then the picker, then the title fly-over and the grid's
-3-2-1-GO. Eight kart cards, the four tracks with baked thumbnails and a big START!, every
-target at least 180 px and far from End. It preselects the rider's last kart and track and
-starts by itself after 20 s (any tap on a choice restarts the count), so a 5-minute ride is one
-race on the course the rider chose. The GP starts at that track and the others follow in cup
-order. Nothing moves or scores until GO; the session clock runs meanwhile. A track other than
-the one built behind the intro card rebuilds behind a short loading card.
+**The pick.** The kart and the starting track are picked in the Games hub, before Start (plan
+phase C, rider request 2026-10-20): the game screen's "Your kart" grid (eight cards: the
+racer's baked portrait `ui/portraits/<racer>.png`, name, class, the kart's colour; the chosen
+one wears the rider's name) and "Starting track" row (four cards with the baked thumbnails).
+Both are `where: hub` `kind: cards` options. Gameplay then goes loading → calibration → the
+"Get ready" card → the title fly-over → the grid's 3-2-1-GO, with no picker: `_on_prepare`
+builds the chosen track once, behind the intro card. The GP starts at that track and the others
+follow in cup order. Re-bake the portraits with `tests/capture_kart_portraits.gd` when a racer's
+look changes.
 
-**Options** (per rider): Driver, Assist, Camera (chase or close), Auto items and Starting
-track (the last two picks). The rider's kart carries their profile name (`rider_name`). **Stats:**
+**Options** (per rider): Your kart and Starting track (hub only, picture cards), and Steering
+assist, Camera (chase or close) and Auto items (segmented, under the hub's "More options", and on
+the pause screen). The rider's kart carries their profile name (`rider_name`). **Stats:**
 `position`, `races`, `wins`, `podiums`, `best_lap`, `race_time`, `boosts`, `items_hit`,
 `avg_power` and `ghost_trace` (the rider's distance every few seconds, for future ghosts).
 

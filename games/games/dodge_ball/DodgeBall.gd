@@ -86,11 +86,12 @@ func info() -> GameInfo:
 	i.variant_star_thresholds = {"catch": i.star_thresholds.duplicate(true)}
 	i.options = [
 		{"key": "mode", "label": "Mode", "choices": ["dodge", "catch"],
-			"labels": ["Dodge the balls", "Catch the balls"], "default": "dodge"},
+			"labels": ["Dodge the balls", "Catch the balls"], "default": "dodge", "kind": "segmented"},
 		{"key": "scene", "label": "Scene", "choices": ["auto", "dawn", "day", "dusk", "night"],
-			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto"},
+			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto",
+			"group": "More options"},
 		{"key": "camera_roll", "label": "Camera tilt", "choices": ["on", "off"],
-			"labels": ["On", "Off"], "default": "on"},
+			"labels": ["On", "Off"], "default": "on", "kind": "segmented", "group": "More options"},
 	]
 	return i
 
