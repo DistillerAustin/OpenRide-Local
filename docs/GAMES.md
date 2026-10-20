@@ -1186,13 +1186,37 @@ overrides `Game.tracker_mode_for_segment`: `lean_2d` with brace lean on, otherwi
 `SessionDirector` applies that mode (a copy of the declarations from
 `GameInfo.with_tracker_mode`) for the segment, and the Calibrate button shows only then.
 
-**Look.** The rider stands at the end of a pier, the bot on the far pier, a flag on the rope
-between them. Winning hauls the bot off its pier into the river; losing pulls the camera in. The
-view follows the Dodge Ball recipe for the tablet (a scaled `SubViewport`, no MSAA, unshaded
-water lit by hand, per-vertex lit everything else, MultiMesh rope and crowd, CPUParticles3D for
-the splash). On the tablet it held 59-62 fps (mock build, 2026-10-03). `tests/capture_tug.gd`
-takes desktop screenshots and, with `--play=SECONDS`, plays rounds for a recording (add
-`--snaps` for half-size stills of each HUD state instead of a video).
+**Look** (`games/tug_of_war/ART_BIBLE.md`; graphics pass 2026-10-19, `GFX_POLISH.md`). A summer
+fairground across a lazy river: the rider's gloves on the rope at the end of a plank pier, a
+wind-up tin robot on the far pier, a flag on the rope between them. Winning hauls the bot off its
+pier into the river; losing pulls the camera in. It follows the tablet recipe (a scaled
+`SubViewport`, no MSAA) on the shared world look (`WorldLook`, Tug's grade in
+`shaders/tug_look.gdshaderinc`): every surface is unshaded and lit by hand from one table
+(`TugWorld.look_for(preset)`), with no engine lights, fog or post passes.
+
+- `TugMeshes` bakes the statics into one vertex-coloured mesh with painted AO (`KartMeshKit`
+  shapes): sloped earth banks, reeds, shore rocks, hills, the nature-kit trees, pier frames,
+  pilings, torch posts, masts, bunting, string lights, a striped tent and hay bales.
+  `scenery.gdshader` reads `COLOR.a` as 1 − sway, `UV.x` as ground grain and `UV.y` as a bulb's
+  glow.
+- `deck.gdshader` draws the planks in world space (two noise reads, lines antialiased with
+  `fwidth`), with the bot's blob shadow and the torches' warm pools. `water.gdshader` (two reads)
+  has glitter along the sun's path, a fresnel to the two-colour sky, foam at the banks and
+  pilings, and shade under the piers.
+- The bot is one mesh (`bot.gdshader`: body colour as a uniform, the key spun in the vertex
+  shader, faster on a telegraph), plus ears or horns, self-lit eyes and chimney steam in a
+  telegraph or surge.
+- The crowd is a GPU billboard MultiMesh cut from a two-frame sprite drawn in code; the
+  flames are additive cards; the flag, bunting, reeds and lily pads all move in their shaders.
+  Per frame, GDScript lays out the rope's 22 segments and poses the bot, nothing else.
+
+About 13 draw calls for the world (55 before), 57 in play with the HUD (99 before), and 29k
+primitives on the desktop. On the tablet it
+held 59-62 fps before the pass (mock build, 2026-10-03); re-measure with Brace lean on.
+`tests/capture_tug.gd` takes desktop screenshots (`--stats` prints draw calls and frame times)
+and, with `--play=SECONDS`, plays rounds for a recording (add `--snaps` for half-size stills of
+each HUD state instead of a video). `tug_world_test` covers the shaders, the look table, the baked
+meshes and the per-frame budget.
 
 **UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
 rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
@@ -1202,7 +1226,7 @@ gloves' blue, BOT in the bot's body colour, lifted for contrast), with a rope kn
 it, best-of pips (a "RUNG n" badge on the ladder, "WON n" in an endless ride) and the bot's
 name. PEDAL!, SURGE! (breathing) and REST n take the pips' place while they hold. At most
 790 x 115 px with the longest texts (`tug_status_layout_test`), no per-frame code, about 14 draw
-calls (99-101 in play on the desktop). The intro card shows the first bot (`TugBotPortrait`).
+calls (57 in play on the desktop after the graphics pass, 99-101 before). The intro card shows the first bot (`TugBotPortrait`).
 
 ## Safe Cracker (#41)
 

@@ -31,10 +31,11 @@ with Godot's default font.
 | `games/dodge_ball/sfx/*.tres` (7 `SfxPreset` parameter sets) and `tod/*.tres` (4 lighting presets), with the scripts that write them | Written for this repo (#39) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `games/dodge_ball/shaders/*.gdshader` (road, verge, sky, ball, warning, shadow, shield, screen effects) | Written for this repo (#39) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | `games/tug_of_war/sfx/*.tres` (6 `SfxPreset` parameter sets: rope_creak, crowd_swell, surge_drumroll, win_sting, lose_sting, splash; synth settings, no samples) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
-| `games/tug_of_war/shaders/water.gdshader` and every mesh in `TugWorld.gd` (piers, bot, crowd, rope, flag, hands, splash; built from boxes, cylinders, spheres and capsules in code, with a plank texture generated at runtime) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
+| `games/tug_of_war/shaders/*.gdshader`, `tug_look.gdshaderinc` and every mesh in `TugMeshes.gd` / `TugWorld.gd` (banks, piers, deck planks, water, the wind-up tin robot, the crowd's two-frame sprite drawn in code, gloves, rope, flag, bunting, string lights, reeds, tent, hay bales, lily pads, flames, steam, splash; graphics pass 2026-10-19, built from primitives and `KartMeshKit` shapes in code; `sky.gdshader` is a copy of Dodge Ball's with Tug's grade) | Written for this repo (#40) | The OpenRide Authors | Apache-2.0, the repo's licence |
 
 Tug of War (#40) adds no recorded asset: its trees, bushes and rocks are the Kenney nature-kit
-models listed above (loaded from `games/dodge_ball/models/`), its bots are named from plain
+models listed above (loaded from `games/dodge_ball/models/`, recoloured and baked into its
+riverside mesh at runtime), its bots are named from plain
 material and animal words, and its music is the repo's own `heave` style.
 | `games/safe_cracker/sfx/*.tres` (5 `SfxPreset` parameter sets: tumbler_click, proximity_tick, soft_alarm, vault_open, door_creak; synth settings, no samples) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
 | Every shape in `SafePlaces.gd`, `SafeBody.gd` and `SafeDial.gd` (six rooms, the safe, its dial and the gold, drawn in code) | Written for this repo (#41) | The OpenRide Authors | Apache-2.0, the repo's licence |
