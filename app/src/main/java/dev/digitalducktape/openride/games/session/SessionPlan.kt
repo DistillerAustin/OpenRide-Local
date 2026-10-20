@@ -5,6 +5,7 @@ import dev.digitalducktape.openride.games.bridge.EndMode
 import dev.digitalducktape.openride.games.bridge.PlanRejectReason
 import dev.digitalducktape.openride.games.bridge.PlanRequestKind
 import dev.digitalducktape.openride.games.bridge.PlanRequestMessage
+import dev.digitalducktape.openride.games.bridge.PlanRequestSlot
 import dev.digitalducktape.openride.games.bridge.PlanSegment
 import dev.digitalducktape.openride.games.bridge.SegmentRole
 import dev.digitalducktape.openride.games.bridge.SessionKind
@@ -218,6 +219,25 @@ fun PlanRequestMessage.toSessionRequest(cameraGames: Boolean, catalog: GameCatal
         SessionPlans.customProblem(custom, catalog, cameraGames)?.let { RequestMapping.Rejected(it) }
             ?: RequestMapping.Ok(SessionRequest.Custom(custom, difficulty, cameraGames))
     }
+}
+
+/**
+ * The hub's `start_plan` request for this app-side request, for the host's autostart (the
+ * Compose Games tab until phase F, and dev intents). `cameraGames` isn't carried: the visit
+ * applies its own.
+ */
+fun SessionRequest.toPlanRequest(): PlanRequestMessage = when (this) {
+    is SessionRequest.JustRide -> when (val m = mode) {
+        is JustRideMode.Timed -> PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = gameId, mode = "minutes", length = m.minutes, difficulty = difficulty)
+        is JustRideMode.Rounds -> PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = gameId, mode = "rounds", length = m.rounds, difficulty = difficulty)
+        JustRideMode.Open -> PlanRequestMessage(PlanRequestKind.JUST_RIDE, gameId = gameId, mode = "open", difficulty = difficulty)
+    }
+    is SessionRequest.Circuit -> PlanRequestMessage(PlanRequestKind.CIRCUIT, presetId = presetId, difficulty = difficulty)
+    is SessionRequest.Custom -> PlanRequestMessage(
+        PlanRequestKind.CUSTOM,
+        difficulty = difficulty,
+        slots = slots.map { PlanRequestSlot(it.gameId, it.durationSec) },
+    )
 }
 
 /** One slot of a circuit preset. */

@@ -18,21 +18,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.digitalducktape.openride.R
 import dev.digitalducktape.openride.appContainer
-import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.GameBridge
-import dev.digitalducktape.openride.games.bridge.GameSession
 import dev.digitalducktape.openride.games.bridge.OpenRideBridgePlugin
-import dev.digitalducktape.openride.games.bridge.SessionSummary
-import dev.digitalducktape.openride.games.bridge.SessionTotals
-import dev.digitalducktape.openride.games.session.FtpBasis
-import dev.digitalducktape.openride.games.session.GameCatalog
+import dev.digitalducktape.openride.games.session.GameVisitManager
 import dev.digitalducktape.openride.games.session.JustRideMode
-import dev.digitalducktape.openride.games.session.NoRide
-import dev.digitalducktape.openride.games.session.PlanStart
-import dev.digitalducktape.openride.games.session.SessionPlans
 import dev.digitalducktape.openride.games.session.SessionRequest
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
+import dev.digitalducktape.openride.games.session.toPlanRequest
 import org.godotengine.godot.Godot
 import org.godotengine.godot.GodotActivity
 import org.godotengine.godot.plugin.GodotPlugin
@@ -42,9 +33,11 @@ import org.godotengine.godot.plugin.GodotPlugin
  * `games/` project (`res://games.pck`, packed into the APK's assets by `exportGamesPack`) and
  * connects it to the app through the `OpenRideBridge` plugin.
  *
- * Kotlin owns each session: the app-scoped [GameSessionManager] runs the [SessionRequest] this
- * activity was started with (and records its ride), and when the game calls `request_exit()`
- * after its summary the rider goes back to the Compose app.
+ * Kotlin owns each visit: the app-scoped [GameVisitManager] runs the Games hub visit (one
+ * ride, any number of plans). Until the hub ships (plan phases B and F) the Compose Games tab
+ * still picks: the [SessionRequest] this activity was started with autostarts as the visit's
+ * first plan, and when the game calls `request_exit()` after its summary the visit is saved
+ * and the rider goes back to the Compose app.
  *
  * **This activity lives as long as the app process.** Godot runs one engine per process and
  * cannot restart it: destroying the host terminates the engine, after which Godot force-quits
@@ -61,8 +54,8 @@ class GameHostActivity : GodotActivity() {
     private val bridge: GameBridge
         get() = appContainer.gameBridge
 
-    /** Interim (Games hub A4): replaced by the visit in A5. */
-    private var sessions: GameSession = InterimSession(DEFAULT_REQUEST)
+    private val visit: GameVisitManager
+        get() = appContainer.gameVisitManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before the engine starts: players that exist now are other apps' music, not Godot's.
@@ -143,7 +136,7 @@ class GameHostActivity : GodotActivity() {
     override fun onDestroy() {
         // Only reached when the process is going away anyway (see the class comment).
         Log.w(TAG, "game host destroyed")
-        bridge.detach(sessions)
+        bridge.detach(visit)
         super.onDestroy()
     }
 
@@ -156,52 +149,17 @@ class GameHostActivity : GodotActivity() {
     private fun startSession(intent: Intent) {
         val request = SessionRequest.fromJson(intent.getStringExtra(EXTRA_REQUEST)) ?: DEFAULT_REQUEST
         Log.i(TAG, "game session: $request")
-        bridge.detach(sessions)
-        sessions = InterimSession(request)
-        bridge.attach(sessions)
+        // A live visit (the rider left without Exit, and the app never came forward) is kept.
+        visit.begin(autostart = request.toPlanRequest(), onExit = { exitToApp() })
+        bridge.attach(visit)
     }
 
     /** Back to the app, keeping the engine alive: never `finish()` (see the class comment). */
     private fun exitToApp() {
         // The session saves its ride app-scoped, so leaving never cuts that short.
-        bridge.detach(sessions)
+        bridge.detach(visit)
         moveTaskToBack(true)
         Log.i(TAG, "game host moved to back")
-    }
-
-    /**
-     * Interim (Games hub A4 only, removed in A5): plays [request] through the plan runner
-     * without recording, so the build and the Compose tab keep working between the plan
-     * runner's refactor and the visit that records.
-     */
-    private inner class InterimSession(private val request: SessionRequest) : GameSession {
-        private val runner get() = appContainer.gameSessionManager
-        override val segmentTimeLeftSec: Double get() = runner.segmentTimeLeftSec
-        override fun onGameReady() {
-            appContainer.gamesScope.launch {
-                val plan = SessionPlans.forRequest(request, FtpBasis.of(null), GameCatalog.DEFAULT) ?: return@launch
-                runner.run(plan, NoRide, PlanStart()) { outcome ->
-                    val summary = SessionSummary(
-                        rideId = null,
-                        results = outcome.results.map { it.result },
-                        totals = SessionTotals(outcome.results.sumOf { it.result.score }, outcome.results.sumOf { it.result.stars }, outcome.results.size, outcome.elapsedSec),
-                        bests = JsonObject(emptyMap()),
-                    )
-                    bridge.sessionFinished(BridgeMessages.encode(summary))
-                }
-            }
-        }
-        private fun post(block: () -> Unit) { appContainer.gamesScope.launch { block() } }
-        override fun onSegmentFinished(resultJson: String) = post { runner.segmentFinished(resultJson) }
-        override fun onRequestCalibration(mode: String) = post { runner.requestCalibration(mode) }
-        override fun onSetTrackerMode(mode: String) = post { runner.setTrackerMode(mode) }
-        override fun onRequestPause() = post { runner.requestPause() }
-        override fun onRequestResume() = post { runner.requestResume() }
-        override fun onRequestEnd() = post { runner.requestEnd() }
-        override fun onRequestExit() = post {
-            runner.finishNow()
-            exitToApp()
-        }
     }
 
     companion object {

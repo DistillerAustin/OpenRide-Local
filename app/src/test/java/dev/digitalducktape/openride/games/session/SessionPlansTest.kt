@@ -496,4 +496,19 @@ class SessionPlansTest {
         assertEquals(RequestMapping.Ok(SessionRequest.Custom(listOf(CustomSlot("dodge_ball", 90)), cameraGames = false)), map(custom, cameraGames = false))
         assertEquals(RequestMapping.Rejected(PlanRejectReason.EMPTY_CIRCUIT), map(custom.copy(slots = emptyList())))
     }
+
+    @Test
+    fun `an app-side request becomes the hub request that maps back to it`() {
+        val requests = listOf(
+            SessionRequest.JustRide("kart_race", JustRideMode.Timed(10), Difficulty.HARD),
+            SessionRequest.JustRide("tug_of_war", JustRideMode.Rounds(3)),
+            SessionRequest.JustRide("dodge_ball", JustRideMode.Open, Difficulty.EASY),
+            SessionRequest.Circuit("circuit-30", Difficulty.HARD),
+            SessionRequest.Custom(listOf(CustomSlot("tug_of_war", 60), CustomSlot("safe_cracker", 90))),
+        )
+
+        for (request in requests) {
+            assertEquals(RequestMapping.Ok(request), request.toPlanRequest().toSessionRequest(cameraGames = true, catalog))
+        }
+    }
 }

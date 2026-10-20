@@ -122,6 +122,12 @@ class TrackerLink(
         tracker.calibrate(mode, force = true)
     }
 
+    /** The hub's camera-games switch: off keeps the camera from running at all. */
+    fun setCameraGamesEnabled(enabled: Boolean) = tracker.setCameraGamesEnabled(enabled)
+
+    /** The camera permission may have changed (the host's prompt answered). */
+    fun refreshPermission() = tracker.refreshPermission()
+
     fun stop() {
         progressJob?.cancel()
         progressJob = null

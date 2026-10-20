@@ -198,8 +198,9 @@ These describe how the foundation (#32) implements v1. They don't change the con
   - It never quits (`application/config/quit_on_go_back=false`).
   - During a session it calls `request_pause()`.
   - After the summary it calls `request_exit()`.
-- **The session engine** is `GameSessionManager` (app-scoped, #35). Its tracker commands go
-  through `TrackerLink` (`games/bridge/`). See "Sessions and recording" below.
+- **The session engine** is the Games hub visit, `GameVisitManager` (app-scoped), which hands
+  each plan to the plan runner, `GameSessionManager`. Tracker commands go through
+  `TrackerLink` (`games/bridge/`). See "Sessions and recording" below.
 - **Head-tracker fields** come from `AppContainer.headTracker` on every poll
   (`HeadTrackerState.toTrackerReading()`).
 
@@ -312,17 +313,29 @@ So the foundation uses the spec's fallback: **the host stays alive for the app's
 The `OpenRideApplication` owns the `AppContainer`, so the games host shares the app's database,
 sensor binding and ride session.
 
-`GameHostActivity.intent(context, request)` starts games with a `SessionRequest` (a Just Ride
-or a circuit, and a difficulty). Each entry calls `GameSessionManager.begin(request)` and
-attaches it to the bridge. A session still running when games are entered again is finished
-and its ride saved first.
+`GameHostActivity.intent(context, request)` starts games with a `SessionRequest` (a Just Ride,
+a circuit or a custom circuit, and a difficulty). Each entry calls `GameVisitManager.begin`
+with the request as the visit's autostart plan (until the hub replaces the Compose tab's
+picker, plan phases B and F) and attaches the visit to the bridge. A visit still live when the
+host comes forward again is kept, and its `hub_state` resent.
 
 ## Sessions and recording
 
-`GameSessionManager` (`app/.../games/session/`, #35) is the Kotlin side of every session. It
-is app-scoped, so a ride is saved even after the host has gone to the back.
+Since the Games hub, entering games starts a **visit** (`GameVisitManager`,
+`app/.../games/session/`), and a visit plays any number of **plans** (a Just Ride, a circuit or
+a custom circuit), each run by the plan runner (`GameSessionManager`, #35). Both are app-scoped,
+so a ride is saved even after the host has gone to the back. **One visit records as one ride.**
 
-**Plans.** When Godot is ready, it turns the request into a `SessionPlan` with the active
+- Phases: `IDLE → WAITING → HUB ⇄ PLAN → SAVING → ENDED`. The first frame poll sends
+  `hub_state`; `start_plan` is valid only in `HUB` (else `plan_rejected: busy`).
+- The runner walks one plan: `session_started`, segments, intro cards, the end modes, the grace
+  period and pauses, as below. It no longer touches the ride beyond pausing it for the rider
+  (`PlanRide`), and it hands its results to the visit, which sends `session_finished`.
+- `HubStateBuilder` builds `hub_state` (a pure function); the visit coalesces sends to one per
+  250 ms. `BitmapAvatarRenderer` draws the rider's avatar into
+  `cacheDir/games/avatar_<id>.png` once per visit.
+
+**Plans.** When a plan starts, the visit turns the request into a `SessionPlan` with the active
 rider's FTP (`SessionPlans`):
 
 | Request | Plan (`plan_id`, also `Ride.gamePlan`) | Segment |
@@ -370,15 +383,33 @@ the rider starts or stops mid-session counts from the next segment. With game mu
 **Recording.** The ride goes through the app's own `RideSessionManager`, so it is an ordinary
 ride in History, exports and backups:
 
-- It starts when the session starts and records through intro cards.
-- Freewheel auto-pause applies. A rider's pause (`request_pause`) pauses the ride too. Either
-  kind freezes the session clock and sends `session_paused` / `session_resumed`.
-- A session with under a minute of gameplay (intro cards don't count), or with no pedalling
-  at all, is discarded rather than saved, and `session_finished` carries `ride_id: null`.
-  Normal rides have no such rule: they're only ever ended deliberately.
-- Otherwise, when the session finishes, the ride is saved with `gamePlan`, then one `game_results` row
-  per segment (`startSec` on the session clock, `durationSec` of gameplay). Then the ride
-  manager returns to idle, so the app's next ride can start.
+- It starts with the visit's **first plan**, not on entry, so a visit with no plan records
+  nothing. Its `startEpochMs` is the first plan's start.
+- When a plan finishes, the visit pauses the ride *manually* (pedalling in the menu doesn't
+  resume it), and the next plan resumes it. So menu time records no seconds and no samples:
+  duration, averages and kJ cover plan time (intro cards included), and the samples have no
+  gap.
+- Freewheel auto-pause applies within a plan. A rider's pause (`request_pause`) pauses the ride
+  too. Either kind freezes the plan's clock and sends `session_paused` / `session_resumed`.
+- `session_finished` carries `ride_id: null` and the plan's `bests`, compared with the saved
+  rides *and* this visit's earlier runs of the same plan and difficulty.
+- The visit ends on `exit_hub` or `request_exit` (then the host moves to the back, and for
+  `edit_profile` the app opens the profile editor), when the app comes back to the front
+  (`MainActivity.onResume` → `endIfLive("app_resumed")`: no visit stays live behind the app),
+  or by the **idle guard**: 20 minutes in the hub with no touch (`hub_activity`, or any hub
+  call) and no pedalling saves the visit (`visit_ended.next: hub`, `reason: idle`), Godot stays
+  in the hub, and the rider's next tap (`hub_activity`) starts a new visit. A plan in progress
+  is ended first.
+- A visit with under a minute of gameplay across its plans (intro cards don't count), or with
+  no pedalling at all, is discarded rather than saved (`visit_ended.saved: false`, with the
+  reason). Normal rides have no such rule: they're only ever ended deliberately.
+- Otherwise the ride is saved, with `gamePlan` = the plan's id when the visit played exactly
+  one plan, else `visit`; then every `game_results` row (`planId`, `planRun` = the plan's index
+  in the visit, a visit-wide `segmentIndex`, `startSec` on the ride clock, `durationSec` of
+  gameplay). Then the ride manager returns to idle, and `visit_ended` carries the ride id
+  (also `GameVisitManager.finishedRideId`, for the ride summary).
+- **If the process dies mid-visit, the visit is lost**, as any unsaved ride is today (the
+  samples are in memory until the save). Checkpointing after each plan is a follow-up.
 - `GameResultDao` answers personal bests per rider (per game, plan and difficulty), the
   household leaderboard per game, and a plan's best session. Skipped segments never count.
 - The ride summary lists each segment's result, and History shows a game badge.

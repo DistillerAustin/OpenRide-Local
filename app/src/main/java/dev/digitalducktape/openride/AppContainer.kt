@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.core.content.ContextCompat
+import java.time.ZoneId
 import androidx.room.Room
 import dev.digitalducktape.openride.core.backup.AutoBackupManager
 import dev.digitalducktape.openride.core.backup.BackupRepository
@@ -19,9 +20,11 @@ import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
 import dev.digitalducktape.openride.core.camera.CameraXFaceSource
 import dev.digitalducktape.openride.core.camera.DefaultHeadTracker
 import dev.digitalducktape.openride.core.camera.FaceObservation
+import dev.digitalducktape.openride.core.camera.HeadCalibration
 import dev.digitalducktape.openride.core.camera.HeadFixtureCsv
 import dev.digitalducktape.openride.core.camera.HeadTracker
 import dev.digitalducktape.openride.core.camera.HeadTrackerState
+import dev.digitalducktape.openride.core.camera.UnavailableReason
 import dev.digitalducktape.openride.core.content.ChannelHandleResolver
 import dev.digitalducktape.openride.core.content.ContentSourceRepository
 import dev.digitalducktape.openride.core.content.YouTubeContentRepository
@@ -47,10 +50,13 @@ import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.core.update.AvailableUpdate
 import dev.digitalducktape.openride.core.update.UpdateCheckResult
 import dev.digitalducktape.openride.core.update.UpdateRepository
+import dev.digitalducktape.openride.games.bridge.CameraPermission
 import dev.digitalducktape.openride.games.bridge.GameBridge
 import dev.digitalducktape.openride.games.bridge.TrackerLink
 import dev.digitalducktape.openride.games.bridge.toTrackerReading
+import dev.digitalducktape.openride.games.session.BitmapAvatarRenderer
 import dev.digitalducktape.openride.games.session.GameSessionManager
+import dev.digitalducktape.openride.games.session.GameVisitManager
 import dev.digitalducktape.openride.games.session.GamesSettingsStore
 import dev.digitalducktape.openride.games.session.SharedPrefsGamesSettingsStore
 import dev.digitalducktape.openride.games.session.OtherMusicDetector
@@ -252,17 +258,67 @@ class AppContainer(private val applicationContext: Context) {
     /** Read by the Games hub for the rider's bests (#38). */
     val gameResultDao get() = database.gameResultDao()
 
-    /** The plan runner (Games hub): walks one plan at a time over [gameBridge]. */
+    /** The plan runner (Games hub): walks one plan at a time over [gameBridge] for [gameVisitManager]. */
     val gameSessionManager: GameSessionManager by lazy {
         GameSessionManager(
             signals = gameBridge,
             scope = gamesScope,
-            tracker = TrackerLink(headTracker, gameBridge, gamesScope, gamesLog),
+            tracker = gameTrackerLink,
             otherMusicActive = otherMusicDetector::otherMusicActive,
             audioPrefs = { gamesSettings.settings.value.audio },
             log = gamesLog,
         )
     }
+
+    /** The head tracker as the games use it: the visit's session and the plans' modes. */
+    val gameTrackerLink: TrackerLink by lazy { TrackerLink(headTracker, gameBridge, gamesScope, gamesLog) }
+
+    /**
+     * The Games hub visit (spec 2026-10-19): the bridge's session from entering games to
+     * leaving them, recorded as one ride through [rideSessionManager] plus its game results.
+     * App-scoped, on the main thread, so the ride is saved even after the host has gone to the
+     * back. `MainActivity` ends a live visit when the app comes back ([GameVisitManager.endIfLive]).
+     */
+    val gameVisitManager: GameVisitManager by lazy {
+        GameVisitManager(
+            signals = gameBridge,
+            scope = gamesScope,
+            runner = gameSessionManager,
+            rideSessionManager = rideSessionManager,
+            gameResultDao = database.gameResultDao(),
+            activeProfileId = { activeProfileHolder.activeProfileId.value },
+            profile = { profileRepository.getProfile(it) },
+            settings = gamesSettings,
+            cameraPermission = ::gamesCameraPermission,
+            cameraFailed = {
+                headTracker.state.value.unavailable.let { it == UnavailableReason.NO_FACE || it == UnavailableReason.NO_CAMERA }
+            },
+            sameDayExtremes = { profile ->
+                HeadCalibration.fromJson(profile.headCalibration)?.isFreshAt(System.currentTimeMillis(), ZoneId.systemDefault()) == true
+            },
+            tracker = gameTrackerLink,
+            pedalling = { bikeDataSource.metrics.value.cadenceRpm > 0 },
+            avatar = BitmapAvatarRenderer(applicationContext.cacheDir)::render,
+            otherMusicActive = otherMusicDetector::otherMusicActive,
+            log = gamesLog,
+        )
+    }
+
+    /**
+     * The camera permission as the hub shows it. Android can't tell "never asked" from "denied
+     * for good" before asking, so it's `ask` until the host's prompt is refused
+     * ([gamesCameraPermissionRefused], set by the host).
+     */
+    private fun gamesCameraPermission(): CameraPermission = when {
+        ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED ->
+            CameraPermission.GRANTED
+        gamesCameraPermissionRefused -> CameraPermission.DENIED
+        else -> CameraPermission.ASK
+    }
+
+    /** The rider refused the camera permission and Android won't ask again. */
+    @Volatile
+    var gamesCameraPermissionRefused = false
 
     /** The games' main-thread scope: the visit and the plan runner touch their state only on it. */
     val gamesScope: CoroutineScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
