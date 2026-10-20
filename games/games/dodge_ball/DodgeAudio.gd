@@ -1,8 +1,10 @@
 extends RefCounted
-## Dodge Ball's own sounds (#39), registered with AudioDirector by the game scene.
+## Dodge Ball's own sounds (#39, #55), registered with AudioDirector by the game scene.
 ##
-## - Synth presets (`sfx/*.tres`, through SfxSynth): launch_whoosh, dodge_tick, streak_chime,
-##   hit_body, shield_zap, shield_ready, game_over.
+## - Rendered effects (`music/sfx/*.ogg`, games/tools/music/songs/dodge_ball.py, in the music's
+##   key): launch_whoosh, dodge_tick, catch_chime, miss_whiff, fumble_thud, streak_chime,
+##   hit_body, shield_zap, shield_ready, game_over. They replace the synth presets of the same
+##   names (`sfx/*.tres`), which stay as SfxSynth's fallback.
 ## - Recorded CC0 one-shots (`sounds/`, Kenney "Impact Sounds"; see assets/SOURCES.md): the
 ##   hit's thud, the shield's glassy break and a ball's bounce. A hit plays the recording and
 ##   the synth body together, so it has both a real impact and a deep thump.
@@ -10,6 +12,7 @@ extends RefCounted
 ##   glue compressor on the music, a smaller reverb on the effects.
 
 const SFX_DIR := "res://games/dodge_ball/sfx"
+const DodgeMusic := preload("res://games/dodge_ball/DodgeMusic.gd")
 const SOUNDS := {
 	"hit_thud": "res://games/dodge_ball/sounds/impactPunch_heavy_001.ogg",
 	"shield_break": "res://games/dodge_ball/sounds/impactGlass_heavy_002.ogg",
@@ -24,6 +27,10 @@ static func register() -> void:
 		return
 	_registered = true
 	SfxSynth.add_preset_dir(SFX_DIR)
+	for sound in DodgeMusic.SOUNDS:
+		var rendered := load(DodgeMusic.SOUNDS[sound]) as AudioStream
+		if rendered:
+			AudioDirector.register_sound(sound, rendered)
 	for sound in SOUNDS:
 		var stream := load(SOUNDS[sound]) as AudioStream
 		if stream:

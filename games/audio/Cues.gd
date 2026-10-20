@@ -3,7 +3,10 @@ extends RefCounted
 ## `register(director)`, which plugs the generators in:
 ##
 ## - effects and cues: SfxSynth presets, rendered on first use (`register_sound_factory`);
-## - music: MusicGen, on a WorkerThreadPool thread (`register_music_generator`).
+## - the framework's cues, rendered offline (#55, `CueSounds.gd`): registered as sounds, so they
+##   take the place of the cue presets;
+## - music: MusicGen, on a WorkerThreadPool thread (`register_music_generator`), or SongSequencer
+##   for a style with `song` (music that follows a tempo, from a sample bank and a score).
 ##
 ## The framework's cue names map to presets here; every other name is a preset name.
 ##
@@ -12,6 +15,7 @@ extends RefCounted
 ## logged as `OPENRIDE_GAMES audio_bench …` (docs/GAMES.md, "Generated audio").
 
 const Dsp := preload("res://audio/Dsp.gd")
+const CueSounds := preload("res://audio/CueSounds.gd")
 
 ## Framework cue → SfxSynth preset, where the names differ.
 const ALIASES := {
@@ -27,11 +31,23 @@ func register(director: Node) -> void:
 	Dsp.warm()
 	MusicGen.preload_styles()
 	director.register_sound_factory(sound)
-	director.register_music_generator(MusicGen.generate)
+	for cue in CueSounds.SOUNDS:
+		var stream := load(CueSounds.SOUNDS[cue]) as AudioStream
+		if stream:
+			director.register_sound(cue, stream)
+	director.register_music_generator(generate)
 	if FileAccess.file_exists(BENCH_FLAG):
 		DirAccess.remove_absolute(BENCH_FLAG)
 		director.get_tree().create_timer(BENCH_DELAY_SEC).timeout.connect(func():
 			WorkerThreadPool.add_task(_bench, false, "audio bench"))
+
+
+## The music generator: SongSequencer for a style with `song`, MusicGen for the rest. Runs on a
+## WorkerThreadPool thread.
+static func generate(request: Dictionary) -> Dictionary:
+	if request.get("style", {}).has("song"):
+		return SongSequencer.generate(request)
+	return MusicGen.generate(request)
 
 
 ## The effect or cue for a name, or null when there is no such preset.

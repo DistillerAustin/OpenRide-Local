@@ -1,13 +1,15 @@
 extends RefCounted
 ## Cadence Karaoke's own sounds (#42), registered with AudioDirector by the game scene.
 ##
-## Synth presets (`sfx/*.tres`, through SfxSynth): beat_tick (the optional metronome),
-## streak_up, band_exit and ease_off_chime. The music is the `bright` style at the target
-## cadence (one beat per pedal stroke); its lead stem plays only while the rider is in the band,
-## so staying on target completes the song. Bus effects for this game only: a spacious reverb and
+## Rendered effects (`music/sfx/*.ogg`, games/tools/music/songs/cadence_karaoke.py, in the
+## music's key): beat_tick (the optional metronome), streak_up, band_exit and ease_off_chime.
+## They replace the synth presets of the same names (`sfx/*.tres`, SfxSynth's fallback). The
+## music is "Neon Lines" at the target cadence (CadenceMusic, through SongSequencer); its lead
+## stem plays only while the rider is in the band, so staying on target completes the song. Bus effects for this game only: a spacious reverb and
 ## a gentle compressor on the music.
 
 const SFX_DIR := "res://games/cadence_karaoke/sfx"
+const CadenceMusic := preload("res://games/cadence_karaoke/CadenceMusic.gd")
 
 static var _registered := false
 
@@ -17,6 +19,10 @@ static func register() -> void:
 		return
 	_registered = true
 	SfxSynth.add_preset_dir(SFX_DIR)
+	for sound in CadenceMusic.SOUNDS:
+		var rendered := load(CadenceMusic.SOUNDS[sound]) as AudioStream
+		if rendered:
+			AudioDirector.register_sound(sound, rendered)
 
 
 static func music_effects() -> Array[AudioEffect]:

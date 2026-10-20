@@ -1,13 +1,14 @@
 extends RefCounted
 ## Tug of War's own sounds (#40), registered with AudioDirector by the game scene.
 ##
-## Synth presets (`sfx/*.tres`, through SfxSynth): rope_creak (its pitch follows the rope's
-## tension), crowd_swell (a noise-filtered swell), surge_drumroll (the one-second warning),
-## win_sting, lose_sting and splash. The music is the `heave` style: heavy half-time drums
-## and a bass that builds, with the drum stem louder while the rope is tight.
+## Rendered effects (`music/sfx/*.ogg`, games/tools/music/songs/tug_of_war.py, in the music's
+## key): rope_creak (its pitch follows the rope's tension), crowd_swell, surge_drumroll (the
+## one-second warning), win_sting, lose_sting and splash. They replace the synth presets of the
+## same names (`sfx/*.tres`, SfxSynth's fallback). The music is "Heave Together" (TugMusic).
 ## Bus effects for this game only: a river-wide reverb and a glue compressor on the music.
 
 const SFX_DIR := "res://games/tug_of_war/sfx"
+const TugMusic := preload("res://games/tug_of_war/TugMusic.gd")
 
 static var _registered := false
 
@@ -17,6 +18,10 @@ static func register() -> void:
 		return
 	_registered = true
 	SfxSynth.add_preset_dir(SFX_DIR)
+	for sound in TugMusic.SOUNDS:
+		var rendered := load(TugMusic.SOUNDS[sound]) as AudioStream
+		if rendered:
+			AudioDirector.register_sound(sound, rendered)
 
 
 static func music_effects() -> Array[AudioEffect]:

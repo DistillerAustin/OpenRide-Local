@@ -578,13 +578,13 @@ generators can register without an autoload of their own.
 | --- | --- |
 | `register_sound(name: String, stream: AudioStream)` | A named effect or cue, rendered ahead of time. It replaces any earlier sound of that name. |
 | `register_sound_factory(factory: Callable)` | `factory(name: String) -> AudioStream` (or `null`). It is asked on the main thread the first time an unregistered name plays, and the answer is cached. Use it for lazy rendering of presets. |
-| `register_music_generator(generator: Callable)` | `generator(request: Dictionary) -> Dictionary`, mapping each stem name to a **looping** `AudioStream`, all the same length. `request` is `{style, tempo_bpm, seed}`. It **runs on a `WorkerThreadPool` thread**, so it must not touch the scene tree. Disk caching (`user://audio_cache/`) is the generator's job; `AudioDirector` keeps the last 4 renders in memory. |
+| `register_music_generator(generator: Callable)` | `generator(request: Dictionary) -> Dictionary`, mapping each stem name to a **looping** `AudioStream`, all the same length. `request` is `{style, tempo_bpm, seed}`. It **runs on a `WorkerThreadPool` thread**, so it must not touch the scene tree. Disk caching (`user://audio_cache/`) is the generator's job; `AudioDirector` keeps the last 4 renders in memory, and no more than 64 MB of WAV stems (`MUSIC_CACHE_BYTES`). |
 
 ### Playback (for games)
 
 | Method | Behaviour |
 | --- | --- |
-| `play_music(style: Dictionary, tempo_bpm: float, seed := 0)` | `style` belongs to the game and is passed to the generator as is. The one key `AudioDirector` reads is `stem_gates`: `{stem_name: intensity}`, the intensity at which a stem plays (0 by default). The music renders off the main thread, which the intro card covers, then **crossfades in over 2 s**. The old music plays until then. Asking again for the same request changes nothing. Tempo = the segment's target cadence (one beat per pedal stroke). The same style and seed at a new tempo is a **tempo change**: it swaps in on the next phrase boundary instead (see "Tempo changes on a phrase boundary"). **Pre-rendered music:** a style with `stem_files: {stem: path}` plays those files (OGG Vorbis, say) instead of asking the generator, loaded off the main thread and looping from `loop_from` seconds, so an intro plays once (`AudioDirector.stems_from_files`; Kart Race's tracks). |
+| `play_music(style: Dictionary, tempo_bpm: float, seed := 0)` | `style` belongs to the game and is passed to the generator as is. The one key `AudioDirector` reads is `stem_gates`: `{stem_name: intensity}`, the intensity at which a stem plays (0 by default). The music renders off the main thread, which the intro card covers, then **crossfades in over 2 s**. The old music plays until then. Asking again for the same request changes nothing. Tempo = the segment's target cadence (one beat per pedal stroke). The same style and seed at a new tempo is a **tempo change**: it swaps in on the next phrase boundary instead (see "Tempo changes on a phrase boundary"). **Pre-rendered music:** a style with `stem_files: {stem: path}` plays those files (OGG Vorbis, say) instead of asking the generator, loaded off the main thread and looping from `loop_from` seconds, so an intro plays once (`AudioDirector.stems_from_files`; every game's theme, see "Rendered music and effects"). **`swap_keeps_place: true`** makes a tempo change carry on from the phrase it swaps in at (the same place in the song) instead of the loop's start (Cadence Karaoke). |
 | `set_intensity(value: float)` | 0-1. Stems fade in or out over 1.5 s as `value` crosses their gate. |
 | `stop_music(fade_sec := 2.0)` | Fades the music out |
 | `play_sfx(name, volume_db := 0.0, pitch := 1.0) -> bool` | An effect on `SFX`, from 8 voices. `false` means silence. |
@@ -602,8 +602,10 @@ generators can register without an autoload of their own.
 | `pause`, `resume` | The session pauses and resumes |
 | `summary` | The summary appears |
 
-The demo asks for `dodge` and `hit` effects and for music with the style
-`{"name": "demo_drive", "stem_gates": {"harmony": 0.5, "lead": 0.85}}`.
+The demo asks for `dodge` and `hit` effects (rendered, from `DemoMusic.SOUNDS`) and for its rendered
+theme: `{"name": "warm_up", "stem_files": DemoMusic.STEM_FILES, "loop_from": DemoMusic.LOOP_FROM,
+"stem_gates": {"harmony": 0.5, "lead": 0.85}}` at `DemoMusic.BPM`, with `GameMix.master_effects()`
+(a -1 dBFS limiter) on `Master`.
 
 `Session` handles the rest:
 
@@ -623,11 +625,19 @@ instruments and stem effects". `res://audio/Cues.gd` is the single entry point: 
 
 - builds the wavetables and loads the styles on the main thread;
 - registers `SfxSynth` as the sound factory, so effects and cues render on first use;
-- registers `MusicGen.generate` as the music generator.
+- registers the framework's rendered cues (`CueSounds.gd`, #55), which take the cue presets' place;
+- registers `Cues.generate` as the music generator: `SongSequencer` for a style with `song`,
+  `MusicGen` for the rest.
+
+Since #55 the games themselves play rendered music and effects instead: see "Rendered music and
+effects". `MusicGen` and the presets stay for the gallery, as fallbacks and for new games.
 
 | File | What |
 | --- | --- |
 | `Cues.gd` | The entry point above. `countdown` maps to the `countdown_beep` preset; every other name is a preset name. |
+| `CueSounds.gd`, `cues/*.ogg` | The framework's cues, rendered by `games/tools/music` (#55) |
+| `SongSequencer.gd` | Music that follows a tempo, from a sample bank and a score (#55) |
+| `GameMix.gd` | The games' shared mix settings: the Master limiter and the sting and moment ducks (#55) |
 | `SfxSynth.gd`, `SfxPreset.gd` | The effects generator and its preset resource |
 | `sfx/<name>.tres` | The starter presets |
 | `MusicGen.gd`, `MusicStyle.gd` | The composer and synth, and the style resource |
@@ -635,6 +645,70 @@ instruments and stem effects". `res://audio/Cues.gd` is the single entry point: 
 | `Dsp.gd` | Shared oscillators, noise, filters and the float → PCM conversion |
 | `gallery/StyleGallery.tscn` | The desktop audition scene |
 | `tools/make_library.gd` | Regenerates the starter presets and styles from its tables |
+
+### Rendered music and effects (`games/tools/music`, #55)
+
+Every game's theme and effects are produced offline by `games/tools/music/render_music.py`
+(numpy, scipy and soundfile; deterministic; all synthesis written for this repo, no samples), one
+song module per game in `songs/`. See that folder's README. A game's rendered files live in
+`games/games/<game>/music/` and its index, `<Prefix>Music.gd`, is generated next to its scene:
+`STEM_FILES`, `LOOP_FROM`, `BPM`, `KEY` and `SOUNDS`.
+
+- **The theme** is a short intro and a loop of about 50-60 s in real song form (verse, chorus,
+  bridge; fills, builds and risers), mixed with sends, a kick-keyed pump, glue compression and a
+  limiter to -15 LUFS. It ships as **three OGG stems** that sum to the mix: `bed` (drums, bass,
+  effects; always on), `harmony` and `lead` (mono), which the game gates by intensity with its
+  `stem_gates`. The game plays it with `stem_files` at its own `BPM`, with the same request
+  every segment, so it plays on across segments.
+- **The effects** are one OGG each, in the theme's key, registered with
+  `AudioDirector.register_sound` under the old preset names (the presets stay as SfxSynth's
+  fallback), peaking at -4 dBFS so overlaps keep headroom. The framework's cues (`audio/cues/`)
+  peak at -3 dBFS.
+- **The mix:** each game puts `GameMix.master_effects()` (a hard limiter at -1 dBFS) on `Master`
+  and ducks the music under its own stings and banners (`GameMix.duck_for_sting`, -8 dB;
+  `duck_for_moment`, -5 dB), as cues do.
+- **Size:** 0.9-1.4 MB of OGG per game, about 5.8 MB in all with the cues.
+
+| Game | Theme | Tempo, key | Style | Intensity links |
+| --- | --- | --- | --- | --- |
+| Dodge Ball | Incoming! | 150 bpm, E minor | Electro-rock: synth bass, chugs, brass stabs, supersaw hook | harmony over the cadence floor, lead over the power target |
+| Tug of War | Heave Together | 132 bpm, D minor | Stomp-clap sea shanty: strums, accordion, tin whistle, brass | harmony with the rope tight, lead in a surge |
+| Safe Cracker | Night Shift | 120 bpm swung, C minor | Spy jazz: ride and brushes, walking bass, vibes, muted trumpet, sax, spy guitar | harmony and lead while steady; the bed alone while the alarm rings |
+| Cadence Karaoke | Neon Lines | the cadence (70-130 bpm), A major | Synth-funk: slap bass, Rhodes, plucks, supersaw hook | the tempo is the target cadence; the lead only in the band |
+| Demo | Warm Up | 122 bpm, F major | Easy house: sub bass, off-beat piano, pluck and supersaw | harmony and lead as cadence nears the target |
+
+**Music that follows a tempo (`SongSequencer`).** Cadence Karaoke's music must play at the rider's
+target cadence, so it can't be one file. Its song ships as a **sample bank** (`*_bank.ogg`: every
+note the song plays, rendered once at the length the slowest tempo needs) and a **score**
+(`CadenceMusic.SONG`: per track, each note's beat, sample and gate). `SongSequencer.render` lays
+the score out at the tempo on a worker thread:
+
+- The bank is decoded once per session (`AudioStreamPlayback.mix_audio`, native) to 16-bit PCM.
+- Each track is monophonic: a note plays until the next on its track, its gate plus the track's
+  release, or its end; a note cut short fades over the release. Tracks are built from native
+  slices and padding, with a GDScript loop only for those fades.
+- Each stem's tracks are summed natively (`AudioStreamSynchronized` through `mix_audio`) into a
+  looping 16-bit stereo WAV at 32 kHz.
+- Nothing is time-stretched or pitch-shifted, so the instruments sound the same at every tempo.
+  Rejected: `pitch_scale` (a 5 rpm step is 1-1.5 semitones), a pre-rendered file per tempo (17
+  tempos would be ~15 MB), and MusicGen (its synthesis can't reach this sound).
+- **The tempo** is the target cadence from 70 rpm (one beat a stroke); below, it doubles
+  (40-65 rpm play at 80-130 bpm, two beats a stroke). A pace change swaps in on a phrase
+  boundary with `swap_keeps_place`, so the song carries on where it was.
+- **Cost:** on an M-series Mac a 24-bar render takes 220-360 ms on one thread (MusicGen's
+  `bright` 16 bars: 174 ms), plus 155 ms to decode the bank once. Expect about 1.5-2 s on the
+  tablet's worker thread, within the swap's budget; to be measured there. A render holds 17-31 MB
+  of PCM (the cache keeps at most 64 MB) and the decoded bank 20 MB.
+
+**Checking a mix without speakers.** `tests/render_game_audio.gd` plays a game headless with a
+scripted rider (or a reel of all its sounds) and mixes every player itself, decoding OGG with
+`mix_audio`, to WAVs and an event log. `tools/music/analyze_mix.py` reports loudness, peaks,
+clipping, each effect's cut-through over the music and the duck:
+
+```sh
+$GODOT_BIN --headless --fixed-fps 60 --path games -s res://tests/render_game_audio.gd -- --game=dodge_ball --out=/tmp/r
+python games/tools/music/analyze_mix.py /tmp/r --limit
+```
 
 ### Effects (`SfxSynth`)
 
@@ -696,12 +770,12 @@ exactly the same length: `drums`, `bass`, `harmony` and `lead`.
 
 | Style (`styles/*.tres`) | Game | Character |
 | --- | --- | --- |
-| `drive` | Dodge Ball | Minor key, four-on-the-floor, pumping eighth-note bass, stabs |
-| `heave` | Tug of War | Phrygian, heavy half-time drums, a bass that builds phrase by phrase |
-| `noir` | Safe Cracker | Harmonic minor sevenths, brushes and ride, walking bass, swung comping, sparse vibes |
-| `bright` | Cadence Karaoke | Major sevenths, backbeat, root-fifth bass, sixteenth-note arpeggio |
-| `racer` | (gallery; Kart Race now plays rendered tracks) | Mixolydian, busy breakbeat, off-beat bass, stabs, detuned saw lead |
-| `demo_drive` | the demo | Dorian four-on-the-floor with a pad |
+| `drive` | (gallery; was Dodge Ball's) | Minor key, four-on-the-floor, pumping eighth-note bass, stabs |
+| `heave` | (gallery; was Tug of War's) | Phrygian, heavy half-time drums, a bass that builds phrase by phrase |
+| `noir` | (gallery; was Safe Cracker's) | Harmonic minor sevenths, brushes and ride, walking bass, swung comping, sparse vibes |
+| `bright` | (gallery; was Cadence Karaoke's) | Major sevenths, backbeat, root-fifth bass, sixteenth-note arpeggio |
+| `racer` | (gallery) | Mixolydian, busy breakbeat, off-beat bass, stabs, detuned saw lead |
+| `demo_drive` | (gallery; was the demo's) | Dorian four-on-the-floor with a pad |
 
 Each style's `suggested_gates` is a starting point for the game's `stem_gates`.
 
@@ -710,8 +784,8 @@ Each style's `suggested_gates` is a starting point for the game's `stem_gates`.
 Styles have **no base BPM of their own**. The tempo comes from the game:
 
 1. **The game passes `tempo_bpm`** to `play_music`: the segment's target cadence in rpm,
-   so one beat = one pedal stroke. The demo passes `cadence_floor + 20`
-   (`games/games/demo/Demo.gd`).
+   so one beat = one pedal stroke. (Since #55 the shipped games play rendered themes at their
+   own tempo instead, apart from Cadence Karaoke: see "Rendered music and effects".)
 2. **`MusicGen` plays at `tempo_bpm × tempo_scale`**, clamped to 30-240 bpm
    (`MusicGen.music_tempo()`).
    - `tempo_scale` is a property of each style, in `games/audio/styles/<style>.tres`
@@ -1174,7 +1248,9 @@ orb steps with the readings. It is eased a little so it doesn't jump.
 ever sees the target rpm) and can adjust it at any time with the − and + buttons under the view (5 rpm a step; `,` and `.` on the
 desktop). The change waits for a phrase boundary: the game asks `AudioDirector` for the music at
 the new tempo (same style and seed), and applies the new target on its `tempo_swapped` signal, so
-the beat changes with it. A change that hears no swap applies after 16 s, or 1.5 s
+the beat changes with it. The music is "Neon Lines" (`CadenceMusic`, laid out by `SongSequencer`
+at the target cadence; two beats a stroke below 70 rpm), and a swap carries on from the same
+place in the song (`swap_keeps_place`). A change that hears no swap applies after 16 s, or 1.5 s
 with no music. A moving target (a profile) asks for a new tempo every 6 s when it has drifted 3 rpm.
 
 **Circuits.** A circuit segment sends `cadence_profile` (`[{t, rpm}]`: a warm-up ramp 70 to 90, a
@@ -1198,7 +1274,7 @@ cadence stays within about ±2 rpm of the target earns about 1700, one who wande
 
 **Options** (per rider): Metronome (a beat tick, off by default) and Colour (by
 workout part, or one fixed colour). The beat visuals run on the target's clock, which the music is
-rendered at; check their alignment with the music on the bike. `tests/capture_cadence.gd` plays a
+laid out at; check their alignment with the music on the bike. `tests/capture_cadence.gd` plays a
 scripted ride for a recording.
 
 ## Kart Race (#43)
