@@ -1332,7 +1332,21 @@ cadence stays within about ±2 rpm of the target earns about 1700, one who wande
 **Options** (per rider): Metronome (a beat tick, off by default) and Colour (by
 workout part, or one fixed colour). The beat visuals run on the target's clock, which the music is
 rendered at; check their alignment with the music on the bike. `tests/capture_cadence.gd` plays a
-scripted ride for a recording.
+scripted ride for a recording (`--looks=` stills per colour, `--measure=SEC` the 3D view's draw
+calls and frame time, `--overdraw` an overdraw still).
+
+**The look** (`games/cadence_karaoke/ART_BIBLE.md`). Everything is unshaded and drawn in its
+shaders, with no engine glow or post pass: the tunnel's grid (`grid.gdshaderinc` with floor,
+wall and ceiling wrappers) has antialiased lines that fade to their average far away, the
+theme's neon on the long lines and its secondary (`CadenceWorld.SECONDARY`) on the cross lines;
+the floor reflects the rings and the beat line, the walls carry equaliser columns on the beat's
+clock, and a portal closes the far end. The rings are a thin frame mesh (`frame_mesh`, no
+`discard`), the orb a white-hot core with its state colour as a rim and an ink outline, a halo
+and a pool and trail on the floor. In the bonus band, sparks fly off the line as a ring lands
+(a pooled MultiMesh moved by its shader); while scoring is frozen the tunnel desaturates. The
+grade is the shared world look's (`cadence_look.gdshaderinc` sets Cadence's defines); additive
+layers take only its linear parts. `CadenceWorld.ring_z` places the rings for the MultiMesh and
+for the floor's reflections alike (`cadence_world_test`).
 
 ## Kart Race (#43)
 

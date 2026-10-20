@@ -3,9 +3,11 @@
 > **Status:** v1, 2026-10-19, from the graphics review of `games-polish` at 6ef6fab (code and
 > the before captures). **Owner:** whoever changes the look. Change this file in the same commit
 > as any change to the themes, the tunnel, the orb or the effects. **Sources of truth:**
-> `CadenceWorld.gd` (`THEMES`, the meshes), `shaders/grid.gdshader`, `shaders/ring.gdshader`,
-> `CadenceKaraoke._make_look` (UI). **Target** marks what the code doesn't do yet;
-> `GFX_POLISH.md` tracks the work.
+> `CadenceWorld.gd` (`THEMES`, `SECONDARY`, `ENERGY`, the meshes), `shaders/` (the grid include
+> and its floor, wall and ceiling wrappers, `cadence_look.gdshaderinc`, ring, orb, halo, pool,
+> portal, spark), `CadenceKaraoke._make_look` (UI). The graphics pass of 2026-10-20
+> (`GFX_POLISH.md`) built every **Target** below except the render scale (a tablet measurement)
+> and the beat FOV push (off by choice); "Target" now marks only those.
 
 Everything is procedural: shaders and primitive meshes. Neon tunnels and grids are a generic
 synthwave motif; take the mood, never another game's track, logo or layout.
@@ -33,9 +35,9 @@ is the night-time, music-video game.
 | cool-down (violet) | `#B880FF` | Winding down, dim | warm rose `#FF8FB3` |
 | free (pink) | `#FF73CC` | Party | sunset orange `#FFA347` |
 
-Today each theme is one colour on every surface, so the tunnel reads monochrome. **Target:**
-the theme colour on the long lines and the rings, the secondary on the cross lines and the
-far portal, mixed in the horizon glow. Cool-down runs about 20% dimmer than the others.
+The theme colour is on the long lines and the rings; the secondary (`CadenceWorld.SECONDARY`)
+on the cross lines, the equaliser tops and the far portal, mixed into the horizon glow (the
+haze colour is the background plus 5% of it). Cool-down runs 20% dimmer (`ENERGY`).
 
 ## 3. Palette
 
@@ -48,9 +50,9 @@ far portal, mixed in the horizon glow. Cool-down runs about 20% dimmer than the 
 | Orb: bonus / band / near / out / frozen | `#73FFA6` / `#99FF80` / `#FFD94D` / `#FF6659` / `#FFB333` | Semantic, not themed. |
 
 **Clash to fix:** the orb's "in band" greens sit on the recovery theme's green tunnel, so the
-orb loses its edge exactly when the rider is doing well. **Target:** the orb keeps its state
-colour as a ring and halo, around a white-hot core with a dark outline ring, so it pops on
-every theme.
+orb loses its edge exactly when the rider is doing well. Fixed: the orb keeps its state
+colour as a fresnel rim and halo, around a white-hot core with a dark ink outline
+(`orb.gdshader`), so it pops on every theme.
 
 **UI harmony.** The HUD is rebuilt per theme from `world.theme_color` (`_make_look`, ink
 `#12052A`), so the UI accent always equals the tunnel's neon. Any secondary colour stays out of
@@ -61,7 +63,10 @@ the HUD; the target number's gradient and the ±5 rpm buttons follow the neon on
 - **No lit surfaces.** Everything is `unshaded`, emitted, additive where it overlaps. The shared
   include (`framework/shaders/world_look.gdshaderinc`) is used only for `vnoise`, `haze` (the
   depth fade to the void, `haze_color` = background) and `grade`.
-- **Cadence's grade** (the `LOOK_*` defines, Target):
+- **Cadence's grade** (the `LOOK_*` defines in `shaders/cadence_look.gdshaderinc`). Opaque
+  surfaces (tunnel, portal) take all of it; additive layers (rings, halo, pool, sparks) define
+  `CADENCE_ADDITIVE` and take only its linear parts, saturation and the vignette, so stacked
+  layers still add up. While scoring is frozen, `frozen` pulls the saturation down 40%:
 
   | Define | Value |
   | --- | --- |
@@ -74,27 +79,30 @@ the HUD; the target number's gradient and the ±5 rpm buttons follow the neon on
 - **Glow without a glow pass.** Each line is drawn as a core plus a soft exponential halo in its
   own shader (`core + halo * exp(-d * k)`), and the orb has a billboard halo. The engine's glow
   is a full-screen multi-pass blur: not on this tablet.
-- **Lines are antialiased in the shader** (Target): widths in screen pixels via `fwidth()`, and
-  contrast fading with distance so far lines don't moiré. Today they are fixed widths in world
-  units, which shimmer into moiré down the tunnel at 0.62 scale.
+- **Lines are antialiased in the shader** (`grid_line()` in `grid.gdshaderinc`, the ring's
+  strip): the core is measured in screen pixels via `fwidth()`, never thinner than about 1.2 px
+  (dimmed instead, so its coverage holds), and the contrast fades to the lines' average over
+  60-140 m so far lines don't moiré.
 
 ## 5. Shapes and proportions
 
 - The tunnel: 15 m wide, 7.6 m tall (`HALF_W`, `FLOOR_Y`, `CEIL_Y`), lines every 2.5 m.
-- Rings: a 15 × 7.4 m rectangle outline, 7 m apart, one per beat. **Target:** a frame mesh
-  (four thin quads), rounded corner glints.
+- Rings: a 15 × 7.4 m rectangle outline, 7 m apart, one per beat: a frame mesh
+  (`CadenceWorld.frame_mesh`, four mitred strips 0.7 m wide with a ~0.1 m core), white corner
+  glints, brightest as a ring nears the line.
 - The box: a lane 6.4 m wide on the floor, two gates, the white beat line (`_build_line`).
 - The orb: 0.6 m radius on the floor, growing a little with the beat and the streak.
-  **Target:** a reflection pool on the floor under it and a short light trail behind it.
+  A reflection pool on the floor under it and a light trail toward the rider, longer with the
+  streak (both `orb_pool.gdshader`, one quad).
 
 ## 6. Environment
 
-- **Depth cues:** the converging grid, the rings shrinking with distance, and (Target) a portal
+- **Depth cues:** the converging grid, the rings shrinking with distance, and a portal
   at the far end: a glowing horizon disc in the theme's secondary with horizontal bands, so the
   tunnel has a destination instead of a black square.
-- **Walls** (Target): equaliser bars on the side walls rising with the beat and the music's
+- **Walls:** equaliser bars on the side walls rising with the beat and the music's
   energy (per-column height from `vnoise` and `beat` in the wall shader, no geometry).
-- **Floor** (Target): a faint glossy reflection of the rings and the orb, analytic in the floor
+- **Floor:** a faint glossy reflection of the rings and the orb, analytic in the floor
   shader (the rings are periodic in z, so no extra pass).
 
 ## 7. VFX language
@@ -102,10 +110,10 @@ the HUD; the target number's gradient and the ±5 rpm buttons follow the neon on
 | Effect | Look |
 | --- | --- |
 | Beat | A ring reaches the white line; lines flare (`beat`); the orb swells |
-| Streak | The orb grows and brightens; **Target:** the tunnel's scroll lines brighten and the trail lengthens |
+| Streak | The orb grows and brightens and its floor trail lengthens. (Target: the tunnel's scroll lines brighten) |
 | Streak break | The orb flashes red (`orb_flash`) |
-| In bonus | **Target:** sparks off the beat line as a ring lands (a tiny pooled MultiMesh, additive) |
-| Ease off (frozen) | The orb turns amber; **Target:** the tunnel desaturates 40% until it clears |
+| In bonus | Sparks off the beat line as a ring lands (16 pooled streaks, `spark.gdshader`, motion in the vertex shader; hidden between bursts) |
+| Ease off (frozen) | The orb turns amber; the tunnel desaturates 40% until it clears (eased over 0.4 s) |
 
 Additive everywhere except the floor's reflection and the vignette. Effects stay in the theme,
 its secondary, white or the orb's state colours.
@@ -118,15 +126,18 @@ by default if it reads as a lurch).
 
 ## 9. Tablet budget (Gen 2, PowerVR GX6250, Compatibility, tracker OFF)
 
-| Item | Budget | Today (desktop) |
+| Item | Budget | After the graphics pass (desktop, 2026-10-20) |
 | --- | --- | --- |
 | fps | 60 | not measured on the bike for the graphics |
-| Render scale | 0.62 (`CadenceKaraoke.RENDER_SCALE`); the tracker is off, so 0.72 is affordable if measured (Kart: 0.72 cost about 4 fps with the tracker) | 0.62 |
-| Draw calls in play | ≤ 70 with the HUD (world ≤ 30) | 64 |
-| Visible triangles | ≤ 20k | a few thousand |
-| Per pixel on the tunnel | ≤ 2 noise reads, ≤ 40 ALU; the four planes cover the whole screen | about 15 ALU |
-| Overdraw | ≤ 3 additive layers over most of the screen; no full-screen `discard` quads | 18 ring quads of 15 × 7.4 m with `discard` in the middle |
-| Per-frame GDScript | ring transforms (18) and a few uniforms | as is |
+| Render scale | 0.62 (`CadenceKaraoke.RENDER_SCALE`); the tracker is off, so 0.72 is affordable if measured (Kart: 0.72 cost about 4 fps with the tracker) | 0.62 (0.72 still to measure on the bike) |
+| Draw calls in play | ≤ 70 with the HUD (world ≤ 30) | 66 (world 13-14: +portal, +pool, +sparks only during a burst; was 64 and 11) |
+| Visible triangles | ≤ 20k | about 1k (was 382: the orb is 24 × 12 segments, the rings 16 triangles each) |
+| Per pixel on the tunnel | ≤ 2 noise reads, ≤ 40 ALU; the four planes cover the whole screen | about 35 on the ceiling, 45 on the floor, 55 on the walls (an estimate, the walls over budget) with one noise read on the walls; desktop frame +0.2 ms (0.86 → about 1.05 ms) |
+| Overdraw | ≤ 3 additive layers over most of the screen; no full-screen `discard` quads | about 1 layer on average (capture `--overdraw` mean green 0.099, was 0.340); no `discard` anywhere |
+| Per-frame GDScript | ring transforms (18) and a few uniforms | as is, plus 16 custom-data writes per spark burst |
 
 This game is GPU (fill) bound if anything: the tunnel is full-screen and additive. Spend ALU
-on the planes carefully and keep overdraw down; the CPU has headroom with the camera off.
+on the planes carefully and keep overdraw down; the CPU has headroom with the camera off. The
+graphics pass traded ALU on the planes (antialiased lines, the grade, reflections, the
+equaliser) for the rings' fill (up to 18 layers with `discard` in the middle of the screen):
+the tablet's measurement decides whether the walls' equaliser stays.
