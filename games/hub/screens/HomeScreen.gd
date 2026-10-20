@@ -206,16 +206,11 @@ func circuit_card(c: Dictionary) -> Control:
 	box.add_child(top)
 	var minutes := HubTheme.look().label("%d MIN" % int(c.get("minutes", 0)), HudTheme.MEDIUM, GameTheme.INK, false)
 	top.add_child(minutes)
-	var time := HubTheme.label(HubTheme.duration(int(c.get("total_sec", -1))), HudTheme.SMALL, GameTheme.MUTED, true)
-	time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	time.clip_text = true  # never wider than the card (its bake would cut the edge)
-	time.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	time.size_flags_vertical = Control.SIZE_FILL
-	top.add_child(time)
 	var strip := LineupStrip.new(c.get("slots", []), Vector2(HubTheme.CIRCUIT_CARD.x - 48, 30))
 	box.add_child(strip)
-	var line := HubTheme.label("%d games" % (c.get("slots", []) as Array).size(), HudTheme.SMALL, GameTheme.MUTED, true)
+	# The time on its own line: beside "20 MIN" it would widen the card past its bake.
+	var line := HubTheme.label("%s · %d games" % [HubTheme.duration(int(c.get("total_sec", -1))),
+		(c.get("slots", []) as Array).size()], HudTheme.SMALL, GameTheme.MUTED, true)
 	line.clip_text = true
 	box.add_child(line)
 	var best := HubState.circuit_best(state, str(c.id))
