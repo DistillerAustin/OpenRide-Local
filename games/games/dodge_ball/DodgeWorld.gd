@@ -49,6 +49,8 @@ const BARK := Color(0.42, 0.29, 0.19)
 const TREE_SWAY := 0.0016  ## m of sway per m² of height (a 7 m tree's crown moves about 8 cm)
 const BUSH_SWAY := 0.012
 const FENCE_OFFSET := 4.5  ## m from the kerb to the fence line
+const FENCE_SPACING := 3.125  ## m between posts; the fence's scroll wraps at this
+const FENCE_LEN := 175.0  ## m of fence ahead of the bike (past the far plane, 170)
 const FX_POOL := 96  ## streaks and chunks alive at once (ART_BIBLE §9: at most 120 particles)
 const HORIZON_HILLS := 155.0  ## m to the hills (inside the far plane, 170)
 const HORIZON_TREES := 125.0  ## m to the distant tree line
@@ -95,10 +97,13 @@ var _chunks: Array[Node3D] = []
 var _halo_mat: StandardMaterial3D
 var _scenery_mats := {}  ## the hand-lit scenery materials by surface colour, shared by every chunk
 var _horizon: MeshInstance3D
+var _fence: MeshInstance3D
+var _fx_until := 0.0  ## _anim_t when the last live FX instance dies (the pool is hidden after)
 var _bars_mat: ShaderMaterial
 var _blob_mats: Array[ShaderMaterial] = []
 var _fx_mm: MultiMesh
 var _fx_mat: ShaderMaterial
+var _fx_mmi: MultiMeshInstance3D
 var _fx_next := 0
 var _fx_rng := RandomNumberGenerator.new()
 var _shards: CPUParticles3D
@@ -139,12 +144,14 @@ func _apply_tuning() -> void:
 		_env.environment.fog_enabled = false
 	for chunk in _chunks:
 		chunk.visible = tuning.get("scenery", true)
+	_fence.visible = tuning.get("scenery", true)
+	_horizon.visible = tuning.get("scenery", true)
 	for node in get_children():
 		if node is MeshInstance3D and node.material_override == _verge_mat:
 			node.visible = tuning.get("verges", true)
 		if node is MeshInstance3D and node.material_override == _road_mat:
 			node.visible = tuning.get("road", true)
-		if node is MultiMeshInstance3D:
+		if node is MultiMeshInstance3D and node != _fx_mmi:
 			node.visible = tuning.get("balls", true)
 	for node in camera.get_children():
 		node.visible = tuning.get("rig", true)
@@ -172,11 +179,13 @@ func update_view(delta: float, logic: DodgeBallLogic, cadence_speed: float, lean
 		chunk.position.z += road_speed * delta
 		if chunk.position.z - CHUNK_LEN > 4.0:
 			chunk.position.z -= CHUNK_LEN * CHUNKS
+	_fence.position.z = fmod(distance, FENCE_SPACING)
 
 	_rig.position.x = logic.rider_x
 	# The horizon keeps its distance: it follows the rider sideways and never scrolls.
 	_horizon.position.x = logic.rider_x
 	_fx_mat.set_shader_parameter("now", _anim_t)
+	_fx_mmi.visible = _anim_t < _fx_until
 	_road_mat.set_shader_parameter("rider_x", logic.rider_x)
 	var target_roll := -clampf(lean, -1.0, 1.0) * deg_to_rad(ROLL_MAX_DEG) if roll_enabled else 0.0
 	_roll = lerpf(_roll, target_roll, 1.0 - exp(-6.0 * delta))
@@ -341,6 +350,8 @@ func burst(at: Vector3, color: Color, count: int, v_min: float, v_max: float, gr
 		_fx_mm.set_instance_color(_fx_next, color)
 		_fx_mm.set_instance_custom_data(_fx_next, Color(_anim_t, 0, 0, 0))
 		_fx_next = (_fx_next + 1) % FX_POOL
+	_fx_until = maxf(_fx_until, _anim_t + life + 0.05)
+	_fx_mmi.visible = true
 
 
 ## One FX instance's data, packed in its transform as shaders/fx.gdshader reads it: the origin,
@@ -519,8 +530,14 @@ func _build_scenery() -> void:
 	var rock := _hand_lit(_model_mesh("rock_largeA.glb"), _scenery_mats, Color(0.56, 0.56, 0.53),
 		Color(0.46, 0.45, 0.43), 0.0, 0.9)
 	var cone := _hand_lit(_model_mesh("construction-cone.glb"), _scenery_mats)
-	var fence := fence_mesh()
-	fence.surface_set_material(0, _scenery_material(_scenery_mats, Color(1, 1, 1), null, 0.0, 1.0, false, true))
+	# One fence for the whole road (a draw call, not one a chunk): it scrolls like the chunks and
+	# steps back a post spacing as it passes, which can't be seen.
+	_fence = MeshInstance3D.new()
+	_fence.name = "Fence"
+	_fence.mesh = fence_mesh()
+	_fence.material_override = _scenery_material(_scenery_mats, Color(1, 1, 1), null, 0.0, 1.0, false, true)
+	_fence.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_fence)
 	var disc := QuadMesh.new()
 	disc.size = Vector2.ONE
 	disc.orientation = PlaneMesh.FACE_Y
@@ -623,11 +640,6 @@ func _build_scenery() -> void:
 			for i in 4:
 				cones.append(Transform3D(Basis().scaled(Vector3.ONE * cs), Vector3(-(DodgeBallLogic.ROAD_HALF + 0.6), 0, -10.0 - i * 2.5)))
 			chunk.add_child(_multimesh(cone, cones, "Cones"))
-		var fence_mi := MeshInstance3D.new()
-		fence_mi.name = "Fence"
-		fence_mi.mesh = fence
-		fence_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		chunk.add_child(fence_mi)
 		var disc_mmi := _multimesh(disc, discs, "Discs")
 		chunk.add_child(disc_mmi)
 
@@ -643,20 +655,22 @@ static func _disc(at: Vector3, diameter: float) -> Transform3D:
 	return Transform3D(Basis().scaled(Vector3(diameter, 1.0, diameter)), Vector3(at.x, 0.03, at.z))
 
 
-## One chunk's fence (both sides, CHUNK_LEN long): weathered posts every 3.125 m and two rails,
-## vertex-coloured, about 400 triangles. Chunks join end to end, so the rails run on unbroken.
+## The fence (both sides, from just behind the bike to FENCE_LEN ahead): weathered posts every
+## FENCE_SPACING and two rails, vertex-coloured, about 1.2k triangles.
 static func fence_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var post := Color(0.62, 0.53, 0.41)
 	var rail := Color(0.78, 0.7, 0.57)
 	var x := DodgeBallLogic.ROAD_HALF + FENCE_OFFSET
-	var posts := 16
+	var posts := int(FENCE_LEN / FENCE_SPACING) + 2
+	var start := FENCE_SPACING * 2.0
 	for side in [-1.0, 1.0]:
 		for i in posts:
-			_box(st, Vector3(side * x, 0.45, -i * CHUNK_LEN / posts), Vector3(0.12, 0.9, 0.12), post)
+			_box(st, Vector3(side * x, 0.45, start - i * FENCE_SPACING), Vector3(0.12, 0.9, 0.12), post)
 		for y in [0.42, 0.78]:
-			_box(st, Vector3(side * (x - 0.07), y, -CHUNK_LEN * 0.5), Vector3(0.05, 0.1, CHUNK_LEN), rail)
+			var length := posts * FENCE_SPACING
+			_box(st, Vector3(side * (x - 0.07), y, start - length * 0.5), Vector3(0.05, 0.1, length), rail)
 	return st.commit()
 
 
@@ -821,13 +835,15 @@ func _build_fx() -> void:
 		# Born long ago: every slot starts dead.
 		_fx_mm.set_instance_transform(i, Transform3D(Basis(Vector3.ZERO, Vector3(0, 0.1, 0), Vector3.ZERO), Vector3.ZERO))
 		_fx_mm.set_instance_custom_data(i, Color(-1000.0, 0, 0, 0))
-	var fx := MultiMeshInstance3D.new()
-	fx.name = "Fx"
-	fx.multimesh = _fx_mm
-	fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fx_mmi = MultiMeshInstance3D.new()
+	_fx_mmi.name = "Fx"
+	_fx_mmi.multimesh = _fx_mm
+	_fx_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# The shader places the instances: one box round the near road keeps them from being culled.
-	fx.custom_aabb = AABB(Vector3(-20, -2, -40), Vector3(40, 14, 44))
-	add_child(fx)
+	_fx_mmi.custom_aabb = AABB(Vector3(-20, -2, -40), Vector3(40, 14, 44))
+	# Hidden while nothing is alive (a burst shows it), so an idle pool costs no draw call.
+	_fx_mmi.visible = false
+	add_child(_fx_mmi)
 	var add := StandardMaterial3D.new()
 	add.vertex_color_use_as_albedo = true
 	add.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

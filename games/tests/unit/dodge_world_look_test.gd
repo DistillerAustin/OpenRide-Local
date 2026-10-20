@@ -84,11 +84,27 @@ func test_horizon_closes_the_view_cheaply() -> void:
 func test_fence_runs_on_its_line_and_scenery_keeps_clear() -> void:
 	var mesh := DodgeWorld.fence_mesh()
 	var line := DodgeBallLogic.ROAD_HALF + DodgeWorld.FENCE_OFFSET
-	assert_int(_triangles(mesh)).is_less_equal(450)
-	assert_float(mesh.get_aabb().end.x).is_equal_approx(line + 0.06, 0.01)
-	assert_float(mesh.get_aabb().size.z).is_equal_approx(DodgeWorld.CHUNK_LEN, 0.15)
+	var aabb := mesh.get_aabb()
+	assert_int(_triangles(mesh)).is_less_equal(1300)
+	assert_float(aabb.end.x).is_equal_approx(line + 0.06, 0.01)
+	# From behind the bike past the far plane, whatever the scroll (it wraps at a post spacing).
+	assert_float(aabb.end.z).is_greater(DodgeWorld.FENCE_SPACING)
+	assert_float(aabb.position.z + DodgeWorld.FENCE_SPACING).is_less(-170.0)
 	assert_float(absf(DodgeWorld.clear_of_fence(line) - line)).is_greater_equal(1.2)
 	assert_float(DodgeWorld.clear_of_fence(20.0)).is_equal(20.0)
+
+
+func test_the_fence_scrolls_and_the_idle_fx_pool_is_hidden() -> void:
+	var world := _world()
+	var logic := DodgeBallLogic.new(1, "standard", {}, false, "dodge")
+	assert_bool(world._fx_mmi.visible).is_false()
+	world.distance = 10.0
+	world.update_view(0.016, logic, 0.0, 0.0)
+	assert_float(world._fence.position.z).is_equal_approx(fmod(10.0, DodgeWorld.FENCE_SPACING), 0.001)
+	world.burst(Vector3.ZERO, Color.CYAN, 4, 1.0, 2.0, 0.0, 0.4, 0.04, false)
+	assert_bool(world._fx_mmi.visible).is_true()
+	world.update_view(0.5, logic, 0.0, 0.0)
+	assert_bool(world._fx_mmi.visible).is_false()
 
 
 func test_handlebars_are_one_mesh() -> void:
