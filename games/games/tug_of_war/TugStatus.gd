@@ -230,13 +230,18 @@ func set_state(rider_watts: float, bot_watts_now: float, rope: float, surge_stat
 		_bar_px = px
 		_place_knot()
 		bar.queue_redraw()
+	var changed := false
 	if surge_state != surge:
 		surge = surge_state
 		_set_knot_alarm()
+		changed = true
 	if alert != _alert or rest_sec != _rest_sec:
 		_alert = alert
 		_rest_sec = rest_sec
-	_refresh_round()
+		changed = true
+	# The badge's key is a formatted string: only rebuilt when its inputs change, not per frame.
+	if changed:
+		_refresh_round()
 
 
 ## The badge (or the pips) for the current state; only re-laid out when it changes.

@@ -88,7 +88,7 @@ pop (round won, pulled in, surge).
    --play=150 --snaps` saves stills of each state (no video).
 5. [x] **Round results with weight.** "Round won!" and "Pulled in!" are plain messages. With the
    skin they pop already. Also `GameTheme.pop(hud.score, 1.2)` on the +1000, and slam a gold
-   "+1000" chip next to the score. `_flash_rect` (blue) already covers the loss: keep it.
+   "+1000" chip next to the score. The blue flash (`_flash`, a tint on the 3D view's image since the tablet performance pass) already covers the loss: keep it.
    *Done, with a change:* `pop(hud.score, 1.2)`, and the message reads "Round won! +1000". A
    chip beside the score would mean parenting a node into the framework's clock panel, which
    Session doesn't clear; asked for as a framework slot instead.

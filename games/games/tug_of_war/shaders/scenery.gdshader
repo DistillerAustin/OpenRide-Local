@@ -1,5 +1,5 @@
 // Tug of War's riverside (one baked mesh: banks, hills, trees, piers, masts, bunting, string
-// lights, reeds, the tent) and the flag on the rope. Lit per vertex by hand, hazed and graded per
+// lights, reeds, the tent) and the flag on the rope. Lit and hazed per vertex by hand, graded per
 // pixel (tug_look.gdshaderinc). Vertex data (TugMeshes):
 //   COLOR.a  1 - sway weight: reeds and bunting sway, the flag's cloth flutters (`wave`).
 //   UV.x     ground grain: one noise read breaks up the banks' grass and earth.
@@ -18,6 +18,7 @@ uniform float self_lit = 0.0;  // 0-1: share of light that ignores the sun (the 
 varying vec3 v_light;
 varying vec2 v_ground;
 varying float v_grain;
+varying float v_haze;
 
 void vertex() {
 	float w = 1.0 - COLOR.a;
@@ -34,6 +35,7 @@ void vertex() {
 	v_light = mix(v_light, vec3(0.75 + 1.1 * lamp), UV.y);
 	v_ground = wp.xz;
 	v_grain = UV.x;
+	v_haze = haze_amount(length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz));
 }
 
 void fragment() {
@@ -42,5 +44,5 @@ void fragment() {
 		float g = vnoise(v_ground * 1.6 + vec2(17.0, 3.0));
 		col *= mix(1.0, 0.8 + 0.4 * g, v_grain);
 	}
-	ALBEDO = grade(haze(col * v_light, length(VERTEX)), SCREEN_UV);
+	ALBEDO = grade(hazed(col * v_light, v_haze), SCREEN_UV);
 }

@@ -139,6 +139,72 @@ noise (1.12-1.24 → 1.17-1.25 ms, vsync off). The tablet still needs a run with
    - Done: 4 puffs in a MultiMesh on the bot (`steam.gdshader`), half on a telegraph, full in a
      surge, hidden otherwise.
 
+## Tablet performance (2026-10-20, branch `perf-tug`)
+
+**The report.** On the bike with the tracker on (Brace lean), after the graphics pass: 48 fps in
+the intro (min 47, steady) and 35 average in play (min 10 over two samples). Target: 55 or more
+sustained. The other games hold 59-60.
+
+**What the desktop shows** (`tests/measure_tug.gd`, below). The world is 12 draws (13 with the
+warm-up's droplets still falling), 30-32k primitives, and the HUD adds 29 draws on the intro
+card and 45 in play. `_on_frame` is 17 µs (about 0.4 ms on the tablet at Kart's 20-30x), so the
+game's GDScript isn't the problem. The desktop GPU doesn't notice any one part even at 4x the
+render size (every A/B lands within noise), so the costs below are per-pixel estimates: ALU
+counted from the shaders, weighted by how much of the view each covers. In the intro view (rope
+even) the sky covers about 30%, the near deck 28%, the river 22%, the riverside 15% and the
+crowd 5%. Pulled in while losing, the river covers about half and the deck goes. Before the pass
+that averaged roughly 85-95 ALU and 2-3 texture reads a pixel.
+
+**Diagnosis.** The intro is the same scene as play at an even rope, with no per-frame game work,
+and it ran 48 steady: the scene itself was over budget on the GPU (fill and ALU). Play adds the
+pulled-in view (the river, the most expensive surface, doubles its share), the lost-round flash
+(a full-screen blended pass), and shader compiles on the first telegraph and splash (the min of
+10). Thermal throttling from the tracker over a longer ride may add to it (Kart Race, docs/GAMES.md).
+
+Each trim is its own commit. Savings are estimates for the GX6250 at 0.62 (about 0.8 Mpx).
+
+| # | Trim | Estimated saving | What the rider loses |
+| --- | --- | --- | --- |
+| 1 | **Warm-up.** `prewarm` draws the steam, the ripple and the droplets for 3 frames behind the intro card (transparent, or under the river), so Compatibility compiles their shaders then. | The first-telegraph and first-splash stalls (one 100-300 ms hitch each, the 10 fps sample) | Nothing |
+| 2 | **Sky from its cubemap.** The sky shader runs in full only in the cubemap pass (256 a face, rebuilt when the time of day changes); the background reads the cubemap once a pixel. Needs the sky as the reflection source (nothing reads it: every material is unshaded). | About 65 ALU and 2 texture reads on a quarter to a third of the view: the biggest single cut, about 20 ALU a pixel averaged | The stars and the disc's edge are a touch softer (0.35° texels, 0.1° pixels); otherwise identical |
+| 3 | **Water per vertex.** The flat light (two `sun_light` calls), the sun's direction and the haze move to `vertex()` (the plane is subdivided into 5 m cells); `pow(x, 3)` is multiplies, the reflected sky's `pow(x, 0.6)` a `sqrt`. Still 2 noise reads. | About 45 of the river's ~130 ALU: 10 a pixel in the intro, 22 when pulled in | The far water reads a shade bluer |
+| 4 | **Haze per vertex** on the near deck, the riverside and the crowd (`haze_amount` / `hazed` in `tug_look.gdshaderinc`). | About 10 ALU on about half the view | A few per cent of haze shifts on the near deck's long triangles; not visible |
+| 5 | **Flash as a tint.** The lost-round flash is the modulate of the image that draws the view, not a 1920x1080 blended ColorRect. | The full-screen pass (about 5 fps) during each lost round's 0.75 s, at the moment the camera dips into the river | The flash multiplies toward the river's blue instead of covering; the scene shows through more |
+| 6 | **No per-frame allocations.** TugStatus formats its badge key only when the surge, alert or rest count change; the result's stats are built in `finish()`. | 0.6 µs on the desktop, about 15 µs on the tablet; and less garbage | Nothing |
+| 7 | **Vignette in the view grid.** The view is drawn on screen by a 17x10 vertex grid (`TugMeshes.view_image`, a MeshInstance2D for the TextureRect) with the vignette in its vertex colours; `LOOK_VIGNETTE` is gone from `tug_look.gdshaderinc`. | About 20 ALU on every non-sky pixel, about 14 a pixel averaged | The sky's corners darken too, which the per-pixel sky didn't do |
+| 8 | **Quality step** (`TugQualityGovernor`). Each 4 s of a round under 54 fps steps the 3D view from 0.62 to 0.55 of the screen, once; it never steps back up in that game. Logs `OPENRIDE_GAMES tug_of_war quality tier=1 fps=… scale=0.55`. | About a fifth of all per-pixel work, only when needed | A slightly softer 3D view; the HUD stays sharp |
+| 9 | **Near deck skips the far pier's light.** The bot's blob shadow and the torch pools branch on a per-vertex flag (`v_far`), constant over each pier. | About 15 ALU on the near deck (28% of the intro view) | Nothing |
+
+Together: the average per-pixel cost falls from about 85-95 ALU to about 35-40, with one
+texture read fewer on the sky. If ALU is about half of the 21 ms intro frame, that is 5-6 ms:
+the intro to 60, and play from 35 to about 45-50 before the quality step, about 55 with it.
+That last figure is the least certain, because the gap between intro and play isn't fully
+explained by fill.
+
+**Watch on the tablet** (Brace lean on, so the tracker runs; a full match and a ladder):
+
+- The `OPENRIDE_GAMES frame fps=` lines in INTRO and PLAYING, and whether a
+  `tug_of_war quality tier=1` line appears (and when). If it fires every ride, the scene is still
+  over budget and the next cut is the river (see below).
+- No dip at the first telegraph or the first splash (the warm-up), and none at a lost round.
+- That the sky isn't black (the cubemap is only rebuilt while the sky is the reflection source),
+  and no hitch when the scene option changes (a cubemap rebuild, once).
+- Throttling: compare the first minute with the fifth (CPU clocks, `dumpsys cpuinfo`). If play
+  drops with time whatever is drawn, it's the tracker's heat, as in Kart Race.
+
+**Not done, next if needed** (in order): the crowd's `discard` (an alpha-tested opaque costs
+PowerVR its hidden-surface removal for what's behind; a mesh cut to the sprite's outline would
+do); the water's foam and pier-shade terms per vertex; the ripple's 9 m quad (blended over a
+large area when the rider falls); the HUD's 45 draw calls (Kart baked its HUD into a
+SubViewport, 74 to 15); the audio (three stems and two reverbs, decoded on the CPU the tracker
+shares; AudioDirector's, not Tug's). Lowering `RENDER_SCALE` itself stays the last resort.
+
+**Measuring** (desktop, needs a window; captures to the scratchpad, small):
+
+```sh
+$GODOT_BIN --path games -s res://tests/measure_tug.gd -- --scale=4 --frames=90 --scene=day --shot=/tmp/tug.png
+```
+
 ## Out of scope / rejected
 
 - Real lights for the torches, engine fog or glow: extra passes the tablet can't pay for.

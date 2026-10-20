@@ -1560,14 +1560,29 @@ pier into the river; losing pulls the camera in. It follows the tablet recipe (a
 - The crowd is a GPU billboard MultiMesh cut from a two-frame sprite drawn in code; the
   flames are additive cards; the flag, bunting, reeds and lily pads all move in their shaders.
   Per frame, GDScript lays out the rope's 22 segments and poses the bot, nothing else.
+- **Tablet performance pass** (`GFX_POLISH.md`, Tablet performance; it ran 48 fps in the intro
+  and 35 in play with the tracker on). The sky shader runs only in its cubemap pass (256 a face,
+  rebuilt when the time of day changes; the sky is set as the reflection source so the cubemap
+  stays up to date) and the background samples it. The vignette is painted into the vertex
+  colours of the grid that draws the view on screen (`TugMeshes.view_image`, a `MeshInstance2D`),
+  not in each shader. The water, deck, riverside and crowd haze per vertex
+  (`haze_amount`/`hazed` in `tug_look.gdshaderinc`), and the water's flat light is per vertex.
+  `prewarm` draws the steam, ripple and droplets behind the intro card so their shaders compile
+  then. The lost-round flash tints the view's image instead of a full-screen overlay.
+  `TugQualityGovernor` drops the render scale from 0.62 to 0.55 once if a round's 4 s average
+  falls under 54 fps (`OPENRIDE_GAMES tug_of_war quality tier=1 fps=… scale=0.55`).
 
 About 13 draw calls for the world (55 before), 57 in play with the HUD (99 before), and 29k
 primitives on the desktop. On the tablet it
 held 59-62 fps before the pass (mock build, 2026-10-03); re-measure with Brace lean on.
 `tests/capture_tug.gd` takes desktop screenshots (`--stats` prints draw calls and frame times)
 and, with `--play=SECONDS`, plays rounds for a recording (add `--snaps` for half-size stills of
-each HUD state instead of a video). `tug_world_test` covers the shaders, the look table, the baked
-meshes and the per-frame budget.
+each HUD state instead of a video). `tests/measure_tug.gd` prints the draw calls and render CPU
+in the intro and in play, GDScript per frame, and each world part's A/B frame-time cost at a
+scaled-up render size (`--scale`, `--scene`, `--shot`). `tug_world_test` covers the shaders, the look table, the baked
+meshes, the per-frame budget, the sky cubemap, the view grid's vignette and the warm-up;
+`tug_game_test` the stats at finish, the flash and the quality step; `tug_quality_governor_test`
+the governor.
 
 **UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
 rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
