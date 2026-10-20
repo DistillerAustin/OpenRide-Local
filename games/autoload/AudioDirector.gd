@@ -260,6 +260,17 @@ func begin_segment(segment: Dictionary) -> void:
 		stop_music()
 
 
+## Applies the rider's audio settings outside a segment (the Games hub: `hub_state.audio`, and
+## a volume previewed in its settings), at once. Music off stops the music.
+func set_volumes(music_on: bool, music_vol: float, sfx_vol: float) -> void:
+	music_enabled = music_on
+	music_volume = clampf(music_vol, 0.0, 1.0)
+	sfx_volume = clampf(sfx_vol, 0.0, 1.0)
+	_apply_bus_volumes()
+	if not music_enabled:
+		stop_music()
+
+
 ## A game's own effects chain on the `Music`, `SFX` or `Master` bus (e.g. reverb and a glue
 ## compressor, or a limiter on the whole mix), replacing any earlier chain there. Native
 ## `AudioEffect`s cost little next to doing the same offline in GDScript. Every segment starts
