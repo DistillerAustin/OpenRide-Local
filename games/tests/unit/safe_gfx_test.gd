@@ -224,3 +224,24 @@ func test_the_room_is_baked_once_per_place() -> void:
 	await _frames(2)
 	assert_int(backdrop.bakes).is_equal(before + 1)
 	assert_int(draws[0]).is_equal(1)
+
+
+## A place's room and body are built once, and the next safe's while the cracked door stands
+## open, so the frame it slides in on builds nothing big.
+func test_the_next_place_is_built_while_the_door_stands_open() -> void:
+	var game := _game()
+	SafeMesh.forget_built()
+	game._handle({"type": "vault_open", "points": 1000.0})
+	var next: int = game.get("_next_place")
+	assert_int(next).is_not_equal(game.get("_place"))
+	assert_bool(SafeMesh.is_built("room:%d" % next)).is_false()
+	await await_millis(int((_door_sec() + 0.6) * 1000.0))
+	assert_bool(SafeMesh.is_built("room:%d" % next)).override_failure_message("the next room wasn't built ahead").is_true()
+	assert_bool(SafeMesh.is_built("body:%d" % next)).is_true()
+	game._handle({"type": "new_vault"})
+	assert_int(game.get("_place")).is_equal(next)
+	assert_int(game.get("_next_place")).is_equal(-1)
+
+
+static func _door_sec() -> float:
+	return load("res://games/safe_cracker/SafeCracker.gd").DOOR_SEC

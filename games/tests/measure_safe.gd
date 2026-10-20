@@ -6,7 +6,7 @@ extends SceneTree
 ## each layer covers (canvas px, clipped to the 1920x1080 canvas; "screens" = /2.07 M) as the
 ## rider sees it in play, then with the intro card up; how many `SafeMesh` batches are rebuilt a
 ## frame in the intro and in play (should be ~0: static layers redraw only on a change); and the
-## CPU time to build each place's room, body and door (once per place change).
+## CPU time to build each place's room, body and door, and a place change's longest frame.
 ##
 ## Pixels: every SafeMesh triangle (via `SafeMesh.probe`), and each visible ColorRect,
 ## TextureRect, Panel, PanelContainer and Sprite2D as its rect (text and particles are left out: small).
@@ -52,6 +52,24 @@ func _run() -> void:
 		quit(1)
 		return
 	await _count_rebuilds("play, needle sweeping", 120, game)
+	# A place change's longest frame, first built and built ahead (desktop ms; the tablet's CPU
+	# is several times slower).
+	SafeMesh.forget_built()
+	SafeMesh.probe = Callable()  # the fill count is slow: off while timing
+	for ahead in [false, true]:
+		var line := PackedStringArray()
+		for place in ["office", "bank", "museum", "cabin", "lab", "library"]:
+			var worst := 0.0
+			var t := Time.get_ticks_usec()
+			game.change_option("scene", place)
+			for i in 3:
+				await process_frame
+				var now := Time.get_ticks_usec()
+				worst = maxf(worst, (now - t) / 1000.0)
+				t = now
+			line.append("%s %.1f" % [place, worst])
+		print("PLACE CHANGE %s, longest frame ms: %s" % ["built ahead" if ahead else "first build", ", ".join(line)])
+	SafeMesh.probe = _on_flush
 	for place in ["office", "bank", "museum", "cabin", "lab", "library"]:
 		game.change_option("scene", place)
 		for i in 6:
@@ -63,6 +81,11 @@ func _run() -> void:
 		await process_frame
 	_report_fill("play library, door half open")
 	game._dial.door_open = 0.0
+	game.logic.alarm_left = 2.0
+	game._handle({"type": "alarm"})
+	await create_timer(0.6).timeout
+	_report_fill("play library, alarm")
+	game.logic.alarm_left = 0.0
 	_build_times()
 	quit()
 
@@ -177,8 +200,13 @@ func _build_times() -> void:
 		m = SafeMesh.new()
 		door.build(m)
 		var t3 := Time.get_ticks_usec()
-		print("BUILD %-8s room %5.1f ms (%d verts)  body %5.1f ms (%d)  door %5.1f ms (%d)" % [
-			SafePlaces.place(i).id, (t1 - t0) / 1000.0, room_v, (t2 - t1) / 1000.0, body_v, (t3 - t2) / 1000.0, m.vertex_count()])
+		var door_v := m.vertex_count()
+		m = SafeMesh.new()
+		SafeBody.build_vault(m, dial.colour)
+		var t4 := Time.get_ticks_usec()
+		print("BUILD %-8s room %5.1f ms (%d verts)  body %5.1f ms (%d)  door %5.1f ms (%d)  vault %5.1f ms (%d)" % [
+			SafePlaces.place(i).id, (t1 - t0) / 1000.0, room_v, (t2 - t1) / 1000.0, body_v, (t3 - t2) / 1000.0, door_v,
+			(t4 - t3) / 1000.0, m.vertex_count()])
 		body.free()
 	door.free()
 	dial.free()

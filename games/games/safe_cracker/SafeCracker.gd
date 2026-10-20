@@ -44,6 +44,7 @@ var _dial: SafeDial
 var _status: SafeStatus
 var _banner: SafeBanner
 var _place := 0
+var _next_place := -1  ## picked when a safe cracks, so its room is built while the door stands open
 var _place_rng := RandomNumberGenerator.new()
 var _tick_left := 0.0
 var _door_tween: Tween
@@ -162,6 +163,7 @@ func _on_prepare(seg: Dictionary) -> void:
 
 func _on_option_changed(key: String, _value: String) -> void:
 	if key == "scene":
+		_next_place = -1
 		_place = _pick_place(-1)
 		_show_place()
 
@@ -268,10 +270,16 @@ func _handle(event: Dictionary) -> void:
 			_door_tween = create_tween()
 			_door_tween.tween_property(_dial, "door_open", 1.0, DOOR_SEC).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 			_door_tween.parallel().tween_callback(_dial.burst_sparkle).set_delay(SPARKLE_DELAY)
+			# Build the next place's room and body now, a frame each once the door has swung,
+			# not on the frame the next safe slides in (a long frame on the tablet).
+			_next_place = _pick_place(_place)
+			_door_tween.parallel().tween_callback(SafeBackdrop.room_mesh.bind(_next_place)).set_delay(DOOR_SEC + 0.1)
+			_door_tween.parallel().tween_callback(SafeBody.mesh_for.bind(_next_place)).set_delay(DOOR_SEC + 0.3)
 			_dial.refresh()
 		"new_vault":
 			_dial.door_open = 0.0
-			_place = _pick_place(_place)
+			_place = _next_place if _next_place >= 0 else _pick_place(_place)
+			_next_place = -1
 			_show_place()
 			_body_root.position.x = BODY_HOME.x + SLIDE_FROM
 			if _slide_tween:

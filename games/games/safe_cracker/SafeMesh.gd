@@ -24,6 +24,7 @@ var depth := 0.0
 ## Tests and tools only: called on every flush with (canvas item, points, indices), to count
 ## rebuilds and measure fill (tests/measure_safe.gd). Never set in the game.
 static var probe := Callable()
+static var _built := {}  ## key -> SafeMesh (`built`)
 
 
 func clear() -> void:
@@ -41,11 +42,39 @@ func vertex_count() -> int:
 
 ## Draws everything added so far onto `ci` (call from its `_draw()`), then empties the batch.
 func flush(ci: CanvasItem) -> void:
+	draw_on(ci)
+	clear()
+
+
+## Draws the batch onto `ci` (call from its `_draw()`) and keeps it, for a batch drawn again.
+func draw_on(ci: CanvasItem) -> void:
 	if probe.is_valid():
 		probe.call(ci, points, indices)
 	if not indices.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), indices, points, colors, uvs)
-	clear()
+
+
+## A batch built once by `build` (a Callable taking the SafeMesh) and kept under `key`: a
+## place's room and body are built in GDScript (the bank's room is 27k vertices, ~11 ms on the
+## desktop and several times that on the tablet), so they're built once per place and can be
+## built ahead (`SafeCracker` does it while a cracked door stands open), not on the frame the
+## next safe slides in. A few MB for all six places.
+static func built(key: String, build: Callable) -> SafeMesh:
+	var m: SafeMesh = _built.get(key)
+	if m == null:
+		m = SafeMesh.new()
+		build.call(m)
+		_built[key] = m
+	return m
+
+
+static func is_built(key: String) -> bool:
+	return _built.has(key)
+
+
+## Drops every kept batch (tests).
+static func forget_built() -> void:
+	_built.clear()
 
 
 func vert(p: Vector2, c: Color) -> int:

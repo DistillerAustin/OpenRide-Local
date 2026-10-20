@@ -148,9 +148,12 @@ func rebake() -> void:
 
 
 func _paint_room(ci: CanvasItem) -> void:
-	var m := SafeMesh.new()
-	SafePlaces.build_room(m, place_index)
-	m.flush(ci)
+	room_mesh(place_index).draw_on(ci)
+
+
+## The room's batch for a place, built once (`SafeMesh.built`).
+static func room_mesh(index: int) -> SafeMesh:
+	return SafeMesh.built("room:%d" % index, func(m: SafeMesh) -> void: SafePlaces.build_room(m, index))
 
 
 ## A soft soot vignette over the room, so the eye goes to the safe: baked with the room, so it

@@ -28,12 +28,19 @@ func set_place(index: int) -> void:
 
 
 func _draw() -> void:
-	var m := SafeMesh.new()
-	build(m)
-	m.flush(self)
+	mesh_for(place_index).draw_on(self)
+
+
+## The body's batch for a place, built once (`SafeMesh.built`).
+static func mesh_for(index: int) -> SafeMesh:
+	return SafeMesh.built("body:%d" % index, build_place.bind(index))
 
 
 func build(m: SafeMesh) -> void:
+	build_place(m, place_index)
+
+
+static func build_place(m: SafeMesh, place_index: int) -> void:
 	var p := SafePlaces.place(place_index)
 	var colour: Color = p.safe
 	var to_light := SafePlaces.to_light(place_index)
