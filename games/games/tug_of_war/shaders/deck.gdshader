@@ -22,10 +22,12 @@ uniform vec2 torches = vec2(2.35, -11.15);  // |x| and z of the far torches
 varying vec3 v_light;
 varying vec3 v_wp;
 varying float v_haze;
+varying float v_far;  // 1 on the far pier (the bot's shadow, the torches' pools), 0 on the near
 
 void vertex() {
 	v_light = sun_light(vec3(0.0, 1.0, 0.0));
 	v_wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_far = step(v_wp.z, (near_end + far_end) * 0.5);
 	v_haze = haze_amount(length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz));
 }
 
@@ -61,11 +63,16 @@ void fragment() {
 	float wet = smoothstep(0.6, 0.0, e);
 	col *= 1.0 - 0.35 * wet;
 	col = mix(col, col * vec3(0.9, 0.95, 1.05), wet * 0.5);
-	// The bot's blob shadow.
-	float sd = length(v_wp.xz - shadow.xy) / shadow.z;
-	col *= 1.0 - shadow.w * (1.0 - smoothstep(0.35, 1.0, sd));
+	vec3 light = v_light;
+	// The far pier's own light: the bot's blob shadow and the torches' pools. A whole pier is one
+	// side of the river, so the branch is the same across each triangle; the near deck (a third
+	// of the screen) skips it.
+	if (v_far > 0.5) {
+		float sd = length(v_wp.xz - shadow.xy) / shadow.z;
+		col *= 1.0 - shadow.w * (1.0 - smoothstep(0.35, 1.0, sd));
+		float pool = exp(-length(vec2(abs(v_wp.x) - torches.x, v_wp.z - torches.y)) * 0.9);
+		light += vec3(1.0, 0.6, 0.3) * pool * lamp * 0.7;
+	}
 	col = mix(col, gap_color, gap);
-	float pool = exp(-length(vec2(abs(v_wp.x) - torches.x, v_wp.z - torches.y)) * 0.9);
-	vec3 light = v_light + vec3(1.0, 0.6, 0.3) * pool * lamp * 0.7;
 	ALBEDO = grade(hazed(col * light, v_haze), SCREEN_UV);
 }
