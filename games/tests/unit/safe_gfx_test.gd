@@ -122,7 +122,16 @@ func test_the_mesh_feathers_and_closes_its_shapes() -> void:
 	m.glow(Vector2.ZERO, Vector2(400, 300), Color.WHITE)
 	m.ring(Vector2.ZERO, 10.0, 20.0, Color.WHITE, 0.0, PI)
 	m.line(Vector2.ZERO, Vector2(10, 10), 3.0, Color.WHITE)
+	m.glow(Vector2.ZERO, Vector2(300, 300), Color.WHITE, 10, 0.5, 200.0)
+	m.holed_round_rect(Rect2(-100, -80, 200, 160), 12.0, Color.WHITE, Color.BLACK, Vector2.ZERO, 60.0)
+	m.round_frame(Rect2(-100, -80, 200, 160), 20.0, Rect2(-80, -60, 160, 120), 12.0, Color.WHITE, Color.BLACK)
+	m.soft_shadow(Rect2(-100, -80, 200, 160), 12.0, 20.0, Color.BLACK, 30.0)
 	_assert_batch(m, "shapes")
+	# A hollow glow leaves its middle empty: no triangle reaches the centre.
+	m.clear()
+	m.glow(Vector2.ZERO, Vector2(300, 300), Color.WHITE, 10, 0.5, 200.0)
+	for p in m.points:
+		assert_float(p.length()).is_greater(150.0)
 	assert_int(SafeMesh.round_rect_outline(Rect2(0, 0, 10, 10), 3.0).size()).is_equal(SafeMesh.round_rect_outline(Rect2(0, 0, 90, 50), 20.0).size())
 
 

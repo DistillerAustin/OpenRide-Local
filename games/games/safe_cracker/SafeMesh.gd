@@ -169,18 +169,21 @@ func ring(center: Vector2, r0: float, r1: float, col: Color, from := 0.0, to := 
 
 
 ## A soft round pool of light (or shadow): `col` at the centre fading smoothly to nothing at
-## `radius` (a Vector2 for an ellipse). Many rings, so the falloff never bands.
-func glow(center: Vector2, radius: Vector2, col: Color, rings := 14, hot := 0.0) -> void:
+## `radius` (a Vector2 for an ellipse). Many rings, so the falloff never bands. `hollow` (px)
+## leaves out the rings inside that radius, for a pool whose middle something opaque covers.
+func glow(center: Vector2, radius: Vector2, col: Color, rings := 14, hot := 0.0, hollow := 0.0) -> void:
 	rings = maxi(rings, int(maxf(radius.x, radius.y) / 36.0))
 	var segs := 48
-	var ci := vert(center, col)
 	var prev := PackedVector2Array()
 	var prev_col := col
 	for i in range(1, rings + 1):
 		var t := float(i) / rings
 		var c := Color(col, col.a * (1.0 - smoothstep(hot, 1.0, t)))
 		var cur := _ellipse(center, radius * t, segs)
-		if i == 1:
+		if hollow > 0.0 and maxf(radius.x, radius.y) * t <= hollow:
+			pass  # covered: skip it, but keep it as the next band's inner edge
+		elif i == 1:
+			var ci := vert(center, col)
 			var first := points.size()
 			for p in cur:
 				vert(p, c)
@@ -212,6 +215,26 @@ func round_rect(r: Rect2, radius: float, top: Color, bottom := Color(0, 0, 0, -1
 	var clear := PackedColorArray()
 	for col in cols:
 		clear.append(Color(col, 0.0))
+	band_colors(outline, grow_outline(outline, FEATHER), cols, clear)
+
+
+## A rounded rect shading top to bottom, feathered, with a round hole of radius `hole_r` at
+## `hole` (inside it): for a slab under an opaque disc (the door under its dial). The hole's
+## edge is a polygon on rays through the outline's points, inside that circle.
+func holed_round_rect(r: Rect2, radius: float, top: Color, bottom: Color, hole: Vector2, hole_r: float) -> void:
+	var outline := round_rect_outline(r, radius)
+	var inner := PackedVector2Array()
+	var cols := PackedColorArray()
+	var icols := PackedColorArray()
+	var clear := PackedColorArray()
+	for p in outline:
+		var q := hole + (p - hole).normalized() * hole_r
+		inner.append(q)
+		var c := top.lerp(bottom, clampf((p.y - r.position.y) / r.size.y, 0.0, 1.0))
+		cols.append(c)
+		clear.append(Color(c, 0.0))
+		icols.append(top.lerp(bottom, clampf((q.y - r.position.y) / r.size.y, 0.0, 1.0)))
+	band_colors(outline, inner, cols, icols)
 	band_colors(outline, grow_outline(outline, FEATHER), cols, clear)
 
 
