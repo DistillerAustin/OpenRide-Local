@@ -19,7 +19,7 @@ extends SceneTree
 ##   summary_4_circuit.png                    a five-game circuit, finished, with a best
 ##   summary_5_early.png                      a circuit ended early (games not played)
 ##   summary_6_long.png                       nine rows with long names (the list scrolls)
-##   summary_7_kart.png                       a Kart Race Just Ride (no ui_theme: the house look)
+##   summary_7_kart.png                       a Kart Race Just Ride, in Kart's look
 ## Each line it prints carries the frame's draw calls.
 
 var _session: Node
@@ -162,6 +162,7 @@ func _looks() -> Dictionary:
 		"cadence_karaoke": kit.new(Color(1.0, 0.45, 0.8), Color("12052a"), 0.25, true),
 		"safe_cracker": kit.new(Color("e8b04a"), Color("14110d")),
 		"tug_of_war": kit.new(Color("ff9f1c"), Color("2a160b"), 0.12),
+		"kart_race": load("res://games/kart_race/KartRace.gd").kart_look(),
 	}
 	looks.merge(_director.looks, true)
 	return looks

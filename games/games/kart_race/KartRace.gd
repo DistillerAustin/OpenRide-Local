@@ -93,6 +93,8 @@ const ASSIST := {"off": 0.0, "low": 0.5, "high": 1.0}
 const PORTRAITS := "res://games/kart_race/ui/portraits/%s.png"
 const THUMBS := "res://games/kart_race/ui/tracks/%s.png"
 
+static var _look: GameTheme
+
 var race: KartRaceLogic
 var gp: KartGrandPrix
 var scoring: KartScoring
@@ -238,6 +240,20 @@ static func thousands(n: int) -> String:
 		out = "," + s.right(3) + out
 		s = s.left(s.length() - 3)
 	return ("-" if n < 0 else "") + s + out
+
+
+## Kart Race's look for the framework's screens (intro, pause and its options, calibration, the
+## summary): KartTheme's violet night with its leaning badges, so they match the race's own UI.
+static func kart_look() -> GameTheme:
+	if _look == null:
+		_look = GameTheme.new(Color("8c6bff"), Color("210f3d"), 0.18, true)
+		_look.panel = KartTheme.PANEL
+		_look.panel_edge = KartTheme.PANEL_EDGE
+	return _look
+
+
+func ui_theme() -> GameTheme:
+	return kart_look()
 
 
 func target_text(seg: Dictionary) -> String:

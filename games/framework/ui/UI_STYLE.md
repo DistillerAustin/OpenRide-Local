@@ -211,7 +211,8 @@ func _on_prepare(seg: Dictionary) -> void:
 `IntroCard.apply_theme(theme)`, `PauseOverlay.apply_theme(theme)` and
 `CalibrationOverlay.apply_theme(theme)` are called by the session from `Game.ui_theme()`, at
 each segment and on `Game.ui_theme_changed`. For the intro and pause cards `null` gives the
-kit's plain look, which is what Kart Race and the demo get; the calibration screens and the
+kit's plain look, which is what the demo gets (Kart Race's `kart_look()` is KartTheme's
+palette as a `GameTheme`); the calibration screens and the
 summary use the house look instead. The summary takes the look of the game it follows (a
 circuit: the house look, each row in its game's accent). The open-ride "Game over" panel stays
 neutral. `tests/unit/game_theme_test.gd` covers the kit; `tests/capture_framework_screens.gd`
