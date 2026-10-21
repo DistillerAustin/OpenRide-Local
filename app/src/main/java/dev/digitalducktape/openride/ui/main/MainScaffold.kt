@@ -27,7 +27,7 @@ import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
 import dev.digitalducktape.openride.ui.games.launchGames
 import dev.digitalducktape.openride.ui.history.HistoryScreen
 import dev.digitalducktape.openride.ui.history.HistoryViewModel
-import dev.digitalducktape.openride.ui.home.HomeScreen
+import dev.digitalducktape.openride.ui.home.HomeRoute
 import dev.digitalducktape.openride.ui.home.HomeViewModel
 import dev.digitalducktape.openride.ui.navigation.Destinations
 import dev.digitalducktape.openride.ui.navigation.MainTabs
@@ -95,7 +95,7 @@ fun MainScaffold(
                 )
                 val availableUpdate by appContainer.updateAvailability.collectAsState()
                 val bannerDismissed by appContainer.updateBannerDismissed.collectAsState()
-                HomeScreen(
+                HomeRoute(
                     viewModel = viewModel,
                     onQuickStart = { outerNavController.navigate(Destinations.InRide) },
                     onOpenProfile = { navigateToTab(MainTabs.Profile) },
