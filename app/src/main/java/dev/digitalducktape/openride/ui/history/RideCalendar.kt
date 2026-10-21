@@ -121,7 +121,7 @@ private fun DayCell(day: LocalDate?, hasRide: Boolean, isToday: Boolean, modifie
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (hasRide || isToday) FontWeight.Bold else FontWeight.Normal,
                     color = when {
-                        hasRide -> OpenRideColors.OnBackground
+                        hasRide -> OpenRideColors.OnAccent
                         isToday -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },

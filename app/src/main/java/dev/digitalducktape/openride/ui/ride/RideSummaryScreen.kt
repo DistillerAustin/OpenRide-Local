@@ -299,7 +299,7 @@ private fun MetricTabRow(
                     text = metric.label,
                     style = MetricTextStyles.TileLabel,
                     color = if (isSelected) {
-                        MaterialTheme.colorScheme.onBackground
+                        OpenRideColors.OnAccent
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

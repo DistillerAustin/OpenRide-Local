@@ -173,7 +173,7 @@ private fun Flank(label: String, value: String, trend: Boolean?, modifier: Modif
                 Icon(
                     imageVector = Icons.Filled.ArrowDropDown,
                     contentDescription = if (trend) "above average" else "below average",
-                    tint = if (trend) OpenRideColors.Success else OpenRideColors.Accent,
+                    tint = if (trend) OpenRideColors.Success else OpenRideColors.Danger,
                     modifier = Modifier
                         .size(16.dp)
                         .rotate(if (trend) 180f else 0f),

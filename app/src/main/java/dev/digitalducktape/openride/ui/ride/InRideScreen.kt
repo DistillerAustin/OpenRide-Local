@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -106,7 +107,13 @@ fun InRideScreen(
                     ) {
                         Text(if (uiState.isPaused) "Resume" else "Pause")
                     }
-                    Button(onClick = { showEndConfirmation = true }) {
+                    Button(
+                        onClick = { showEndConfirmation = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = OpenRideColors.Danger,
+                            contentColor = OpenRideColors.OnDanger,
+                        ),
+                    ) {
                         Text("End Ride")
                     }
                 }

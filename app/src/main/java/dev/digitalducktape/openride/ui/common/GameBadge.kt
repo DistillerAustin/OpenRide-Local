@@ -16,9 +16,9 @@ fun GameBadge(text: String, modifier: Modifier = Modifier) {
     Text(
         text = "🎮 $text",
         style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onBackground,
+        color = OpenRideColors.Accent,
         modifier = modifier
-            .background(color = OpenRideColors.Accent.copy(alpha = 0.35f), shape = RoundedCornerShape(12.dp))
+            .background(color = OpenRideColors.SurfaceVariant, shape = RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 4.dp),
     )
 }

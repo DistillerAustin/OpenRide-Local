@@ -305,7 +305,7 @@ private fun OverlayButton(
     Box(
         modifier = modifier
             .background(
-                color = if (emphasized) OpenRideColors.Accent else OpenRideColors.SurfaceVariant,
+                color = if (emphasized) OpenRideColors.Danger else OpenRideColors.SurfaceVariant,
                 shape = RoundedCornerShape(24.dp),
             )
             .clickable(onClick = onClick)

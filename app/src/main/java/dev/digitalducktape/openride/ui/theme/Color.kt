@@ -2,28 +2,32 @@ package dev.digitalducktape.openride.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import dev.digitalducktape.openride.core.ride.PowerZone
+import dev.digitalducktape.openride.ui.designsystem.OrColors
 
 /**
- * OpenRide's dark, high-contrast palette (PRD P0-7: "Peloton-style, not Peloton-copied").
- * Near-black background, white/high-contrast text, and a single red accent for calls to
- * action and "live/active" indicators — no Peloton assets, fonts, or brand colors are used.
+ * The colour names the screens used before the design system existed. They now point at the
+ * design-system tokens in [OrColors] ("Night Road", docs/MAIN_UI_REFRESH.md §3), so the whole
+ * app re-skins at once; migrated code uses [OrColors] directly, and this object goes away once
+ * no screen refers to it.
  */
 object OpenRideColors {
-    val Background = Color(0xFF0C0C0E)
-    val Surface = Color(0xFF1C1C1F)
-    val SurfaceVariant = Color(0xFF29292D)
-    val Accent = Color(0xFFE8442D)
-    val AccentMuted = Color(0xFF7A281E)
-    val OnBackground = Color(0xFFF5F5F7)
-    val OnSurfaceVariant = Color(0xFFA4A4AA)
-    val Warning = Color(0xFFF2B22B)
-    val Success = Color(0xFF35C46A)
+    val Background = OrColors.Background
+    val Surface = OrColors.Surface
+    val SurfaceVariant = OrColors.SurfaceRaised
+    val Accent = OrColors.Accent
+    val OnAccent = OrColors.OnAccent
+    val OnBackground = OrColors.OnBackground
+    val OnSurfaceVariant = OrColors.OnSurfaceMuted
+    val Warning = OrColors.Warning
+    val Success = OrColors.Success
+    val Danger = OrColors.Danger
+    val OnDanger = OrColors.OnDanger
 
     /** Translucent black behind text/metrics overlaid on video (v2 Video Ride spec). */
-    val ScrimOverlay = Color(0xB3000000)
+    val ScrimOverlay = OrColors.Scrim
 
     /** Hairline separators: nav bar top edge, metric-cell dividers. */
-    val Divider = Color(0x33FFFFFF)
+    val Divider = OrColors.Divider
 }
 
 /**
