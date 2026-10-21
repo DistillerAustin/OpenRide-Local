@@ -270,6 +270,7 @@ starts).
 | `cancel_calibration()` | hub | Stops a hub calibration; the visit's earlier calibration stays |
 | `request_camera_permission()` | hub | The host shows Android's prompt, then `hub_state` |
 | `exit_hub(next)` | hub | `app` or `edit_profile`: ends the visit, saves, `visit_ended`, task to back |
+| `show_loading(show)` | any | v1.2: the host covers the engine with its native loading screen (it keeps animating while the GL thread is blocked). `SessionDirector` raises it at `segment_started` and drops it once the game has drawn 3 frames, covering the first-frame shader compile |
 | `hub_activity()` | hub | The rider touched the hub (at most once per 60 s): resets the idle guard |
 
 `start_plan` requests: `{kind: "just_ride", game_id, mode: minutes | rounds | open, length,

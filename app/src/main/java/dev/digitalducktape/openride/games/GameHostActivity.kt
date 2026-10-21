@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
@@ -22,6 +23,7 @@ import dev.digitalducktape.openride.R
 import dev.digitalducktape.openride.appContainer
 import dev.digitalducktape.openride.games.bridge.BridgeMessages
 import dev.digitalducktape.openride.games.bridge.GameBridge
+import dev.digitalducktape.openride.games.bridge.GameLoadingHost
 import dev.digitalducktape.openride.games.bridge.OpenRideBridgePlugin
 import dev.digitalducktape.openride.games.session.GameVisitManager
 import org.godotengine.godot.Godot
@@ -47,7 +49,7 @@ import org.godotengine.godot.plugin.GodotPlugin
  * session. For the same reason Godot itself never quits. Anything that removes that background
  * task (e.g. swiping it out of recents) still ends the process; see docs/GAMES.md.
  */
-class GameHostActivity : GodotActivity() {
+class GameHostActivity : GodotActivity(), GameLoadingHost {
     private var loadingView: View? = null
 
     private val bridge: GameBridge
@@ -69,9 +71,12 @@ class GameHostActivity : GodotActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            // That alone still left the frame at 1920x1008 on the bike (Android 11): the window's
+            // own fit-insets types default to the system bars, hidden or not. Fit none.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) fitInsetsTypes = 0
         }
         hideSystemBars()
-        showLoadingView()
+        showLoadingView(R.string.games_loading)
         Log.i(TAG, "game host created")
     }
 
@@ -81,7 +86,8 @@ class GameHostActivity : GodotActivity() {
      * plain OpenRide loading view covers the engine's surface. Re-entry needs none: the engine
      * keeps running, so only [onCreate] adds it.
      */
-    private fun showLoadingView() {
+    private fun showLoadingView(text: Int) {
+        if (loadingView != null) return
         val dp = { v: Float -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics).toInt() }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -89,7 +95,7 @@ class GameHostActivity : GodotActivity() {
             addView(ProgressBar(this@GameHostActivity).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(48f), dp(48f)))
             addView(
                 TextView(this@GameHostActivity).apply {
-                    text = getString(R.string.games_loading)
+                    this.text = getString(text)
                     setTextColor(getColor(R.color.openride_on_surface_variant))
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                     setPadding(0, dp(16f), 0, 0)
@@ -110,10 +116,17 @@ class GameHostActivity : GodotActivity() {
     /** Called on the render thread once the main scene is loaded, just before its first frame. */
     override fun onGodotMainLoopStarted() {
         Log.i(TAG, "engine main loop started")
-        runOnUiThread {
-            loadingView?.let { (it.parent as? ViewGroup)?.removeView(it) }
-            loadingView = null
-        }
+        runOnUiThread { hideLoadingView() }
+    }
+
+    /** From the engine (`show_loading`, on the UI thread): a game is starting, or has drawn. */
+    override fun setGameLoading(loading: Boolean) {
+        if (loading) showLoadingView(R.string.games_starting) else hideLoadingView()
+    }
+
+    private fun hideLoadingView() {
+        loadingView?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        loadingView = null
     }
 
     /** Entering games again: the engine is already running, so only the session is new. */

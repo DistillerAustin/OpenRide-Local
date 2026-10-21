@@ -490,3 +490,27 @@ func test_the_first_hub_state_shows_the_hub_only_from_idle() -> void:
 	director.phase = SessionDirector.Phase.IDLE
 	Session._on_hub_state({"visit_id": "v-x", "phase": "hub"})
 	assert_int(director.phase).is_equal(SessionDirector.Phase.HUB)
+
+
+func test_the_loading_screen_covers_a_starting_game_until_its_first_frames_draw() -> void:
+	_start(_plan([_seg()]))
+	assert_bool(Session.loading).is_true()
+	director._process(0.016)
+	director._process(0.016)
+	assert_bool(Session.loading).is_true()
+	director._process(0.016)
+	director._process(0.016)
+	assert_bool(Session.loading).is_false()
+
+
+func test_a_long_first_frame_does_not_eat_the_intro_countdown() -> void:
+	_start(_plan([_seg()]))
+	var left: float = director._intro_left
+	director._process(5.0)  # the bike's shader compile
+	assert_float(left - director._intro_left).is_less_equal(SessionDirector.START_FRAME_MAX_SEC)
+
+
+func test_an_unknown_game_leaves_no_loading_screen_up() -> void:
+	_start(_plan([_seg("no_such_game"), _seg()]))
+	_step(1.0)
+	assert_bool(Session.loading).is_false()

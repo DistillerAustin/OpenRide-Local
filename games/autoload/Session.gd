@@ -113,6 +113,9 @@ func request_calibration(mode: String) -> void:
 
 
 ## mode: "off", "lean_x", "lean_2d" or "lean_stand". The camera only runs when not "off".
+var loading := false  ## the native loading screen is up (show_loading)
+
+
 func set_tracker_mode(mode: String) -> void:
 	print("OPENRIDE_GAMES -> set_tracker_mode %s" % mode)
 	tracker_mode = mode
@@ -120,6 +123,14 @@ func set_tracker_mode(mode: String) -> void:
 		_bridge.set_tracker_mode(mode)
 	else:
 		_local.set_tracker_mode(mode)
+
+
+## Covers the screen with the host's native loading screen while a game starts (bridge v1.2):
+## it keeps animating while the first 3D frame compiles shaders. Desktop: nothing to cover.
+func show_loading(show: bool) -> void:
+	loading = show
+	if _bridge and _bridge.has_method("show_loading"):
+		_bridge.show_loading(show)
 
 
 func request_pause() -> void:

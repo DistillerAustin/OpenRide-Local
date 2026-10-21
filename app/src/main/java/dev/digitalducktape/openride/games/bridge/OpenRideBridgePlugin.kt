@@ -71,6 +71,17 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
     @UsedByGodot
     fun exit_hub(next: String) = bridge.exitHub(next)
 
+    /**
+     * v1.2: covers the engine's view with the host's native loading screen while a game starts.
+     * Its first 3D frame compiles shaders for seconds on the bike, with the GL thread blocked;
+     * the overlay lives on the UI thread, so it keeps animating meanwhile.
+     */
+    @UsedByGodot
+    fun show_loading(show: Boolean) {
+        val host = activity as? GameLoadingHost ?: return
+        activity?.runOnUiThread { host.setGameLoading(show) }
+    }
+
     @UsedByGodot
     fun hub_activity() = bridge.hubActivity()
 
@@ -122,4 +133,9 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
             CALIBRATION_PROGRESS, SESSION_FINISHED, HUB_STATE, PLAN_REJECTED, VISIT_ENDED,
         )
     }
+}
+
+/** The activity hosting the engine, which owns the native loading screen ([OpenRideBridgePlugin.show_loading]). */
+interface GameLoadingHost {
+    fun setGameLoading(loading: Boolean)
 }

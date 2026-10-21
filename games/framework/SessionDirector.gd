@@ -58,6 +58,7 @@ var calibrated_mode := ""
 
 var _log_left := FRAME_LOG_SEC
 var _booted := false
+const START_FRAME_MAX_SEC := 0.25  ## a starting game's first frames count at most this
 var _first_frames := 0  ## frames after the intro card shows, timed for the log
 var _pause_screen_up := false
 ## The current pause began (or ran) under a calibration: its resume plays no cue.
@@ -160,12 +161,15 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	done_panel.visible = false
 	var game_id := str(segment.get("game_id", ""))
 	LoadClock.mark("start", "segment_started game=%s" % game_id)
+	# Up until the game's first frames have drawn (_process): those block for seconds on the bike.
+	Session.show_loading(true)
 	info = GameRegistry.info(game_id)
 	LoadClock.mark("start", "info")
 	var next := _take_game(game_id) if info else null
 	LoadClock.mark("start", "instantiated")
 	if next == null:
 		push_error("SessionDirector: unknown game '%s'; skipping it" % game_id)
+		Session.show_loading(false)
 		_close_game()
 		phase = Phase.INTRO
 		_report(skipped_result(game_id))
@@ -386,6 +390,10 @@ func _process(delta: float) -> void:
 	if _first_frames > 0:
 		_first_frames -= 1
 		LoadClock.mark("start", "frame ms=%d" % frame_ms)
+		# The shader compile's seconds-long frame mustn't eat the intro's count, unseen.
+		delta = minf(delta, START_FRAME_MAX_SEC)
+	if Session.loading and _first_frames == 0:
+		Session.show_loading(false)
 	if Session.active:
 		_sync_pause_screen()
 	match phase:
