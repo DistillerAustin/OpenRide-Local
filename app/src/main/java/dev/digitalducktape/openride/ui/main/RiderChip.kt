@@ -24,7 +24,7 @@ import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
 import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
 
-/** The active rider at the right of every tab's top bar: their avatar and name; a tap opens Profile. */
+/** The active rider at the right of every tab's top bar: their avatar and name; a tap switches rider. */
 @Composable
 fun RiderChip(profile: Profile?, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
@@ -33,7 +33,7 @@ fun RiderChip(profile: Profile?, onClick: () -> Unit, modifier: Modifier = Modif
             .clip(OrShapes.Pill)
             .background(OrColors.SurfaceRaised)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "Open your profile" }
+            .semantics { contentDescription = "Switch rider" }
             .padding(start = OrSpacing.xs, end = OrSpacing.md),
         horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm + OrSpacing.xs / 2),
         verticalAlignment = Alignment.CenterVertically,

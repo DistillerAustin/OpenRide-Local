@@ -17,8 +17,6 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
 import dev.digitalducktape.openride.ui.common.ExportShare
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -69,8 +67,7 @@ fun MainScaffold(
     val backStackEntry by innerNavController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Same options whether a tab comes from the bar or a shortcut (the top bar's rider chip):
-    // single top, state saved/restored per tab.
+    // Single top, state saved/restored per tab.
     fun navigateToTab(route: String) {
         innerNavController.navigate(route) {
             popUpTo(innerNavController.graph.findStartDestination().id) {
@@ -112,7 +109,6 @@ fun MainScaffold(
     val classRows by classesViewModel.rows.collectAsState()
     val classGrid by classesViewModel.gridVideos.collectAsState()
     val history by historyViewModel.uiState.collectAsState()
-    var askSwitchRider by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -150,7 +146,6 @@ fun MainScaffold(
                                 }
                             })
                         }
-                        TopLevelDestination.Profile -> OrSecondaryButton(text = "Switch rider", onClick = { askSwitchRider = true })
                         else -> {}
                     }
                 },
@@ -165,7 +160,14 @@ fun MainScaffold(
                             state = heartRateState,
                             bpm = heartRateBpm,
                         )
-                        RiderChip(profile = activeProfile, onClick = { navigateToTab(MainTabs.Profile) })
+                        // The rider's own name switches rider (rider's ask, 2026-10-21): straight to the
+                        // picker, which leaves the tabs; picking anyone, them included, comes back.
+                        RiderChip(profile = activeProfile, onClick = {
+                            profileViewModel.switchRider()
+                            outerNavController.navigate(Destinations.ProfileSelect) {
+                                popUpTo(Destinations.Main) { inclusive = true }
+                            }
+                        })
                     }
                 },
             )
@@ -221,14 +223,7 @@ fun MainScaffold(
                     ProfileTabScreen(
                         viewModel = profileViewModel,
                         activeProfile = activeProfile,
-                        showSwitchConfirmation = askSwitchRider,
-                        onSwitchConfirmationClosed = { askSwitchRider = false },
                         onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
-                        onSwitchRider = {
-                            outerNavController.navigate(Destinations.ProfileSelect) {
-                                popUpTo(Destinations.Main) { inclusive = true }
-                            }
-                        },
                         onRestoreComplete = {
                             // The active profile (and possibly its id entirely) may no longer be
                             // meaningful after a restore, so route back to profile select the same

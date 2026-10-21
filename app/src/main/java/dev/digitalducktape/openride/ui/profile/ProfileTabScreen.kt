@@ -58,11 +58,7 @@ fun ProfileTabScreen(
     viewModel: ProfileTabViewModel,
     /** The app's always-loaded rider (`AppContainer.activeProfile`), so the first frame has it. */
     activeProfile: Profile?,
-    /** The top bar's Switch rider was tapped: confirm here, then [onSwitchConfirmationClosed]. */
-    showSwitchConfirmation: Boolean,
-    onSwitchConfirmationClosed: () -> Unit,
     onEditProfile: () -> Unit,
-    onSwitchRider: () -> Unit,
     onRestoreComplete: () -> Unit,
     onManageHeartRateStrap: () -> Unit,
     onManageAppUpdates: () -> Unit,
@@ -201,32 +197,6 @@ fun ProfileTabScreen(
                 modifier = Modifier.padding(horizontal = OrSpacing.md),
             )
         }
-    }
-
-    // Tap-to-confirm (PRD P1-6/T16): a stray tap on "Switch rider" shouldn't silently drop the
-    // active profile mid-session — the whole point is that the *next* ride logged shouldn't
-    // land under the wrong rider by accident.
-    if (showSwitchConfirmation) {
-        val riderName = activeProfile?.name ?: "the current rider"
-        AlertDialog(
-            onDismissRequest = { onSwitchConfirmationClosed() },
-            title = { Text("Switch rider?") },
-            text = { Text("You'll leave $riderName's session. Any ride you start next will be logged under whichever rider you pick.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onSwitchConfirmationClosed()
-                    viewModel.switchRider()
-                    onSwitchRider()
-                }) {
-                    Text("Switch rider")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { onSwitchConfirmationClosed() }) {
-                    Text("Cancel")
-                }
-            },
-        )
     }
 
     // Destructive confirmation (tap-to-confirm, matching the End Ride pattern elsewhere in the
