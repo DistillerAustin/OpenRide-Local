@@ -1,6 +1,10 @@
 package dev.digitalducktape.openride.ui.designsystem
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.Composable
 
 /**
  * OpenRide's colour tokens, "Night Road" (docs/MAIN_UI_REFRESH.md §3): a blue-black ground and a
@@ -29,10 +33,19 @@ object OrColors {
     /** Secondary text: captions, labels, units. */
     val OnSurfaceMuted = Color(0xFFA7B0BC)
 
-    /** Primary actions and the selected state. Always paired with [OnAccent] text. */
-    val Accent = Color(0xFFC6F24E)
+    /**
+     * Primary actions and the selected state: the active rider's own colour (their avatar
+     * colour through [riderAccent], provided by `OpenRideTheme`), or [DefaultAccent] before a
+     * rider is chosen. Always paired with [OnAccent] text.
+     */
+    val Accent: Color
+        @Composable @ReadOnlyComposable
+        get() = LocalOrAccent.current
 
-    /** Text and icons on [Accent], [Info], [Warning] and [Success] fills. */
+    /** The accent with no rider: the "Night Road" lime. */
+    val DefaultAccent = Color(0xFFC6F24E)
+
+    /** Text and icons on [Accent] (whichever rider's), [Info], [Warning] and [Success] fills. */
     val OnAccent = Color(0xFF0F1216)
 
     /** Informational banners, links. */
@@ -61,7 +74,7 @@ object OrColors {
 data class OrColorPair(val name: String, val foreground: Color, val background: Color, val minContrast: Double)
 
 /** WCAG AA: 4.5 : 1 for body text, 3 : 1 for large text (≥ 24 sp, or 18.5 sp bold) and UI parts. */
-private const val TEXT = 4.5
+internal const val TEXT = 4.5
 private const val LARGE = 3.0
 
 /** Every foreground/background combination the design system draws. */
@@ -72,10 +85,10 @@ val OrColorPairs: List<OrColorPair> = listOf(
     OrColorPair("muted text on background", OrColors.OnSurfaceMuted, OrColors.Background, TEXT),
     OrColorPair("muted text on surface", OrColors.OnSurfaceMuted, OrColors.Surface, TEXT),
     OrColorPair("muted text on raised surface", OrColors.OnSurfaceMuted, OrColors.SurfaceRaised, TEXT),
-    OrColorPair("accent text on background", OrColors.Accent, OrColors.Background, TEXT),
-    OrColorPair("accent text on surface", OrColors.Accent, OrColors.Surface, TEXT),
-    OrColorPair("accent text on raised surface", OrColors.Accent, OrColors.SurfaceRaised, TEXT),
-    OrColorPair("text on accent", OrColors.OnAccent, OrColors.Accent, TEXT),
+    OrColorPair("accent text on background", OrColors.DefaultAccent, OrColors.Background, TEXT),
+    OrColorPair("accent text on surface", OrColors.DefaultAccent, OrColors.Surface, TEXT),
+    OrColorPair("accent text on raised surface", OrColors.DefaultAccent, OrColors.SurfaceRaised, TEXT),
+    OrColorPair("text on accent", OrColors.OnAccent, OrColors.DefaultAccent, TEXT),
     OrColorPair("info text on surface", OrColors.Info, OrColors.Surface, TEXT),
     OrColorPair("text on info", OrColors.OnAccent, OrColors.Info, TEXT),
     OrColorPair("warning text on background", OrColors.Warning, OrColors.Background, TEXT),
@@ -87,3 +100,29 @@ val OrColorPairs: List<OrColorPair> = listOf(
     OrColorPair("secondary button border on background", OrColors.Outline, OrColors.Background, 1.5),
     OrColorPair("danger fill on background", OrColors.Danger, OrColors.Background, LARGE),
 )
+
+/** The accent in force: `OpenRideTheme` provides the active rider's ([riderAccent]). */
+val LocalOrAccent = staticCompositionLocalOf { OrColors.DefaultAccent }
+
+/**
+ * A rider's UI colour from their avatar colour (rider's ask, 2026-10-21: one colour per rider).
+ * Lightened toward white just enough that [OrColors.OnAccent] text on it and it as text on every
+ * dark surface stay at WCAG AA (4.5 : 1), so any avatar colour works; already-light ones are
+ * used as they are. `null` (no rider) gives [OrColors.DefaultAccent].
+ */
+fun riderAccent(avatarColor: Int?): Color {
+    if (avatarColor == null) return OrColors.DefaultAccent
+    val base = Color(avatarColor).copy(alpha = 1f)
+    var step = 0
+    while (step <= 20) {
+        val c = lerp(base, Color.White, step / 20f)
+        if (accentReadable(c)) return c
+        step++
+    }
+    return OrColors.DefaultAccent
+}
+
+/** [OnAccent] text on [accent], and [accent] as text on every dark surface, all at 4.5 : 1. */
+fun accentReadable(accent: Color): Boolean =
+    contrastRatio(OrColors.OnAccent, accent) >= TEXT &&
+        listOf(OrColors.Background, OrColors.Surface, OrColors.SurfaceRaised).all { contrastRatio(accent, it) >= TEXT }

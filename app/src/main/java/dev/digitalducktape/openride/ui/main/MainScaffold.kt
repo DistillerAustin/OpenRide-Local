@@ -9,10 +9,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.common.ExportShare
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,12 +35,9 @@ import dev.digitalducktape.openride.ui.classes.ClassesScreen
 import dev.digitalducktape.openride.core.sensor.offlineFor
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
-import dev.digitalducktape.openride.ui.designsystem.component.LocalTopBarActions
 import dev.digitalducktape.openride.ui.designsystem.component.OrNavBar
 import dev.digitalducktape.openride.ui.designsystem.component.OrNavBarItem
 import dev.digitalducktape.openride.ui.designsystem.component.OrTopBar
-import dev.digitalducktape.openride.ui.designsystem.component.TopBarActionsHolder
-import kotlinx.coroutines.flow.combine
 import dev.digitalducktape.openride.ui.classes.ClassesViewModel
 import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
 import dev.digitalducktape.openride.ui.games.launchGames
@@ -78,26 +81,79 @@ fun MainScaffold(
         }
     }
 
-    val activeProfile by remember {
-        combine(
-            appContainer.activeProfileHolder.activeProfileId,
-            appContainer.profileRepository.observeProfiles(),
-        ) { id, profiles -> profiles.firstOrNull { it.id == id } }
-    }.collectAsState(initial = null)
+    val activeProfile by appContainer.activeProfile.collectAsState()
+
+    // Every tab's view model, made here when the tabs first show rather than when each tab is
+    // first opened, so their data is already loaded and a tab draws whole on its first frame
+    // (rider bike test, 2026-10-21: History and Profile filled in piece by piece).
+    val homeViewModel: HomeViewModel = viewModel(
+        factory = viewModelFactory {
+            HomeViewModel(appContainer.activeProfileHolder, appContainer.profileRepository, appContainer.rideSessionManager)
+        },
+    )
+    val classesViewModel: ClassesViewModel = viewModel(
+        factory = viewModelFactory {
+            ClassesViewModel(
+                appContainer.contentRepository,
+                appContainer.rideSessionManager,
+                appContainer.activeProfileHolder,
+                appContainer.rideRepository,
+            )
+        },
+    )
+    val historyViewModel: HistoryViewModel = viewModel(
+        factory = viewModelFactory { HistoryViewModel(appContainer.activeProfileHolder, appContainer.rideRepository) },
+    )
+    val profileViewModel: ProfileTabViewModel = viewModel(
+        factory = viewModelFactory {
+            ProfileTabViewModel(appContainer.activeProfileHolder, appContainer.profileRepository, appContainer.backupRepository)
+        },
+    )
+    val classRows by classesViewModel.rows.collectAsState()
+    val classGrid by classesViewModel.gridVideos.collectAsState()
+    val history by historyViewModel.uiState.collectAsState()
+    var askSwitchRider by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
     val sensorsOffline by remember { appContainer.bikeDataSource.connectionState.offlineFor() }
         .collectAsState(initial = false)
     val heartRateState by appContainer.heartRateManager.connectionState.collectAsState()
     val heartRateBpm by appContainer.heartRateManager.bpm.collectAsState()
     val availableUpdate by appContainer.updateAvailability.collectAsState()
     val updateBannerDismissed by appContainer.updateBannerDismissed.collectAsState()
-    val topBarActions = remember { TopBarActionsHolder() }
     val currentTab = TopLevelDestination.entries.firstOrNull { it.route == currentRoute } ?: TopLevelDestination.Start
 
-    CompositionLocalProvider(LocalTopBarActions provides topBarActions) {
+    run {
         Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
             OrTopBar(
                 title = currentTab.label,
-                actions = { topBarActions.content?.invoke(this) },
+                // Each tab's own buttons, drawn with the bar in the same frame as the tab.
+                actions = {
+                    when (currentTab) {
+                        TopLevelDestination.Classes -> OrAccentButton(
+                            text = "Random ride",
+                            enabled = classGrid?.isNotEmpty() ?: classRows.any { it.videos.isNotEmpty() },
+                            onClick = {
+                                classesViewModel.randomVideo()?.let { video ->
+                                    if (classesViewModel.startRideForVideo(video)) {
+                                        outerNavController.navigate(Destinations.videoRide(video.id))
+                                    }
+                                }
+                            },
+                        )
+                        TopLevelDestination.History -> if (history?.rows?.isNotEmpty() == true) {
+                            OrSecondaryButton(text = "Export CSV", onClick = {
+                                scope.launch {
+                                    val csv = historyViewModel.historyCsvContent()
+                                    ExportShare.share(context, "ride_history.csv", csv, "text/csv")
+                                }
+                            })
+                        }
+                        TopLevelDestination.Profile -> OrSecondaryButton(text = "Switch rider", onClick = { askSwitchRider = true })
+                        else -> {}
+                    }
+                },
                 trailing = {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
@@ -131,35 +187,15 @@ fun MainScaffold(
                 popExitTransition = { ExitTransition.None },
             ) {
                 composable(MainTabs.Home) {
-                    val context = LocalContext.current
-                    val viewModel: HomeViewModel = viewModel(
-                        factory = viewModelFactory {
-                            HomeViewModel(
-                                appContainer.activeProfileHolder,
-                                appContainer.profileRepository,
-                                appContainer.rideSessionManager,
-                            )
-                        },
-                    )
                     HomeRoute(
-                        viewModel = viewModel,
+                        viewModel = homeViewModel,
                         onQuickStart = { outerNavController.navigate(Destinations.InRide) },
                         onOpenGames = { launchGames(context) },
                     )
                 }
                 composable(MainTabs.Classes) {
-                    val viewModel: ClassesViewModel = viewModel(
-                        factory = viewModelFactory {
-                            ClassesViewModel(
-                                appContainer.contentRepository,
-                                appContainer.rideSessionManager,
-                                appContainer.activeProfileHolder,
-                                appContainer.rideRepository,
-                            )
-                        },
-                    )
                     ClassesScreen(
-                        viewModel = viewModel,
+                        viewModel = classesViewModel,
                         onStartVideoRide = { videoId ->
                             outerNavController.navigate(Destinations.videoRide(videoId))
                         },
@@ -170,35 +206,23 @@ fun MainScaffold(
                 }
                 composable(MainTabs.Games) {
                     // A launcher: the Games hub inside Godot holds the picker, circuits and settings.
-                    val context = LocalContext.current
                     val saving by appContainer.gameVisitManager.saving.collectAsState()
                     GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
                 }
                 composable(MainTabs.History) {
-                    val viewModel: HistoryViewModel = viewModel(
-                        factory = viewModelFactory {
-                            HistoryViewModel(appContainer.activeProfileHolder, appContainer.rideRepository)
-                        },
-                    )
                     HistoryScreen(
-                        viewModel = viewModel,
+                        viewModel = historyViewModel,
                         onRideSelected = { rideId ->
                             outerNavController.navigate(Destinations.rideSummary(rideId))
                         },
                     )
                 }
                 composable(MainTabs.Profile) {
-                    val viewModel: ProfileTabViewModel = viewModel(
-                        factory = viewModelFactory {
-                            ProfileTabViewModel(
-                                appContainer.activeProfileHolder,
-                                appContainer.profileRepository,
-                                appContainer.backupRepository,
-                            )
-                        },
-                    )
                     ProfileTabScreen(
-                        viewModel = viewModel,
+                        viewModel = profileViewModel,
+                        activeProfile = activeProfile,
+                        showSwitchConfirmation = askSwitchRider,
+                        onSwitchConfirmationClosed = { askSwitchRider = false },
                         onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
                         onSwitchRider = {
                             outerNavController.navigate(Destinations.ProfileSelect) {

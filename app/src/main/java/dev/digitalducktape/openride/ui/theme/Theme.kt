@@ -3,6 +3,10 @@ package dev.digitalducktape.openride.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import dev.digitalducktape.openride.ui.designsystem.LocalOrAccent
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 
 /**
@@ -13,7 +17,7 @@ import dev.digitalducktape.openride.ui.designsystem.OrColors
  * Material components that read the scheme (dialogs, text fields, chips, menus) get the same
  * surfaces as the design system, so screens not yet rebuilt still match the new look.
  */
-private val OpenRideColorScheme = darkColorScheme(
+private fun openRideColorScheme(accent: Color) = darkColorScheme(
     background = OrColors.Background,
     onBackground = OrColors.OnBackground,
     surface = OrColors.Surface,
@@ -29,7 +33,7 @@ private val OpenRideColorScheme = darkColorScheme(
     surfaceDim = OrColors.Background,
     inverseSurface = OrColors.OnBackground,
     inverseOnSurface = OrColors.Background,
-    primary = OrColors.Accent,
+    primary = accent,
     onPrimary = OrColors.OnAccent,
     primaryContainer = OrColors.SurfaceRaised,
     onPrimaryContainer = OrColors.OnBackground,
@@ -52,10 +56,11 @@ private val OpenRideColorScheme = darkColorScheme(
 )
 
 @Composable
-fun OpenRideTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = OpenRideColorScheme,
-        typography = OpenRideTypography,
-        content = content,
-    )
+fun OpenRideTheme(accent: Color = OrColors.DefaultAccent, content: @Composable () -> Unit) {
+    // The accent is the active rider's colour (`riderAccent`): design-system code reads it from
+    // LocalOrAccent, older Material screens as the scheme's primary.
+    val scheme = remember(accent) { openRideColorScheme(accent) }
+    CompositionLocalProvider(LocalOrAccent provides accent) {
+        MaterialTheme(colorScheme = scheme, typography = OpenRideTypography, content = content)
+    }
 }

@@ -65,13 +65,16 @@ import dev.digitalducktape.openride.core.sensor.AffernetBikeDataSource
 import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import dev.digitalducktape.openride.core.sensor.MockBikeDataSource
 import java.io.File
+import dev.digitalducktape.openride.core.data.Profile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * Simple hand-rolled dependency container (no Hilt/DI framework per project scope), owned by
@@ -104,6 +107,17 @@ class AppContainer(private val applicationContext: Context) {
 
     val profileRepository: ProfileRepository by lazy {
         ProfileRepository(database.profileDao())
+    }
+
+    /**
+     * The active rider, kept loaded for the life of the process so every screen draws with it on
+     * its first frame (no rider-less frame, then a pop-in: rider bike test, 2026-10-21). `null`
+     * while no rider is selected, or until the profile table's first read.
+     */
+    val activeProfile: StateFlow<Profile?> by lazy {
+        combine(activeProfileHolder.activeProfileId, profileRepository.observeProfiles()) { id, profiles ->
+            profiles.firstOrNull { it.id == id }
+        }.stateIn(containerScope, SharingStarted.Eagerly, null)
     }
 
     val rideRepository: RideRepository by lazy {

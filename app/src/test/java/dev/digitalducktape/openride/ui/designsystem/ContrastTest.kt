@@ -14,7 +14,7 @@ class ContrastTest {
 
     @Test
     fun `a colour on itself is 1 to 1`() {
-        assertEquals(1.0, contrastRatio(OrColors.Accent, OrColors.Accent), 0.0001)
+        assertEquals(1.0, contrastRatio(OrColors.DefaultAccent, OrColors.DefaultAccent), 0.0001)
     }
 
     @Test

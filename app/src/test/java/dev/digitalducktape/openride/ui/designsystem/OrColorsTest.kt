@@ -25,9 +25,9 @@ class OrColorsTest {
 
     @Test
     fun `the accent is not the previous red, so the app no longer reads as red on black`() {
-        assertNotEquals(Color(0xFFE8442D), OrColors.Accent)
+        assertNotEquals(Color(0xFFE8442D), OrColors.DefaultAccent)
         // Green dominates the accent: a hue far from red.
-        assertTrue(OrColors.Accent.green > OrColors.Accent.red)
+        assertTrue(OrColors.DefaultAccent.green > OrColors.DefaultAccent.red)
     }
 
     @Test

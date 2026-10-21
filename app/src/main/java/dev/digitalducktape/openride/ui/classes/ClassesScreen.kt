@@ -32,8 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import dev.digitalducktape.openride.ui.designsystem.component.OrChip
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
-import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
-import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -138,10 +136,6 @@ private fun LoadedContent(
     modifier: Modifier = Modifier,
 ) {
     val hasAnything = gridVideos?.isNotEmpty() ?: rows.any { it.videos.isNotEmpty() }
-
-    TopBarActions {
-        OrAccentButton(text = "Random ride", onClick = onRandomRide, enabled = hasAnything)
-    }
 
     Column(modifier = modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 0.dp, bottom = 16.dp)) {
         FilterBar(

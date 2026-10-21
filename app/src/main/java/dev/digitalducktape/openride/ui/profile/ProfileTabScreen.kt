@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.sp
 import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
+import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
-import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
@@ -56,6 +56,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileTabScreen(
     viewModel: ProfileTabViewModel,
+    /** The app's always-loaded rider (`AppContainer.activeProfile`), so the first frame has it. */
+    activeProfile: Profile?,
+    /** The top bar's Switch rider was tapped: confirm here, then [onSwitchConfirmationClosed]. */
+    showSwitchConfirmation: Boolean,
+    onSwitchConfirmationClosed: () -> Unit,
     onEditProfile: () -> Unit,
     onSwitchRider: () -> Unit,
     onRestoreComplete: () -> Unit,
@@ -65,14 +70,12 @@ fun ProfileTabScreen(
     routeHolder: RouteHolder,
     modifier: Modifier = Modifier,
 ) {
-    val activeProfile by viewModel.activeProfile.collectAsState(initial = null)
     val activeRoute by routeHolder.activeRoute.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var pendingRestoreContent by remember { mutableStateOf<String?>(null) }
     var restoreError by remember { mutableStateOf<String?>(null) }
-    var showSwitchConfirmation by remember { mutableStateOf(false) }
 
     var routeError by remember { mutableStateOf<String?>(null) }
 
@@ -90,10 +93,6 @@ fun ProfileTabScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
         if (text != null) pendingRestoreContent = text
-    }
-
-    TopBarActions {
-        OrSecondaryButton(text = "Switch rider", onClick = { showSwitchConfirmation = true })
     }
 
     // One page, no scrolling (the rider's ask, 2026-10-21): three columns of groups under the
@@ -210,12 +209,12 @@ fun ProfileTabScreen(
     if (showSwitchConfirmation) {
         val riderName = activeProfile?.name ?: "the current rider"
         AlertDialog(
-            onDismissRequest = { showSwitchConfirmation = false },
+            onDismissRequest = { onSwitchConfirmationClosed() },
             title = { Text("Switch rider?") },
             text = { Text("You'll leave $riderName's session. Any ride you start next will be logged under whichever rider you pick.") },
             confirmButton = {
                 TextButton(onClick = {
-                    showSwitchConfirmation = false
+                    onSwitchConfirmationClosed()
                     viewModel.switchRider()
                     onSwitchRider()
                 }) {
@@ -223,7 +222,7 @@ fun ProfileTabScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showSwitchConfirmation = false }) {
+                TextButton(onClick = { onSwitchConfirmationClosed() }) {
                     Text("Cancel")
                 }
             },

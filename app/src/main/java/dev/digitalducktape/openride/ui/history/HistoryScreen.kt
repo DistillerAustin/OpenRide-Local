@@ -13,8 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
-import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,29 +46,19 @@ fun HistoryScreen(
     onRideSelected: (rideId: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val rows by viewModel.rows.collectAsState(initial = emptyList())
-    val stats by viewModel.stats.collectAsState(initial = HistoryStats.from(emptyList()))
-    val rideDates by viewModel.rideDates.collectAsState(initial = emptySet())
+    // Draw nothing until the rides are read, then everything at once (never "No rides yet"
+    // flashing before the list).
+    val uiState by viewModel.uiState.collectAsState()
+    val loaded = uiState ?: return
+    val rows = loaded.rows
+    val stats = loaded.stats
+    val rideDates = loaded.rideDates
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var month by remember { mutableStateOf(YearMonth.now()) }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 24.dp)) {
-            if (rows.isNotEmpty()) {
-                TopBarActions {
-                    OrSecondaryButton(
-                        text = "Export CSV",
-                        onClick = {
-                            scope.launch {
-                                val csv = viewModel.historyCsvContent()
-                                ExportShare.share(context, "ride_history.csv", csv, "text/csv")
-                            }
-                        },
-                    )
-                }
-            }
-
             if (rows.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(

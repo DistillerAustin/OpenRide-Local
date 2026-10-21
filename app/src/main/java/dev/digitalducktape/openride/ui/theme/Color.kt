@@ -1,5 +1,7 @@
 package dev.digitalducktape.openride.ui.theme
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import dev.digitalducktape.openride.core.ride.PowerZone
 import dev.digitalducktape.openride.ui.designsystem.OrColors
@@ -14,7 +16,9 @@ object OpenRideColors {
     val Background = OrColors.Background
     val Surface = OrColors.Surface
     val SurfaceVariant = OrColors.SurfaceRaised
-    val Accent = OrColors.Accent
+    val Accent: Color
+        @Composable @ReadOnlyComposable
+        get() = OrColors.Accent
     val OnAccent = OrColors.OnAccent
     val OnBackground = OrColors.OnBackground
     val OnSurfaceVariant = OrColors.OnSurfaceMuted
