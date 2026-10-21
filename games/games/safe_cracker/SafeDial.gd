@@ -5,6 +5,8 @@ extends Node2D
 ## reading.
 ##
 ## Layers (children; `show_behind_parent` ones draw before this node's own drawing):
+##   Vault       behind: the vault in the door's opening (`SafeBody.build_vault`), shown only
+##               while the door is open (shut, the door covers it: no pixels spent on it)
 ##   AlarmGlow   behind: a red glow round the body, shown and faded by `alarm` (no redraw)
 ##   Spill       behind: the vault's warm light spilling out as the door opens (modulate)
 ##   Sparkle     behind: gold sparkles rising out of the vault on a crack (one burst)
@@ -89,6 +91,7 @@ var cover: Node2D
 var bolts: Node2D
 var numerals: Node2D
 var reading_layer: Node2D
+var vault: Node2D
 var alarm_glow: Node2D
 var spill: Node2D
 var sparkle: CPUParticles2D
@@ -143,6 +146,9 @@ func _init() -> void:
 	for m in [_face_mat, _door_mat]:
 		m.set_shader_parameter("focal", FOCAL)
 	material = _face_mat
+	vault = _layer("Vault", _paint_vault, true)
+	vault.use_parent_material = false
+	vault.visible = false
 	alarm_glow = _layer("AlarmGlow", _paint_alarm_glow, true)
 	alarm_glow.use_parent_material = false
 	alarm_glow.visible = false
@@ -200,6 +206,7 @@ func refresh() -> void:
 		_door_drawn = door_state
 		door.queue_redraw()
 		numerals.queue_redraw()
+		vault.queue_redraw()
 	var state := {"t": target, "tol": tolerance, "h": target_hidden, "f": roundi(hold_frac * 60.0),
 		"c": roundi(closeness * 20.0) if target_hidden else 0, "d": tumblers_done, "n": tumblers_total,
 		"acc": accent, "lp": roundi(light_pop * 24.0)}
@@ -262,6 +269,7 @@ func _apply_swing() -> void:
 		m.set_shader_parameter("hinge_x", (xf * DOOR.position).x)
 		m.set_shader_parameter("eye", xf * Vector2.ZERO)
 	spill.visible = door_open > 0.0
+	vault.visible = door_open > 0.0
 	spill.modulate.a = smoothstep(0.0, 0.7, door_open)
 
 
@@ -450,6 +458,12 @@ func _glass_band(m: SafeMesh, from: float, to: float, r0: float, r1: float, peak
 		core.append(Color(1, 1, 1, a))
 	m.band_colors(inner, mid, edge, core, false)
 	m.band_colors(mid, outer, core, edge, false)
+
+
+func _paint_vault(ci: CanvasItem) -> void:
+	var m := SafeMesh.new()
+	SafeBody.build_vault(m, colour)
+	m.flush(ci)
 
 
 ## A red glow round the safe's body (shown, and faded by `alarm`, from `refresh`).

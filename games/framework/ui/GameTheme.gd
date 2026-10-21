@@ -80,9 +80,9 @@ func _init(accent_color: Color, ink_color: Color, badge_skew := 0.0, italic_face
 
 
 ## The app's own look, for the framework's screens (the summary, calibration) when a game has
-## no `ui_theme()` (Kart Race, the demo) and for a circuit's summary, which spans several
-## games: a periwinkle accent on a deep indigo ink, upright. Close to Kart Race's violet night,
-## so a Kart session ends in a look that matches it, and far from every meaning colour.
+## no `ui_theme()` (the demo) and for a circuit's summary, which spans several
+## games: a periwinkle accent on a deep indigo ink, upright. Close to Kart Race's violet night
+## and far from every meaning colour.
 static func house() -> GameTheme:
 	if _house == null:
 		_house = GameTheme.new(Color("7a7cff"), Color("17143a"), 0.12)

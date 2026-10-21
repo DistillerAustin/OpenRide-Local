@@ -1,10 +1,17 @@
 class_name SafeBackdrop
 extends Node2D
-## The room behind the safe (#41): one `SafeMesh` batch redrawn only when the place changes, and
-## the place's slow ambient life as children that never redraw: rain on the office window and
+## The room behind the safe (#41): the room's `SafeMesh` batch and the soot vignette, baked into
+## one texture when the place changes (`RoomBake`, a SubViewport at the screen's own resolution)
+## and shown as one opaque sprite, and the place's slow ambient life as children that never
+## redraw: rain on the office window and
 ## the sea in the cabin's porthole (shaders on one rect each), the cabin's lantern swaying (a
 ## rotation tween), the lab's flasks shimmering (a shader), and dust drifting in the key light
 ## (one CPUParticles2D, 16 motes). Each lives in its place and is hidden in the others.
+##
+## Why the bake (GFX_POLISH.md, "Tablet performance"): the tablet's GPU pays for every pixel of
+## every blended layer. Drawn live, the room was 2-3 screens of stacked fills (the wall, the
+## floor and boards over it, the props, two or three big light pools) plus a full-screen
+## vignette; baked, it's one screen of texture, drawn once a frame.
 
 const RAIN_RECT := Rect2(64, 314, 312, 392)
 const PORTHOLE := Vector2(230, 520)
@@ -15,6 +22,11 @@ const LANTERN_SEC := 3.6  ## one way
 const DUST := 16
 
 var place_index := 0
+## The room and vignette render here once per place change (or window resize), not per frame.
+var bake: SubViewport
+var room: Node2D
+var view: Sprite2D
+var bakes := 0  ## renders made, for tests
 var rain: ColorRect
 var sea: ColorRect
 var lantern: Node2D
@@ -24,6 +36,26 @@ var _lantern_tween: Tween
 
 
 func _init() -> void:
+	bake = SubViewport.new()
+	bake.name = "RoomBake"
+	bake.disable_3d = true
+	bake.transparent_bg = false
+	bake.gui_disable_input = true
+	bake.size_2d_override = Vector2i(SafePlaces.SIZE)
+	bake.size_2d_override_stretch = true
+	bake.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(bake)
+	room = SafeDial.Layer.new()
+	room.name = "Room"
+	room.paint = _paint_room
+	bake.add_child(room)
+	bake.add_child(vignette())
+	view = Sprite2D.new()
+	view.name = "Room"
+	view.centered = false
+	view.texture = bake.get_texture()
+	view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(view)
 	rain = _shader_rect("Rain", RAIN_RECT, preload("res://games/safe_cracker/safe_rain.gdshader"))
 	sea = _shader_rect("Sea", Rect2(PORTHOLE - Vector2.ONE * PORTHOLE_R, Vector2.ONE * PORTHOLE_R * 2.0),
 		preload("res://games/safe_cracker/safe_sea.gdshader"))
@@ -84,14 +116,71 @@ func set_place(index: int) -> void:
 	ramp.add_point(0.75, Color(lc, 0.22))
 	dust.color_ramp = ramp
 	dust.restart()
-	queue_redraw()
 	flasks.queue_redraw()
+	rebake()
 
 
-func _draw() -> void:
-	var m := SafeMesh.new()
-	SafePlaces.build_room(m, place_index)
-	m.flush(self)
+func _enter_tree() -> void:
+	if not get_tree().root.size_changed.is_connected(rebake):
+		get_tree().root.size_changed.connect(rebake)
+	rebake()
+
+
+func _exit_tree() -> void:
+	if get_tree().root.size_changed.is_connected(rebake):
+		get_tree().root.size_changed.disconnect(rebake)
+
+
+## Renders the room once, at the size the canvas is shown on screen (1792x1008 on the bike's
+## 1920x1008 panel), so the sprite maps one texel to one pixel.
+func rebake() -> void:
+	if not is_inside_tree():
+		return
+	var win := Vector2(get_tree().root.size)
+	var s := clampf(minf(win.x / SafePlaces.SIZE.x, win.y / SafePlaces.SIZE.y), 0.25, 1.0)
+	var px := Vector2i((SafePlaces.SIZE * s).ceil())
+	if bake.size != px:
+		bake.size = px
+	view.scale = SafePlaces.SIZE / Vector2(px)
+	room.queue_redraw()
+	bake.render_target_update_mode = SubViewport.UPDATE_ONCE
+	bakes += 1
+
+
+func _paint_room(ci: CanvasItem) -> void:
+	room_mesh(place_index).draw_on(ci)
+
+
+## The room's batch for a place, built once (`SafeMesh.built`).
+static func room_mesh(index: int) -> SafeMesh:
+	return SafeMesh.built("room:%d" % index, func(m: SafeMesh) -> void: SafePlaces.build_room(m, index))
+
+
+## A soft soot vignette over the room, so the eye goes to the safe: baked with the room, so it
+## costs nothing a frame. The ambient life draws over it (it is under 6% where they are).
+static func vignette() -> TextureRect:
+	var ink := SafeDial.INK
+	var g := Gradient.new()
+	g.set_color(0, Color(ink, 0.0))
+	g.set_color(1, Color(ink, 0.72))
+	# A smooth shoulder (no visible edge where the darkening starts).
+	for k in [[0.5, 0.0], [0.62, 0.05], [0.74, 0.18], [0.86, 0.4]]:
+		g.add_point(k[0], Color(ink, k[1]))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, SafePlaces.SAFE_AT.y / SafePlaces.SIZE.y)
+	tex.fill_to = Vector2(1.05, 1.05)
+	tex.width = 256
+	tex.height = 144
+	var rect := TextureRect.new()
+	rect.name = "Vignette"
+	rect.texture = tex
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_SCALE
+	rect.size = SafePlaces.SIZE
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return rect
 
 
 ## The flasks' liquids on the lab's shelves (the glass is in the room).

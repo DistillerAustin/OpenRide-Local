@@ -44,6 +44,7 @@ var _dial: SafeDial
 var _status: SafeStatus
 var _banner: SafeBanner
 var _place := 0
+var _next_place := -1  ## picked when a safe cracks, so its room is built while the door stands open
 var _place_rng := RandomNumberGenerator.new()
 var _tick_left := 0.0
 var _door_tween: Tween
@@ -101,15 +102,9 @@ func target_text(seg: Dictionary) -> String:
 
 func _ready() -> void:
 	SafeAudioScript.register()
-	var wall := ColorRect.new()  # under everything, so a frame is never empty
-	wall.color = Color(0.05, 0.05, 0.07)
-	wall.size = SafePlaces.SIZE
-	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(wall)
 	_backdrop = SafeBackdrop.new()
 	_backdrop.name = "Backdrop"
-	add_child(_backdrop)
-	add_child(_vignette())
+	add_child(_backdrop)  # opaque: the room and the vignette, baked
 	_wash = _alarm_wash()
 	add_child(_wash)
 	_body_root = Node2D.new()
@@ -125,32 +120,6 @@ func _ready() -> void:
 	_banner = SafeBanner.new(look)
 	_banner.name = "Banner"
 	add_child(_banner)
-
-
-## A soft soot vignette over the room (one texture, drawn once: +1 draw call), so the eye goes to
-## the safe.
-static func _vignette() -> TextureRect:
-	var g := Gradient.new()
-	g.set_color(0, Color(look.ink, 0.0))
-	g.set_color(1, Color(look.ink, 0.72))
-	# A smooth shoulder (no visible edge where the darkening starts).
-	for k in [[0.5, 0.0], [0.62, 0.05], [0.74, 0.18], [0.86, 0.4]]:
-		g.add_point(k[0], Color(look.ink, k[1]))
-	var tex := GradientTexture2D.new()
-	tex.gradient = g
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, BODY_HOME.y / SafePlaces.SIZE.y)
-	tex.fill_to = Vector2(1.05, 1.05)
-	tex.width = 256
-	tex.height = 144
-	var rect := TextureRect.new()
-	rect.name = "Vignette"
-	rect.texture = tex
-	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_SCALE
-	rect.size = SafePlaces.SIZE
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return rect
 
 
 ## A red additive wash from the room's left, as if an alarm light came on: drawn once, shown and
@@ -194,6 +163,7 @@ func _on_prepare(seg: Dictionary) -> void:
 
 func _on_option_changed(key: String, _value: String) -> void:
 	if key == "scene":
+		_next_place = -1
 		_place = _pick_place(-1)
 		_show_place()
 
@@ -300,10 +270,16 @@ func _handle(event: Dictionary) -> void:
 			_door_tween = create_tween()
 			_door_tween.tween_property(_dial, "door_open", 1.0, DOOR_SEC).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 			_door_tween.parallel().tween_callback(_dial.burst_sparkle).set_delay(SPARKLE_DELAY)
+			# Build the next place's room and body now, a frame each once the door has swung,
+			# not on the frame the next safe slides in (a long frame on the tablet).
+			_next_place = _pick_place(_place)
+			_door_tween.parallel().tween_callback(SafeBackdrop.room_mesh.bind(_next_place)).set_delay(DOOR_SEC + 0.1)
+			_door_tween.parallel().tween_callback(SafeBody.mesh_for.bind(_next_place)).set_delay(DOOR_SEC + 0.3)
 			_dial.refresh()
 		"new_vault":
 			_dial.door_open = 0.0
-			_place = _pick_place(_place)
+			_place = _next_place if _next_place >= 0 else _pick_place(_place)
+			_next_place = -1
 			_show_place()
 			_body_root.position.x = BODY_HOME.x + SLIDE_FROM
 			if _slide_tween:

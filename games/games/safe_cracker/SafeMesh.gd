@@ -21,6 +21,10 @@ var uvs := PackedVector2Array()
 var indices := PackedInt32Array()
 var shade := Callable()
 var depth := 0.0
+## Tests and tools only: called on every flush with (canvas item, points, indices), to count
+## rebuilds and measure fill (tests/measure_safe.gd). Never set in the game.
+static var probe := Callable()
+static var _built := {}  ## key -> SafeMesh (`built`)
 
 
 func clear() -> void:
@@ -38,9 +42,39 @@ func vertex_count() -> int:
 
 ## Draws everything added so far onto `ci` (call from its `_draw()`), then empties the batch.
 func flush(ci: CanvasItem) -> void:
+	draw_on(ci)
+	clear()
+
+
+## Draws the batch onto `ci` (call from its `_draw()`) and keeps it, for a batch drawn again.
+func draw_on(ci: CanvasItem) -> void:
+	if probe.is_valid():
+		probe.call(ci, points, indices)
 	if not indices.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), indices, points, colors, uvs)
-	clear()
+
+
+## A batch built once by `build` (a Callable taking the SafeMesh) and kept under `key`: a
+## place's room and body are built in GDScript (the bank's room is 27k vertices, ~11 ms on the
+## desktop and several times that on the tablet), so they're built once per place and can be
+## built ahead (`SafeCracker` does it while a cracked door stands open), not on the frame the
+## next safe slides in. A few MB for all six places.
+static func built(key: String, build: Callable) -> SafeMesh:
+	var m: SafeMesh = _built.get(key)
+	if m == null:
+		m = SafeMesh.new()
+		build.call(m)
+		_built[key] = m
+	return m
+
+
+static func is_built(key: String) -> bool:
+	return _built.has(key)
+
+
+## Drops every kept batch (tests).
+static func forget_built() -> void:
+	_built.clear()
 
 
 func vert(p: Vector2, c: Color) -> int:
@@ -164,18 +198,21 @@ func ring(center: Vector2, r0: float, r1: float, col: Color, from := 0.0, to := 
 
 
 ## A soft round pool of light (or shadow): `col` at the centre fading smoothly to nothing at
-## `radius` (a Vector2 for an ellipse). Many rings, so the falloff never bands.
-func glow(center: Vector2, radius: Vector2, col: Color, rings := 14, hot := 0.0) -> void:
+## `radius` (a Vector2 for an ellipse). Many rings, so the falloff never bands. `hollow` (px)
+## leaves out the rings inside that radius, for a pool whose middle something opaque covers.
+func glow(center: Vector2, radius: Vector2, col: Color, rings := 14, hot := 0.0, hollow := 0.0) -> void:
 	rings = maxi(rings, int(maxf(radius.x, radius.y) / 36.0))
 	var segs := 48
-	var ci := vert(center, col)
 	var prev := PackedVector2Array()
 	var prev_col := col
 	for i in range(1, rings + 1):
 		var t := float(i) / rings
 		var c := Color(col, col.a * (1.0 - smoothstep(hot, 1.0, t)))
 		var cur := _ellipse(center, radius * t, segs)
-		if i == 1:
+		if hollow > 0.0 and maxf(radius.x, radius.y) * t <= hollow:
+			pass  # covered: skip it, but keep it as the next band's inner edge
+		elif i == 1:
+			var ci := vert(center, col)
 			var first := points.size()
 			for p in cur:
 				vert(p, c)
@@ -210,6 +247,26 @@ func round_rect(r: Rect2, radius: float, top: Color, bottom := Color(0, 0, 0, -1
 	band_colors(outline, grow_outline(outline, FEATHER), cols, clear)
 
 
+## A rounded rect shading top to bottom, feathered, with a round hole of radius `hole_r` at
+## `hole` (inside it): for a slab under an opaque disc (the door under its dial). The hole's
+## edge is a polygon on rays through the outline's points, inside that circle.
+func holed_round_rect(r: Rect2, radius: float, top: Color, bottom: Color, hole: Vector2, hole_r: float) -> void:
+	var outline := round_rect_outline(r, radius)
+	var inner := PackedVector2Array()
+	var cols := PackedColorArray()
+	var icols := PackedColorArray()
+	var clear := PackedColorArray()
+	for p in outline:
+		var q := hole + (p - hole).normalized() * hole_r
+		inner.append(q)
+		var c := top.lerp(bottom, clampf((p.y - r.position.y) / r.size.y, 0.0, 1.0))
+		cols.append(c)
+		clear.append(Color(c, 0.0))
+		icols.append(top.lerp(bottom, clampf((q.y - r.position.y) / r.size.y, 0.0, 1.0)))
+	band_colors(outline, inner, cols, icols)
+	band_colors(outline, grow_outline(outline, FEATHER), cols, clear)
+
+
 ## A bevel `width` wide just inside a rounded rect's edge: bright where the edge faces the
 ## light (`to_light`, a unit vector), dark where it faces away, blending round the corners.
 func bevel(r: Rect2, radius: float, width: float, to_light: Vector2, hi: Color, lo: Color) -> void:
@@ -227,10 +284,33 @@ func bevel(r: Rect2, radius: float, width: float, to_light: Vector2, hi: Color, 
 
 
 ## A soft shadow under a rounded rect: `col` inside, fading to nothing over `size` outside.
-func soft_shadow(r: Rect2, radius: float, size: float, col: Color) -> void:
+## `hollow` > 0 leaves out the middle, all but a rim that wide inside the solid part: for a
+## shadow under something opaque that covers its middle (the tablet pays for every pixel).
+func soft_shadow(r: Rect2, radius: float, size: float, col: Color, hollow := 0.0) -> void:
 	var inner := round_rect_outline(r.grow(-size * 0.5), radius)
-	fill(inner, col, false)
+	if hollow > 0.0:
+		band(round_rect_outline(r.grow(-size * 0.5 - hollow), maxf(radius - hollow, 2.0)), inner, col, col)
+	else:
+		fill(inner, col, false)
 	band(inner, round_rect_outline(r.grow(size), radius + size * 1.5), col, Color(col, 0.0))
+
+
+## A rounded frame: the rounded rect `outer` less the rounded rect `inner` (inside it), shading
+## top to bottom over `outer`, feathered on the outside only (what sits in the hole covers the
+## inner edge). A slab with a hole is cheaper than a slab under what covers it.
+func round_frame(outer: Rect2, outer_radius: float, inner: Rect2, inner_radius: float, top: Color, bottom: Color) -> void:
+	var a := round_rect_outline(outer, outer_radius)
+	var b := round_rect_outline(inner, inner_radius)
+	var ca := PackedColorArray()
+	var cb := PackedColorArray()
+	var clear := PackedColorArray()
+	for k in a.size():
+		var c := top.lerp(bottom, clampf((a[k].y - outer.position.y) / outer.size.y, 0.0, 1.0))
+		ca.append(c)
+		clear.append(Color(c, 0.0))
+		cb.append(top.lerp(bottom, clampf((b[k].y - outer.position.y) / outer.size.y, 0.0, 1.0)))
+	band_colors(a, b, ca, cb)
+	band_colors(a, grow_outline(a, FEATHER), ca, clear)
 
 
 static func segments_for(r: float, span := TAU) -> int:

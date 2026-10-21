@@ -1,7 +1,8 @@
 # Tug of War: art bible
 
-> **Status:** v2, 2026-10-20: the graphics pass (`GFX_POLISH.md`, every item done) on v1 of
-> 2026-10-19. **Owner:** whoever changes the look. Change this file in the same commit as any
+> **Status:** v2.1, 2026-10-20: the tablet performance pass (`GFX_POLISH.md`, Tablet
+> performance: the sky from its cubemap, the vignette in the view grid, haze per vertex) on v2,
+> the graphics pass (every item done), on v1 of 2026-10-19. **Owner:** whoever changes the look. Change this file in the same commit as any
 > change to the palette, the light, the bot, the crowd or the effects. **Sources of truth:**
 > `TugWorld.gd` (layout, per-frame), `TugMeshes.gd` (every mesh), `shaders/*.gdshader` and
 > `shaders/tug_look.gdshaderinc` (the grade), Dodge Ball's `tod/*.tres` (shared presets),
@@ -59,11 +60,14 @@ flag the only red, and the rope orange-tan so the meter and the world agree.
 
 - **One hand light**, `framework/shaders/world_look.gdshaderinc` through
   `shaders/tug_look.gdshaderinc`: every surface `unshaded, fog_disabled`, lit by `sun_light` per
-  vertex (the water, deck and crowd per pixel or per quad) and graded per pixel, from one table
+  vertex (the water, deck and crowd per pixel or per quad), hazed per vertex on the big surfaces
+  (water, deck, riverside, crowd) and graded per pixel, from one table
   per preset (`TugWorld.look_for`). The sun node only places the sky's disc. The gloves have
   their own fixed key light; the eyes, flames and bulbs are self-lit.
-- **Tug's grade** (the `LOOK_*` defines in `tug_look.gdshaderinc`; the sky repeats it without
-  the vignette):
+- **Tug's grade** (the `LOOK_*` defines in `tug_look.gdshaderinc`; the sky repeats it in its
+  cubemap pass). The vignette is not per pixel: since the tablet performance pass it is painted
+  into the vertex colours of the grid that draws the view on screen (`TugMeshes.view_image`),
+  so it darkens the sky's corners too.
 
   | Define | Value |
   | --- | --- |
@@ -71,7 +75,7 @@ flag the only red, and the rope orange-tan so the meter and the world agree.
   | `LOOK_CONTRAST` | 1.04 |
   | `LOOK_GAIN` | `vec3(1.04, 1.0, 0.94)` (warm, sunlit timber) |
   | `LOOK_LIFT` | `vec3(0.03, 0.01, 0.0)` (bark-brown shadows, the UI's ink) |
-  | `LOOK_VIGNETTE` | 0.3, tint `vec3(1.0, 0.9, 0.8)` |
+  | Vignette (`TugMeshes.VIGNETTE`, `VIGNETTE_TINT`) | 0.3, tint `(1.0, 0.9, 0.8)`, in the view grid |
 
 - **Materials.** Wood: procedural planks (gaps, grain from one noise read, nail dots, darker and
   wetter toward the water). Tin (the bot): flat paint with a soft fake highlight band from the
@@ -132,8 +136,10 @@ the pull rhythm on the fists.
 
 | Item | Budget | Now (desktop, 2026-10-20) |
 | --- | --- | --- |
-| fps | 60 with the tracker on (`lean_2d`) | 59-62 on the tablet before the pass (tracker off, 2026-10-03); re-measure |
-| Render scale | 0.62 (`TugOfWar.RENDER_SCALE`) | 0.62 |
+| fps | 60 with the tracker on (`lean_2d`), at least 55 sustained | 59-62 before the pass (tracker off, 2026-10-03); 48 intro / 35 play after it (tracker on); the performance pass (`GFX_POLISH.md`, Tablet performance) is to be re-measured |
+| Render scale | 0.62 (`TugOfWar.RENDER_SCALE`), 0.55 if a round stays under 54 fps (`TugQualityGovernor`) | 0.62 |
+| Sky per pixel | one cubemap read (the full sky only when the time of day changes) | 1 |
+| Per-pixel extras | no vignette, haze or constant light per pixel on the big surfaces | as budgeted |
 | Draw calls in play | ≤ 100 with the HUD (world ≤ 70) | 57 with the HUD (99 before); the world 13 (14 with steam), from 55 |
 | Visible triangles | ≤ 100k | about 29k |
 | Water per pixel | ≤ 3 noise reads | 2 |

@@ -157,3 +157,45 @@ func test_the_crowd_sprite_has_two_frames_arms_up_in_the_second() -> void:
 					up[frame] += 1
 	assert_int(up[0]).is_equal(0)
 	assert_int(up[1]).is_greater(0)
+
+
+func test_the_sky_is_drawn_once_into_its_cubemap_and_sampled() -> void:
+	var env: Environment = world._env.environment
+	# The cubemap is only kept up to date while the sky is a reflection source.
+	assert_int(env.reflected_light_source).is_equal(Environment.REFLECTION_SOURCE_SKY)
+	assert_int(env.sky.radiance_size).is_greater_equal(Sky.RADIANCE_SIZE_256)
+	var code: String = (load(SHADERS + "sky.gdshader") as Shader).code
+	assert_str(code).contains("AT_CUBEMAP_PASS").contains("texture(RADIANCE, EYEDIR)")
+	assert_str(code).not_contains("TIME *").not_contains("TIME)")  # TIME would rebuild it every frame
+
+
+func test_the_vignette_is_in_the_view_grid_not_per_pixel() -> void:
+	var inc: String = FileAccess.get_file_as_string(SHADERS + "tug_look.gdshaderinc")
+	assert_str(inc).not_contains("#define LOOK_VIGNETTE")
+	var mesh := TugMeshes.view_image(Vector2(1920, 1080))
+	var a := mesh.surface_get_arrays(0)
+	var verts: PackedVector2Array = a[Mesh.ARRAY_VERTEX]
+	var cols: PackedColorArray = a[Mesh.ARRAY_COLOR]
+	assert_int(verts.size()).is_equal((TugMeshes.VIEW_COLS + 1) * (TugMeshes.VIEW_ROWS + 1))
+	assert_vector(verts[verts.size() - 1]).is_equal(Vector2(1920, 1080))
+	var centre := cols[(TugMeshes.VIEW_ROWS / 2) * (TugMeshes.VIEW_COLS + 1) + TugMeshes.VIEW_COLS / 2]
+	assert_float(centre.r).is_greater(0.99)
+	# The corners are darker and warmer (less blue than red).
+	assert_float(cols[0].r).is_less(0.95)
+	assert_float(cols[0].b).is_less(cols[0].r)
+
+
+func test_prewarm_draws_the_hidden_effects_then_hides_them() -> void:
+	world.update_view(0.0, 0.0, 0.5, "", 80.0)
+	world.prewarm()
+	# Drawn (so their shaders compile behind the intro card), but invisible to the rider.
+	assert_bool(world._steam.visible).is_true()
+	assert_bool(world._ring.visible).is_true()
+	assert_float(world._steam_mat.get_shader_parameter("steam")).is_equal(0.0)
+	assert_float(world._foam_mat.get_shader_parameter("progress")).is_equal(1.0)
+	assert_float(world._splash.global_position.y).is_less(0.0)  # under the river
+	for i in TugWorld.WARM_FRAMES + 2:
+		await get_tree().process_frame
+	assert_bool(world._steam.visible).is_false()
+	assert_bool(world._ring.visible).is_false()
+	assert_bool(world._splash.emitting).is_false()

@@ -45,7 +45,8 @@ func build(m: SafeMesh) -> void:
 	m.depth = 0.0
 	# The slab: top-lit steel, the key light's side brighter.
 	m.shade = SafePlaces.steel_shade(to_light, half, light_col)
-	m.round_rect(D, 22.0, colour.lightened(0.1), colour.darkened(0.2))
+	# A hole under the dial's face (r + 8 covers it), so no pixels go on steel nobody sees.
+	m.holed_round_rect(D, 22.0, colour.lightened(0.1), colour.darkened(0.2), Vector2.ZERO, SafeDial.R)
 	_streaks(m, colour, index)
 	m.bevel(D, 22.0, 5.0, to_light, colour.lightened(0.5).lerp(light_col, 0.25), colour.darkened(0.55))
 	# A machined groove 28 in: dark on the lit side, bright on the far side (it's cut in).
@@ -132,7 +133,9 @@ func _sockets(m: SafeMesh, colour: Color, to_light: Vector2) -> void:
 ## The bezel (a knurled steel ring), the dark dial face with a faint centre lift, the ticks.
 func _dial_face(m: SafeMesh, colour: Color, to_light: Vector2) -> void:
 	var r := SafeDial.R
-	m.glow(Vector2(10, 16), Vector2(r + 70.0, r + 70.0), Color(0, 0, 0, 0.5), 10, 0.75)
+	# The bezel's shadow: only its rim shows past the bezel (the face disc, r + 8, covers the
+	# rings inside r - 10 even 19 px off centre).
+	m.glow(Vector2(10, 16), Vector2(r + 70.0, r + 70.0), Color(0, 0, 0, 0.5), 10, 0.75, r - 10.0)
 	lit_ring(m, Vector2.ZERO, r + 22.0, r + 40.0, colour.lightened(0.15), colour.darkened(0.6), to_light)
 	lit_ring(m, Vector2.ZERO, r + 8.0, r + 24.0, colour.lightened(0.5), colour.darkened(0.25), to_light)
 	# The knurl: short radial ridges on the outer ring.

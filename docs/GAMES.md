@@ -1560,14 +1560,29 @@ pier into the river; losing pulls the camera in. It follows the tablet recipe (a
 - The crowd is a GPU billboard MultiMesh cut from a two-frame sprite drawn in code; the
   flames are additive cards; the flag, bunting, reeds and lily pads all move in their shaders.
   Per frame, GDScript lays out the rope's 22 segments and poses the bot, nothing else.
+- **Tablet performance pass** (`GFX_POLISH.md`, Tablet performance; it ran 48 fps in the intro
+  and 35 in play with the tracker on). The sky shader runs only in its cubemap pass (256 a face,
+  rebuilt when the time of day changes; the sky is set as the reflection source so the cubemap
+  stays up to date) and the background samples it. The vignette is painted into the vertex
+  colours of the grid that draws the view on screen (`TugMeshes.view_image`, a `MeshInstance2D`),
+  not in each shader. The water, deck, riverside and crowd haze per vertex
+  (`haze_amount`/`hazed` in `tug_look.gdshaderinc`), and the water's flat light is per vertex.
+  `prewarm` draws the steam, ripple and droplets behind the intro card so their shaders compile
+  then. The lost-round flash tints the view's image instead of a full-screen overlay.
+  `TugQualityGovernor` drops the render scale from 0.62 to 0.55 once if a round's 4 s average
+  falls under 54 fps (`OPENRIDE_GAMES tug_of_war quality tier=1 fps=… scale=0.55`).
 
 About 13 draw calls for the world (55 before), 57 in play with the HUD (99 before), and 29k
 primitives on the desktop. On the tablet it
 held 59-62 fps before the pass (mock build, 2026-10-03); re-measure with Brace lean on.
 `tests/capture_tug.gd` takes desktop screenshots (`--stats` prints draw calls and frame times)
 and, with `--play=SECONDS`, plays rounds for a recording (add `--snaps` for half-size stills of
-each HUD state instead of a video). `tug_world_test` covers the shaders, the look table, the baked
-meshes and the per-frame budget.
+each HUD state instead of a video). `tests/measure_tug.gd` prints the draw calls and render CPU
+in the intro and in play, GDScript per frame, and each world part's A/B frame-time cost at a
+scaled-up render size (`--scale`, `--scene`, `--shot`). `tug_world_test` covers the shaders, the look table, the baked
+meshes, the per-frame budget, the sky cubemap, the view grid's vignette and the warm-up;
+`tug_game_test` the stats at finish, the flash and the quality step; `tug_quality_governor_test`
+the governor.
 
 **UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a
 rustic riverside fairground: `GameTheme` rope orange `#FF9F1C` on bark `#2A160B`, badges
@@ -1605,6 +1620,9 @@ antialiasing. In Compatibility each `draw_circle`, `draw_colored_polygon` or `dr
 call of its own (the bank's rivets alone were 168), so a whole room, body or door is one call.
 Each place has one key light (`SafePlaces.PLACES[i].light`): a smooth pool drawn in the room's
 batch, with the safe's steel (`SafePlaces.steel_shade`), bevels and cast shadow agreeing with it.
+The room's batch and the vignette are baked once per place into one texture at the on-screen size
+(`SafeBackdrop.bake`, a SubViewport), shown as one opaque sprite. Each place's room and body are
+built once (`SafeMesh.built`), the next place's while a cracked door stands open.
 The door's layers (`SafeDial` docs) redraw only on a change: the needle is a static drawing turned
 by `rotation`; the reading's number has its own text-only layer; the door swing is a perspective
 turn about the hinge in `safe_door.gdshader` (a uniform; the door's thickness comes from UV
@@ -1612,9 +1630,17 @@ depth). Ambient life never redraws: rain on the office window and the porthole's
 shaders on one rect each, the cabin's lantern sways on a rotation tween, the lab's flasks shimmer
 in a shader, and 16 dust motes drift in the key light (`CPUParticles2D`). A crack fires 18 gold
 sparkles; the alarm adds a red side wash. `safe_gfx_test` checks the hardware's clearances, the
-batches, that the needle and the swing redraw nothing, and each place's ambient nodes. In play:
-51 draw calls on the desktop with the HUD (86 before the graphics pass; the bank was 258, the
-lab 125).
+batches, that the needle and the swing redraw nothing, each place's ambient nodes, that the room
+bakes once per place and the next place is built ahead. In play: 47 draw calls on the desktop
+with the HUD (86 before the graphics pass; the bank was 258, the lab 125).
+
+**Tablet cost** (`GFX_POLISH.md`, "Tablet performance"). The tablet is fill-bound and 2D is all
+blended, so what counts is the pixels shaded a frame, seen or not. `tests/measure_safe.gd`
+(needs a window) prints each layer's pixels per place, the batches rebuilt a frame and the build
+times. Shapes under opaque ones have holes (`SafeMesh.round_frame`, `holed_round_rect`, the
+`hollow` of `glow` and `soft_shadow`), and the vault draws only while the door is open. Play
+shades 2.1-2.2 screens a frame (6.9-7.7 before the tablet pass, which read 50 fps on the bike,
+31 in the intro), 3.6 at worst (a crack, or under the intro card).
 
 **Rules.** The dial shows the live `resistance` reading (0-100). Hold within the tolerance of
 the target for the hold time (easy ±3 and 1.2 s, standard ±2 and 1.5 s, hard ±2 and 2 s) to click

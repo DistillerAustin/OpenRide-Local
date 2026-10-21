@@ -3,6 +3,10 @@ extends Node2D
 ## The safe's body and the vault behind its door (#41), centred on the door: one batch, redrawn
 ## only when the place changes. The door and dial are `SafeDial` (a sibling drawn after).
 ##
+## The body is a frame round the door's hole, not a slab under the door, and the vault
+## (`build_vault`) is `SafeDial`'s `Vault` layer, shown only while the door is open: the door
+## covers both while it's shut, and the tablet pays for every pixel drawn, seen or not.
+##
 ## A soft shadow cast away from the room's key light, a contact shadow and short feet; top-lit
 ## steel with the key light's side brighter, brushed streaks and a bevel; the dark seam round the
 ## door and the keepers the bolts shoot into. Inside: a lamp-lit steel vault in perspective (back
@@ -24,12 +28,19 @@ func set_place(index: int) -> void:
 
 
 func _draw() -> void:
-	var m := SafeMesh.new()
-	build(m)
-	m.flush(self)
+	mesh_for(place_index).draw_on(self)
+
+
+## The body's batch for a place, built once (`SafeMesh.built`).
+static func mesh_for(index: int) -> SafeMesh:
+	return SafeMesh.built("body:%d" % index, build_place.bind(index))
 
 
 func build(m: SafeMesh) -> void:
+	build_place(m, place_index)
+
+
+static func build_place(m: SafeMesh, place_index: int) -> void:
 	var p := SafePlaces.place(place_index)
 	var colour: Color = p.safe
 	var to_light := SafePlaces.to_light(place_index)
@@ -37,13 +48,13 @@ func build(m: SafeMesh) -> void:
 	var shadow_col := Color((p.wall2 as Color).darkened(0.7), 0.6)
 	# Cast away from the light, onto the wall; a dark contact shadow on the floor.
 	var cast := -to_light * 46.0 + Vector2(0, 22)
-	m.soft_shadow(Rect2(BODY.position + cast, BODY.size), 34.0, 50.0, shadow_col)
+	m.soft_shadow(Rect2(BODY.position + cast, BODY.size), 34.0, 50.0, shadow_col, 90.0)
 	m.glow(Vector2(0, BODY.end.y + 26.0), Vector2(600, 46), Color(0, 0, 0, 0.6), 10, 0.4)
 	for x in [-420.0, 340.0]:
 		m.quad(Vector2(x, BODY.end.y - 10.0), Vector2(x + 80.0, BODY.end.y - 10.0),
 			Vector2(x + 70.0, BODY.end.y + 26.0), Vector2(x + 10.0, BODY.end.y + 26.0), colour.darkened(0.65))
 	m.shade = SafePlaces.steel_shade(to_light, BODY.size * 0.5, light_col)
-	m.round_rect(BODY, 30.0, colour.darkened(0.05), colour.darkened(0.4))
+	m.round_frame(BODY, 30.0, DOOR.grow(10.0), 30.0, colour.darkened(0.05), colour.darkened(0.4))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 211 + place_index
 	for i in 30:
@@ -53,15 +64,15 @@ func build(m: SafeMesh) -> void:
 			rng.randf_range(1.2, 2.0), Color(1, 1, 1, rng.randf_range(0.04, 0.06)))
 	m.bevel(BODY, 30.0, 6.0, to_light, colour.lightened(0.45).lerp(light_col, 0.35), colour.darkened(0.7))
 	m.shade = Callable()
-	# The seam round the door: a dark gap the door sits in.
-	m.round_rect(DOOR.grow(10.0), 30.0, Color(0.03, 0.03, 0.035), Color(0.02, 0.02, 0.025))
+	# The seam round the door: a dark gap the door sits in (a ring: the door or the vault fills it).
+	m.round_frame(DOOR.grow(10.0), 30.0, DOOR, 22.0, Color(0.03, 0.03, 0.035), Color(0.02, 0.02, 0.025))
 	for y: float in SafeDial.BOLT_Y:
 		m.rect(Rect2(DOOR.end.x + 8.0, y - 15.0, 34.0, 30.0), Color(0.02, 0.02, 0.025))
 		m.rect(Rect2(DOOR.end.x + 8.0, y + 13.0, 34.0, 2.0), colour.lightened(0.2))
-	_vault(m, colour)
 
 
-func _vault(m: SafeMesh, colour: Color) -> void:
+## The vault behind the door, filling the door's opening (drawn by `SafeDial`'s `Vault` layer).
+static func build_vault(m: SafeMesh, colour: Color) -> void:
 	var steel := colour.darkened(0.55).lerp(Color(0.25, 0.18, 0.1), 0.25)
 	var warm := Color(1.0, 0.78, 0.45)
 	var d := DOOR
@@ -107,7 +118,7 @@ func _vault(m: SafeMesh, colour: Color) -> void:
 
 
 ## A gold bar: front face (120 x 34) at `front` (its top-left), the top face going back.
-func _bar(m: SafeMesh, front: Vector2, row: int) -> void:
+static func _bar(m: SafeMesh, front: Vector2, row: int) -> void:
 	var w := 120.0
 	var h := 34.0
 	var back := Vector2(10.0, -14.0)

@@ -166,6 +166,17 @@ func test_a_game_has_no_theme_unless_it_opts_in() -> void:
 	assert_object(game.ui_theme()).is_null()
 
 
+## Kart Race opts in with KartTheme's palette, so its pause, options and end screens match the race.
+func test_kart_race_has_its_own_look() -> void:
+	var game: Game = auto_free(GameRegistry.instantiate("kart_race"))
+	var look := game.ui_theme()
+	assert_object(look).is_not_null()
+	assert_object(look).is_same(game.ui_theme())
+	assert_that(look.panel).is_equal(KartTheme.PANEL)
+	assert_that(look.panel_edge).is_equal(KartTheme.PANEL_EDGE)
+	assert_bool(look.italic).is_true()
+
+
 func test_motion_helpers_settle() -> void:
 	var c: Control = auto_free(Control.new())
 	add_child(c)

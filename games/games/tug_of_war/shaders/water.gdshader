@@ -2,7 +2,9 @@
 // shared look (tug_look.gdshaderinc): two drifting ripple reads, which also tilt the normal; a
 // fresnel to the two-colour sky; glitter only along the sun's (or the moon's) path; a soft foam
 // band where the water meets the banks and around the pilings; darker under each pier's deck.
-// The river covers a third of the screen, so it stays at two noise reads.
+// The river covers a third of the screen (half when the rider is pulled in), so it stays at two
+// noise reads, and what doesn't change across a pixel is worked out per vertex: the flat light,
+// the sun's direction and the haze (TugWorld subdivides the plane for it).
 shader_type spatial;
 render_mode unshaded, fog_disabled;
 
@@ -19,9 +21,18 @@ uniform float pier_half = 2.5;
 uniform float piling_x = 2.3;
 
 varying vec3 v_wp;
+varying vec3 v_body_light;  // the sun on flat water, floored so the river never goes black
+varying vec3 v_foam_light;
+varying vec3 v_sun;  // towards the sun, unit
+varying float v_haze;
 
 void vertex() {
 	v_wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 flat_light = sun_light(vec3(0.0, 1.0, 0.0));
+	v_body_light = max(flat_light, vec3(0.45));
+	v_foam_light = max(flat_light, vec3(0.35));
+	v_sun = normalize(sun_dir);
+	v_haze = haze_amount(length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz));
 }
 
 void fragment() {
@@ -34,13 +45,14 @@ void fragment() {
 	vec3 v = normalize(CAMERA_POSITION_WORLD - v_wp);
 	vec3 r = reflect(-v, n);
 	// The body of the water, lit, with a floor so the river never goes black at night.
-	vec3 body = mix(deep, shallow, ripple) * max(sun_light(vec3(0.0, 1.0, 0.0)), vec3(0.45));
+	vec3 body = mix(deep, shallow, ripple) * v_body_light;
 	// Fresnel: the sky shows at a grazing view, overhead blue higher up the reflection.
-	vec3 sky = mix(sky_horizon, sky_top, pow(clamp(r.y, 0.0, 1.0), 0.6));
-	float fres = 0.08 + 0.72 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
+	vec3 sky = mix(sky_horizon, sky_top, sqrt(clamp(r.y, 0.0, 1.0)));
+	float g = 1.0 - clamp(dot(n, v), 0.0, 1.0);
+	float fres = 0.08 + 0.72 * g * g * g;
 	vec3 col = mix(body, sky, fres);
 	// Glitter in a band toward the sun, broken up by the fine ripples.
-	float spec = pow(max(dot(r, normalize(sun_dir)), 0.0), 24.0);
+	float spec = pow(max(dot(r, v_sun), 0.0), 24.0);
 	float glints = smoothstep(0.55, 0.85, b) * (0.5 + 0.5 * a);
 	col += sun_color * (spec * 2.2 * glints + spec * 0.25) * sparkle;
 	// Foam: along the banks (broken by the slow ripples) and around the pilings.
@@ -50,12 +62,12 @@ void fragment() {
 	float pz = min(abs(v_wp.z - (pier_ends.x + 0.16)), abs(v_wp.z - (pier_ends.y - 0.16)));
 	float pile = length(vec2(px, pz));
 	foam = max(foam, (1.0 - smoothstep(0.13, 0.3, pile + (b - 0.5) * 0.12)) * 0.8);
-	vec3 foam_col = vec3(0.9, 0.95, 0.97) * max(sun_light(vec3(0.0, 1.0, 0.0)), vec3(0.35));
+	vec3 foam_col = vec3(0.9, 0.95, 0.97) * v_foam_light;
 	col = mix(col, foam_col, foam * smoothstep(0.3, 0.6, ripple + 0.15));
 	// Shade under the piers' decks.
 	float inside = 1.0 - smoothstep(pier_half - 0.15, pier_half + 0.15, abs(v_wp.x));
 	float under = max(smoothstep(pier_ends.x - 0.2, pier_ends.x + 0.2, v_wp.z),
 		smoothstep(pier_ends.y + 0.2, pier_ends.y - 0.2, v_wp.z));
 	col *= 1.0 - 0.45 * inside * under;
-	ALBEDO = grade(haze(col, length(VERTEX)), SCREEN_UV);
+	ALBEDO = grade(hazed(col, v_haze), SCREEN_UV);
 }

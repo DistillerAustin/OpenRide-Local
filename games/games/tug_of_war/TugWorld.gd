@@ -33,6 +33,8 @@ const HANDS_POS := Vector3(0.0, -0.3, -0.95)
 const BOT_GRIP := Vector3(0.0, 1.3, 0.97)
 ## The wind-up key's speed (radians a second) per bot state: a lazy turn, fast on a telegraph.
 const KEY_SPEED := {"": 1.6, "telegraph": 14.0, "surge": 7.0}
+## How many frames `prewarm` keeps the hidden effects drawn (the render thread may lag a frame).
+const WARM_FRAMES := 3
 
 ## The bots: a material and an animal, so each rung's opponent gets a new name and colour.
 ## Plain words only: none of this is anyone's character.
@@ -84,6 +86,9 @@ var _shake := 0.0
 var _key_angle := 0.0
 var _excite_shown := -1.0
 var _bot_name := ""
+var _warming := false  ## prewarm is drawing the hidden effects
+var _splashing := false  ## a splash's ripple is showing
+var _steam_shown := false  ## the steam as update_view wants it
 
 
 func _ready() -> void:
@@ -150,7 +155,8 @@ func update_view(delta: float, p: float, tension: float, surge: String, cadence:
 	_bot_mat.set_shader_parameter("key_angle", _key_angle)
 	_eye_mat.set_shader_parameter("eye_color", eyes)
 	_eye_mat.set_shader_parameter("glow", glow)
-	_steam.visible = steam > 0.0
+	_steam_shown = steam > 0.0
+	_steam.visible = _steam_shown or _warming
 	_steam_mat.set_shader_parameter("steam", steam)
 	# The bot's blob shadow on its deck, gone once it is over the water.
 	var on_deck := 1.0 - smoothstep(FAR_EDGE_Z - 0.6, FAR_EDGE_Z + 0.2, bot_pos.z)
@@ -209,18 +215,38 @@ func splash_at(pos: Vector3) -> void:
 	_splash.emitting = true
 	_ring.position = pos + Vector3(0.0, 0.03, 0.0)
 	_ring.visible = true
+	_splashing = true
 	_foam_mat.set_shader_parameter("progress", 0.0)
 	var tween := create_tween()
 	tween.tween_property(_foam_mat, "shader_parameter/progress", 1.0, 1.6)
-	tween.tween_callback(func(): _ring.visible = false)
+	tween.tween_callback(func():
+		_splashing = false
+		_ring.visible = false)
 	_shake = 0.03
 
 
-## Draws every effect once off-screen so none hitches on first use.
+## Draws every effect that starts hidden once, behind the intro card, so its shader compiles
+## then and not on the first telegraph or splash: the Compatibility renderer compiles a material
+## the first time it draws it, a stall of a tenth of a second or more on the tablet. The steam and
+## the ripple draw fully transparent for a few frames; the droplets burst under the water, where
+## the river hides them.
 func prewarm() -> void:
-	_splash.emitting = true
+	_warming = true
+	_steam.visible = true
+	_steam_mat.set_shader_parameter("steam", 0.0)
+	_ring.position = Vector3(0.0, 0.03, FAR_EDGE_Z + 1.4)
+	_ring.visible = true
+	_foam_mat.set_shader_parameter("progress", 1.0)
+	_splash.position = Vector3(0.0, -3.0, -6.0)
 	_splash.restart()
+	_splash.emitting = true
+	for i in WARM_FRAMES:
+		await get_tree().process_frame
+	_warming = false
 	_splash.emitting = false
+	if not _splashing:
+		_ring.visible = false
+	_steam.visible = _steam_shown
 
 
 ## The world's light for a time-of-day preset: `WorldLook`'s uniforms (sun, hemisphere ambient,
@@ -298,12 +324,16 @@ func _build_environment() -> void:
 	_sky_mat.set_shader_parameter("star_tex", WorldLook.noise_texture())
 	var sky := Sky.new()
 	sky.sky_material = _sky_mat
-	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	# The sky is drawn once into its radiance cubemap (when the time of day changes) and the
+	# background samples it (sky.gdshader). 256 a face keeps the disc, clouds and stars sharp at
+	# the view's 0.1° a pixel. The cubemap is only kept up to date while the sky is a reflection
+	# source; no material reads it (they're all unshaded).
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	# Everything lights itself (unshaded): no engine ambient, reflections or fog to pay for.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.fog_enabled = false
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	_env.environment = env
@@ -321,6 +351,9 @@ func _build_river_and_banks() -> void:
 	_water_mat.set_shader_parameter("pier_ends", Vector2(NEAR_EDGE_Z, FAR_EDGE_Z))
 	var water := PlaneMesh.new()
 	water.size = Vector2(160.0, 60.0)
+	# 5 m cells, for the haze worked out per vertex (water.gdshader).
+	water.subdivide_width = 31
+	water.subdivide_depth = 11
 	var wi := _instance(water, _water_mat, "Water")
 	wi.position = Vector3(0.0, 0.0, -8.6)
 	# The riverside: banks, hills, trees, pier frames, masts, bunting, lights, reeds, the tent.

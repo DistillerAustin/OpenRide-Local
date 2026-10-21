@@ -17,6 +17,7 @@ uniform vec3 ground_tint : source_color = vec3(0.302, 0.502, 0.2);
 varying vec3 v_shirt;
 varying vec4 v_info;  // x: skin, y: frame offset (0 or 0.5), z: 1 on the blob, w: trousers
 varying vec3 v_light;
+varying float v_haze;
 
 void vertex() {
 	vec4 c = INSTANCE_CUSTOM;
@@ -43,6 +44,7 @@ void vertex() {
 	v_info.z = blob;
 	v_info.w = c.a;
 	VERTEX = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
+	v_haze = haze_amount(length(VERTEX));
 	NORMAL = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
 }
 
@@ -64,5 +66,5 @@ void fragment() {
 		col = v_shirt * t.r + skin * t.g + trousers * t.b + vec3(0.07, 0.05, 0.05) * (1.0 - min(t.r + t.g + t.b, 1.0));
 		col *= 0.8 + 0.28 * (1.0 - UV.y);
 	}
-	ALBEDO = grade(haze(col * v_light, length(VERTEX)), SCREEN_UV);
+	ALBEDO = grade(hazed(col * v_light, v_haze), SCREEN_UV);
 }

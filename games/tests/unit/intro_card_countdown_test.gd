@@ -29,3 +29,23 @@ func test_a_game_with_its_own_countdown_gets_get_ready() -> void:
 
 func test_kart_race_counts_its_own_start_down() -> void:
 	assert_bool(GameRegistry.info("kart_race").own_countdown).is_true()
+
+
+## The shade dims around the card, not under it (the tablet's GPU is fill-bound), yet every
+## touch outside the skip button still lands on the card or the shade.
+func test_the_shade_frames_the_card_and_takes_every_touch() -> void:
+	var card := _card(false)
+	var screen := HudTheme.W * HudTheme.H
+	var shaded := 0.0
+	var stops: Array[Rect2] = [Rect2(card._card.position, card._card.size)]
+	for child in card.get_children():
+		if child is ColorRect and child.name.begins_with("Shade"):
+			shaded += child.size.x * child.size.y
+			if child.mouse_filter == Control.MOUSE_FILTER_STOP:
+				stops.append(Rect2(child.position, child.size))
+	assert_float(shaded / screen).is_less(0.6)
+	assert_int(card._card.mouse_filter).is_equal(Control.MOUSE_FILTER_STOP)
+	for p in [Vector2(5, 5), Vector2(HudTheme.W - 5, HudTheme.H - 5), Vector2(HudTheme.W / 2.0, HudTheme.H / 2.0),
+			card._card.position - Vector2(1, 1), card._card.position + card._card.size + Vector2(1, 1)]:
+		assert_bool(stops.any(func(r: Rect2) -> bool: return r.has_point(p))).override_failure_message(
+			"no touch cover at %s" % p).is_true()

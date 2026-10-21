@@ -729,3 +729,54 @@ static func crowd_sprite() -> ImageTexture:
 				img.set_pixel(frame * w + x, y, c)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+
+## Tug's vignette (ART_BIBLE §4: 0.3 toward a warm tint), painted into the vertex colours of the
+## grid that draws the 3D view scaled up on screen (`view_image`), so it costs nothing a pixel.
+## It was LOOK_VIGNETTE in every world shader: about 20 ALU on every pixel of the view.
+const VIGNETTE := 0.3
+const VIGNETTE_TINT := Color(1.0, 0.9, 0.8)
+const VIEW_COLS := 16
+const VIEW_ROWS := 9
+
+
+## The darkening (as a colour multiplier) at a screen position `suv` (0-1 each way): the shared
+## include's formula (world_look.gdshaderinc, `grade`), in linear light.
+static func vignette_at(suv: Vector2) -> Color:
+	var p := suv * 2.0 - Vector2.ONE
+	p.x *= 1.35
+	var v := smoothstep(0.7, 1.75, p.length())
+	var m := 1.0 - v * VIGNETTE
+	var tint := Color.WHITE.lerp(VIGNETTE_TINT, v * 0.5)
+	return Color(m * tint.r, m * tint.g, m * tint.b)
+
+
+## The grid that draws the 3D view's image at `size` on screen: UVs across the image and the
+## vignette in the vertex colours. The image holds display (sRGB) values, so the linear
+## multiplier goes to the power 1/2.2.
+static func view_image(size: Vector2) -> ArrayMesh:
+	var verts := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	for j in VIEW_ROWS + 1:
+		for i in VIEW_COLS + 1:
+			var uv := Vector2(float(i) / VIEW_COLS, float(j) / VIEW_ROWS)
+			verts.append(uv * size)
+			uvs.append(uv)
+			var m := vignette_at(uv)
+			cols.append(Color(pow(m.r, 1.0 / 2.2), pow(m.g, 1.0 / 2.2), pow(m.b, 1.0 / 2.2)))
+	for j in VIEW_ROWS:
+		for i in VIEW_COLS:
+			var a := j * (VIEW_COLS + 1) + i
+			var c := a + VIEW_COLS + 1
+			idx.append_array([a, a + 1, c, a + 1, c + 1, c])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
