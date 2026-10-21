@@ -23,7 +23,7 @@ import dev.digitalducktape.openride.ui.update.UpdateViewModel
 import dev.digitalducktape.openride.ui.main.MainScaffold
 import dev.digitalducktape.openride.ui.profile.ProfileEditorScreen
 import dev.digitalducktape.openride.ui.profile.ProfileEditorViewModel
-import dev.digitalducktape.openride.ui.profile.ProfileSelectScreen
+import dev.digitalducktape.openride.ui.profile.ProfileSelectRoute
 import dev.digitalducktape.openride.ui.profile.ProfileSelectViewModel
 import dev.digitalducktape.openride.ui.profile.HrPairingScreen
 import dev.digitalducktape.openride.ui.profile.HrPairingViewModel
@@ -61,7 +61,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     ProfileSelectViewModel(appContainer.profileRepository, appContainer.activeProfileHolder)
                 },
             )
-            ProfileSelectScreen(
+            ProfileSelectRoute(
                 viewModel = viewModel,
                 onProfileSelected = {
                     navController.navigate(Destinations.Main) {

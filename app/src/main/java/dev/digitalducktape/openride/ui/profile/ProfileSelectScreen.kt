@@ -5,90 +5,131 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrIcons
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 
-/**
- * Launch destination (PRD P0-3, P0-8), in the bike's welcome-screen arrangement (v2
- * redesign spec): wordmark on the left, a horizontal row of large rider avatars
- * center-stage, and the quiet "Add rider" action bottom-center — all over a soft
- * dark gradient rather than the flat tab background. Selecting a profile scopes the
- * whole session to it and moves on to Home.
- */
+/** Rider select connected to its [ProfileSelectViewModel] (Route half of the Route/Screen split). */
 @Composable
-fun ProfileSelectScreen(
+fun ProfileSelectRoute(
     viewModel: ProfileSelectViewModel,
     onProfileSelected: () -> Unit,
     onAddRider: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val profiles by viewModel.profiles.collectAsState(initial = emptyList())
+    // null until the first database read, so "add your first rider" never flashes past.
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle(initialValue = null)
+    ProfileSelectScreen(
+        profiles = profiles,
+        onSelectProfile = { id ->
+            viewModel.selectProfile(id)
+            onProfileSelected()
+        },
+        onAddRider = onAddRider,
+        modifier = modifier,
+    )
+}
 
+/**
+ * The launch destination (PRD P0-3, P0-8), stateless: the wordmark, "Who's riding?", a centred row
+ * of large rider avatars (each one, with its name, a single touch target), and Add rider. With no
+ * riders yet, adding the first one is the screen's primary action. Selecting a rider scopes the
+ * whole session to them and moves on to Home.
+ *
+ * @param profiles the riders, or `null` while they load.
+ */
+@Composable
+fun ProfileSelectScreen(
+    profiles: List<Profile>?,
+    onSelectProfile: (Long) -> Unit,
+    onAddRider: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF23283B), Color(0xFF12131A), OpenRideColors.Background),
-                ),
-            ),
+            .background(OrColors.Background)
+            .padding(OrSpacing.xl),
     ) {
         Text(
             text = "OPENRIDE",
-            fontSize = 40.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 14.sp,
-            color = OpenRideColors.OnBackground,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 64.dp),
+            fontSize = 28.sp,
+            style = OrType.Eyebrow,
+            letterSpacing = 10.sp,
+            color = OrColors.OnBackground,
+            modifier = Modifier.align(Alignment.TopStart),
         )
 
-        LazyRow(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(start = 420.dp),
-            horizontalArrangement = Arrangement.spacedBy(56.dp),
-        ) {
-            items(profiles, key = { it.id }) { profile ->
-                RiderAvatar(
-                    profile = profile,
-                    onClick = {
-                        viewModel.selectProfile(profile.id)
-                        onProfileSelected()
-                    },
+        if (profiles != null) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = if (profiles.isEmpty()) "Welcome to OpenRide" else "Who's riding?",
+                    style = OrType.ScreenTitle,
+                    color = OrColors.OnBackground,
+                )
+                if (profiles.isEmpty()) {
+                    Text(
+                        text = "Add a rider to keep their rides, goals and records apart.",
+                        style = OrType.Body,
+                        color = OrColors.OnSurfaceMuted,
+                        modifier = Modifier.padding(top = OrSpacing.sm),
+                    )
+                    OrPrimaryButton(
+                        text = "Add your first rider",
+                        icon = OrIcons.Add,
+                        onClick = onAddRider,
+                        modifier = Modifier.padding(top = OrSpacing.xxl),
+                    )
+                } else {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.xxl),
+                        horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl, Alignment.CenterHorizontally),
+                    ) {
+                        items(profiles, key = { it.id }) { profile ->
+                            RiderAvatar(profile = profile, onClick = { onSelectProfile(profile.id) })
+                        }
+                    }
+                }
+            }
+
+            if (profiles.isNotEmpty()) {
+                OrSecondaryButton(
+                    text = "Add rider",
+                    icon = OrIcons.Add,
+                    onClick = onAddRider,
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
         }
-
-        AddRiderAction(
-            onClick = onAddRider,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp),
-        )
     }
 }
 
@@ -96,41 +137,51 @@ fun ProfileSelectScreen(
 private fun RiderAvatar(profile: Profile, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(180.dp)
-            .clickable(onClick = onClick),
+            .width(RiderCellWidth)
+            .clip(OrShapes.Large)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(OrSpacing.md),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ProfileAvatar(profile = profile, size = 180.dp, emojiSize = 72.sp)
+        ProfileAvatar(profile = profile, size = AvatarSize, emojiSize = 72.sp)
         Text(
             text = profile.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = OpenRideColors.OnBackground,
+            style = OrType.Subtitle,
+            color = OrColors.OnBackground,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 20.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = OrSpacing.md),
         )
     }
 }
 
+private val AvatarSize = 176.dp
+private val RiderCellWidth = 208.dp
+
+private fun previewRider(id: Long, name: String, emoji: String, color: Long) =
+    Profile(id = id, name = name, avatarEmoji = emoji, avatarColor = color.toInt(), weightKg = null, ftp = null)
+
+@BikePreview
 @Composable
-private fun AddRiderAction(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .background(color = Color(0x33FFFFFF), shape = CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = "+", fontSize = 28.sp, color = OpenRideColors.OnBackground)
-        }
-        Text(
-            text = "Add rider",
-            style = MaterialTheme.typography.bodyMedium,
-            color = OpenRideColors.OnBackground,
-            modifier = Modifier.padding(top = 8.dp),
+private fun ProfileSelectPreview() {
+    OpenRideTheme {
+        ProfileSelectScreen(
+            profiles = listOf(
+                previewRider(1, "Sam", "🚴", 0xFF3D7BD9),
+                previewRider(2, "Alex", "🦊", 0xFFEF7D2E),
+                previewRider(3, "Jo", "🌵", 0xFF2FA8A0),
+            ),
+            onSelectProfile = {},
+            onAddRider = {},
         )
+    }
+}
+
+@BikePreview
+@Composable
+private fun ProfileSelectEmptyPreview() {
+    OpenRideTheme {
+        ProfileSelectScreen(profiles = emptyList(), onSelectProfile = {}, onAddRider = {})
     }
 }
