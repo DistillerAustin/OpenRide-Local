@@ -25,8 +25,9 @@ Rules that follow from these:
 1. **Design for 1280 × 672 dp.** Never assume 720 dp of height. Nothing important goes in the
    bottom 48 dp of the *panel*, and the window already excludes it, so layouts simply fill the
    window and keep a bottom margin of at least `Spacing.lg`.
-2. **Touch targets.** 64 dp minimum (96 px, about 10 mm) for anything tapped while riding, 80 dp
-   for a screen's primary action. Material's 48 dp is a desk minimum, not a bike one.
+2. **Touch targets.** 44 dp minimum (66 px, about 7 mm: a thumb), 48 dp for buttons, 56 dp for
+   a screen's primary action. (The first pass used 64 / 80 dp; on the bike they read as
+   oversized, rider review 2026-10-21.) Labels are one line and never cut: controls grow.
 3. **Text at 1 m.** 18 sp minimum for anything read while riding; 16 sp minimum anywhere; tracked
    caps labels no smaller than 14 sp; live metrics 48 sp and up.
 4. **Cheap pixels.** Flat tonal surfaces, no elevation shadows, no blur, no full-screen gradients
@@ -78,7 +79,7 @@ Today's design language: near-black background, `#E8442D` red-orange accent, whi
 | Hilt | **Reject** | `AppContainer` is small, explicit and shared with `GameHostActivity`. Hilt adds an annotation processor, generated code and APK size for no rider-visible gain |
 | Dynamic colour, light/dark themes | **Reject** | Android 11 has no dynamic colour; the bike is always dark |
 | Type-safe navigation (`@Serializable` routes, Navigation 2.8) | **Adopt late (phase 8)** | `navigation-compose` 2.8.2 and the serialization plugin are already here, but the string routes work and `VisitNavigator` depends on them; low value per risk until the screens settle |
-| Adaptive layout: navigation rail on wide screens | **Adopt** | Landscape 672 dp is the scarce axis; the bottom bar costs 81 dp of it. A left rail costs width, which we have |
+| Adaptive layout: navigation rail on wide screens | **Adopted, then reversed** | A left rail saved height, but the rider chose a bottom bar like the stock bike software (2026-10-21) |
 | Test doubles, no mocking library | **Already true; keep** | `FakeBikeDataSource`, in-memory Room under Robolectric |
 | Roborazzi screenshot tests | **Defer** | Worth it once the design settles, if disk allows; not tonight |
 | Offline-first sync with WorkManager | **Not applicable** | The only remote data is the classes feed, already cached |
@@ -96,8 +97,8 @@ text, checked by a unit test.
 | Token | Hex | Use |
 | --- | --- | --- |
 | `Background` | `#0F1216` | screen |
-| `Surface` | `#181C22` | cards, rail |
-| `SurfaceRaised` | `#222831` | selected rail item, chips, inputs |
+| `Surface` | `#181C22` | cards, the bars |
+| `SurfaceRaised` | `#222831` | selected tab, chips, inputs |
 | `Outline` | `#343C48` | hairlines, secondary-button border |
 | `OnBackground` | `#F2F5F8` | text |
 | `OnSurfaceMuted` | `#A7B0BC` | secondary text |
@@ -116,26 +117,36 @@ numerals 56–112 sp, `title` 28 sp, `body` 20 sp, `label` 18 sp, tracked-caps `
 **Shape and space.** Corner radii 12 / 20 / 28 dp. Spacing on a 4 dp grid with named steps
 (`xs 4`, `sm 8`, `md 16`, `lg 24`, `xl 32`, `xxl 48`). Screen gutters 32 dp.
 
-**Shell.** A 120 dp left navigation rail replaces the bottom bar: five 104 dp-tall items, each
-with an icon and an 18 sp label, the selected one on `SurfaceRaised` with an accent bar. Content
-gets the full 672 dp of height.
+**Shell** (revised 2026-10-21, after the rider's mockup review; the stock bike software's
+layout). One 72 dp top bar on every tab: the tab's title, that tab's own actions (Random ride,
+Export CSV), the sensor and heart-rate status, and the rider chip (a tap switches rider). Under
+it, the app-wide notices (sensors offline, update available). Along the bottom, a 72 dp
+navigation bar: five tabs, icon beside an 18 sp label, the selected one on `SurfaceRaised` with
+an accent bar on top. Content gets the 528 dp between; screens fit it without scrolling and
+leave room for a notice. No transitions between screens.
 
-**Components** (`ui/designsystem/component`): `OrPrimaryButton` (80 dp), `OrSecondaryButton`
-(64 dp, outlined), `OrDangerButton`, `OrTile` (tappable card), `OrEyebrow`, `OrBetaBadge`,
-`OrBanner` (info / warning), `OrNavRail`, `OrSettingsRow` (64 dp+ rows with title, value and
-chevron), `OrStat` (label + big number + unit). Every component is stateless and previewed.
+**Components** (`ui/designsystem/component`): `OrPrimaryButton` (56 dp), `OrAccentButton` and
+`OrSecondaryButton` (48 dp), `OrDangerButton`, `OrChip` (44 dp, with a dropdown form), `OrLabel`
+(the one-line label every control uses), `OrTile`, `OrEyebrow`, `OrBetaBadge`, `OrBanner`
+(info / warning, one line), `OrTopBar`, `OrNavBar`, `OrSettingsRow`, `OrConfirmDialog`. Every
+component is stateless.
+
+**Colour per rider.** The accent is the active rider's avatar colour (`riderAccent`), lightened
+just enough to stay at 4.5 : 1 both ways; lime (`DefaultAccent`) before a rider is picked.
 
 **Screens.**
 - *Rider select*: wordmark top-left, avatars centred in a row (they already work well), an
   `OrSecondaryButton` "Add rider".
-- *Home*: two columns. Left, the Just Ride tile: a full-width 80 dp **Start ride** and the goal
-  as a large tappable row. Right, the Games BETA tile. The update banner spans the top.
-- *Profile → Settings*: grouped `OrSettingsRow` lists (Rider, Ride, Device, Data) in two columns
-  instead of one long centred stack of small buttons.
+- *Home*: two columns. Left, the Just Ride tile: a full-width **Start ride** and the goal. Right,
+  the Games BETA tile. The tiles take the height left after any notice.
+- *Profile → Settings*: grouped `OrSettingsRow` lists (Rider, Ride, Classes, Device, Backup) in
+  three columns on one page; Edit profile is the Rider group's row.
 - *History, Classes, Creator, Sources, Summary, Updates, HR*: same structure, re-skinned with the
   components and the bike type scale.
-- *In-ride and the metrics bar*: same layout (it tested well on the bike); the labels go from
-  11–12 sp to 14 sp, Pause / End become 64 dp buttons, End uses `Danger`.
+- *Ride summary*: one screen (header with Export and Done; graph left; games and FTP right).
+- *In-ride and video ride*: same layout (it tested well on the bike); Pause and End ride are the
+  design-system buttons, End ride in the rider's colour, with `OrConfirmDialog`. The metrics bar
+  itself is still to do.
 
 ## 4. Phased migration
 
@@ -146,7 +157,7 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | --- | --- | --- | --- |
 | 0 | This document | none | **done** |
 | 1 | Design system: tokens (colour, type, spacing, sizes, shapes), contrast and touch-size tests, `OpenRideTheme` on the new palette, `OrIcons`, core components, `@BikePreview` | low: theme colours change app-wide, layouts don't | **done** |
-| 2 | Shell: `TopLevelDestination` model + `OrNavRail` replacing the bottom bar | low–medium: every tab's width shrinks by 120 dp | **done** |
+| 2 | Shell: `TopLevelDestination` model, `OrTopBar` and `OrNavBar` (a rail first, then the bottom bar the rider chose) | low–medium | **done** |
 | 3 | Home: `HomeUiState`, `HomeRoute`/`HomeScreen` split, `collectAsStateWithLifecycle`, new two-column layout on the components | low | **done** |
 | 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
 | 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | Profile tab **done**; the other four next |
@@ -188,13 +199,10 @@ Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
   to keep the build small. New logic was pulled into pure functions (`HomeUiState`,
   `ProfileTabLabels`, `TopLevelDestination`, the token and contrast checks) and tested there.
 
-## 6. Open questions for the rider
+## 6. Decisions from the rider (2026-10-21)
 
-1. **Accent colour.** Lime "signal" (`#C6F24E`) moves us clearly away from red-on-black. Happy
-   with it, or prefer another (for example a cyan)? It is one token in `OrColors`.
-2. **Navigation rail.** A left rail frees 81 dp of height on every tab. Keep it, or go back to
-   a (taller, 96 dp) bottom bar?
-3. **Density.** 1.5 is inferred from the README screenshots. Worth confirming with
-   `adb shell wm density` next time the tablet is free.
-4. **In-ride type sizes.** Bigger labels mean slightly less room for the AVG / BEST flanks.
-   Try it on the bike before phase 7 lands?
+1. **Accent:** each rider's avatar colour (lime only before a rider is chosen).
+2. **Navigation:** a bottom bar, as on the stock bike software, with one shared top bar.
+3. **Density:** 240 dpi (1.5x), confirmed on the tablet; the window is 1920 × 1008 px because
+   the tablet reserves the bottom strip (issue #57).
+4. **In-ride type sizes:** still to try on the bike, with the metrics bar.
