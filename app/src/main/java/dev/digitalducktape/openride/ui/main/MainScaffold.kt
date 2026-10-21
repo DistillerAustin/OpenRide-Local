@@ -1,7 +1,9 @@
 package dev.digitalducktape.openride.ui.main
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -9,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,7 +24,9 @@ import androidx.navigation.compose.rememberNavController
 import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.viewModelFactory
 import dev.digitalducktape.openride.ui.classes.ClassesScreen
+import dev.digitalducktape.openride.core.sensor.offlineFor
 import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.component.LocalTopBarActions
 import dev.digitalducktape.openride.ui.designsystem.component.OrNavBar
 import dev.digitalducktape.openride.ui.designsystem.component.OrNavBarItem
@@ -77,6 +82,12 @@ fun MainScaffold(
             appContainer.profileRepository.observeProfiles(),
         ) { id, profiles -> profiles.firstOrNull { it.id == id } }
     }.collectAsState(initial = null)
+    val sensorsOffline by remember { appContainer.bikeDataSource.connectionState.offlineFor() }
+        .collectAsState(initial = false)
+    val heartRateState by appContainer.heartRateManager.connectionState.collectAsState()
+    val heartRateBpm by appContainer.heartRateManager.bpm.collectAsState()
+    val availableUpdate by appContainer.updateAvailability.collectAsState()
+    val updateBannerDismissed by appContainer.updateBannerDismissed.collectAsState()
     val topBarActions = remember { TopBarActionsHolder() }
     val currentTab = TopLevelDestination.entries.firstOrNull { it.route == currentRoute } ?: TopLevelDestination.Start
 
@@ -103,15 +114,10 @@ fun MainScaffold(
                             )
                         },
                     )
-                    val availableUpdate by appContainer.updateAvailability.collectAsState()
-                    val bannerDismissed by appContainer.updateBannerDismissed.collectAsState()
                     HomeRoute(
                         viewModel = viewModel,
                         onQuickStart = { outerNavController.navigate(Destinations.InRide) },
                         onOpenGames = { launchGames(context) },
-                        updateVersionName = availableUpdate?.versionName?.takeUnless { bannerDismissed },
-                        onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
-                        onDismissUpdate = { appContainer.dismissUpdateBanner() },
                     )
                 }
                 composable(MainTabs.Classes) {

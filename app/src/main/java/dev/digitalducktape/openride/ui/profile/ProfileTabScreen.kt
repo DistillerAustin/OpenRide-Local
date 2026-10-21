@@ -44,7 +44,6 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsRow
 import kotlinx.coroutines.launch
 
 /** Width of the Profile tab's rider column. */
-private val RiderColumnWidth = 320.dp
 
 /**
  * Profile nav tab: shows the active rider, offers "Switch rider" (PRD P0-3/P1-6 — tap-to-
@@ -98,42 +97,16 @@ fun ProfileTabScreen(
         OrSecondaryButton(text = "Switch rider", onClick = { showSwitchConfirmation = true })
     }
 
-    // Two columns for the landscape window: who is riding on the left, the settings groups on
-    // the right (they scroll; the rider column stays put).
+    // One page, no scrolling (the rider's ask, 2026-10-21): three columns of groups under the
+    // shared top bar, which already carries the rider and Edit profile / Switch rider. The
+    // tallest column is about 300 dp of the 528 between the bars, leaving room for a notice.
     Row(
-        modifier = modifier.fillMaxSize().padding(horizontal = OrSpacing.ScreenGutter),
-        horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
     ) {
-        Column(
-            modifier = Modifier.width(RiderColumnWidth).fillMaxHeight().padding(vertical = OrSpacing.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            ProfileAvatar(profile = activeProfile, size = 112.dp, emojiSize = 48.sp)
-            Text(
-                text = activeProfile?.name ?: "No rider selected",
-                style = OrType.ScreenTitle,
-                color = OrColors.OnBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = OrSpacing.md),
-            )
-            activeProfile?.let(ProfileTabLabels::riderDetails)?.let { details ->
-                Text(
-                    text = details,
-                    style = OrType.Body,
-                    color = OrColors.OnSurfaceMuted,
-                    modifier = Modifier.padding(top = OrSpacing.xs),
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
-                .padding(top = OrSpacing.sm, bottom = OrSpacing.lg),
-            verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
-        ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
             OrSettingsGroup(title = "Ride") {
                 val paired = activeProfile?.pairedHrDeviceAddress != null
                 OrSettingsRow(
@@ -171,7 +144,9 @@ fun ProfileTabScreen(
                     onClick = onManageContentSources,
                 )
             }
+        }
 
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
             // PRD P1-5 (T12): stock Android settings, for when OpenRide is the tablet's launcher.
             OrSettingsGroup(title = "Device") {
                 OrSettingsRow(
@@ -182,18 +157,20 @@ fun ProfileTabScreen(
                 OrSettingsDivider()
                 OrSettingsRow(
                     title = "Device settings",
-                    value = "Android settings: volume, display, Bluetooth",
+                    value = "Volume, display, Bluetooth",
                     onClick = { launchSettings(context, Settings.ACTION_SETTINGS) },
                 )
                 OrSettingsDivider()
                 OrSettingsRow(title = "App updates", onClick = onManageAppUpdates)
             }
+        }
 
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
             // Whole-database backup and restore (PRD P1-8, T15).
             OrSettingsGroup(title = "Backup & restore") {
                 OrSettingsRow(
                     title = "Back up",
-                    value = "Share a backup file of every rider and ride",
+                    value = "Every rider and ride, as a file",
                     onClick = {
                         scope.launch {
                             val backup = viewModel.createBackupContent()

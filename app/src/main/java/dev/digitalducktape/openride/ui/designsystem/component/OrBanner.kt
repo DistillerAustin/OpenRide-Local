@@ -38,8 +38,8 @@ enum class OrBannerTone(val stripe: Color) {
 }
 
 /**
- * A full-width notice on [OrColors.SurfaceRaised] with a coloured edge and icon: the update
- * notice on Home, and later the sensor and auto-pause notices. [actions] go on the right
+ * A full-width, one-line notice on [OrColors.SurfaceRaised] with a coloured edge and icon: the
+ * shell's update and sensor notices (`AppNotices`), and later the auto-pause notice. [actions] go on the right
  * (use [OrSecondaryButton] / [OrAccentButton] so they stay at the touch minimum).
  */
 @Composable
@@ -53,7 +53,7 @@ fun OrBanner(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .heightIn(min = OrSize.TouchMin + OrSpacing.xl)
+            .heightIn(min = OrSize.PrimaryAction + OrSpacing.sm)
             .clip(OrShapes.Medium)
             .background(OrColors.SurfaceRaised),
         verticalAlignment = Alignment.CenterVertically,
@@ -72,8 +72,9 @@ fun OrBanner(
         )
         Text(
             text = text,
-            style = OrType.Subtitle,
+            style = OrType.Body,
             color = OrColors.OnBackground,
+            maxLines = 1,
             modifier = Modifier.weight(1f).padding(horizontal = OrSpacing.md),
         )
         Row(

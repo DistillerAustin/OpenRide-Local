@@ -28,15 +28,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import dev.digitalducktape.openride.ui.designsystem.OrSize
-import dev.digitalducktape.openride.ui.designsystem.OrType
-import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
+import dev.digitalducktape.openride.ui.designsystem.component.OrChip
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
 import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -248,15 +245,14 @@ private fun FilterBar(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CategoryFilter.entries.forEach { category ->
-            FilterChip(
+            OrChip(
+                text = category.label,
                 selected = filters.category == category,
                 onClick = { onCategorySelected(category) },
-                label = { OrLabel(category.label, style = OrType.Button) },
-                modifier = Modifier.heightIn(min = OrSize.TouchMin),
             )
         }
 
@@ -268,16 +264,17 @@ private fun FilterBar(
             onSelected = onSortSelected,
         )
         DropdownFilter(
-            label = filters.length.label,
+            label = if (filters.length == LengthFilter.Any) "Any length" else filters.length.label,
             options = LengthFilter.entries.map { it to it.label },
             onSelected = onLengthSelected,
         )
 
-        FilterChip(
+        Spacer(modifier = Modifier.weight(1f))
+
+        OrChip(
+            text = "Hide completed",
             selected = filters.hideTaken,
             onClick = { onHideTakenToggled(!filters.hideTaken) },
-            label = { OrLabel("Hide completed", style = OrType.Button) },
-            modifier = Modifier.heightIn(min = OrSize.TouchMin),
         )
     }
 }
@@ -293,14 +290,7 @@ private fun <T> DropdownFilter(
     var expanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.heightIn(min = OrSize.TouchMin)) {
-            OrLabel(label, style = OrType.Button)
-            Icon(
-                imageVector = Icons.Filled.ArrowDropDown,
-                contentDescription = null,
-                modifier = Modifier.padding(start = 4.dp),
-            )
-        }
+        OrChip(text = label, selected = false, onClick = { expanded = true }, dropdown = true)
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (value, text) ->
                 DropdownMenuItem(

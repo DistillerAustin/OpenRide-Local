@@ -2,7 +2,6 @@ package dev.digitalducktape.openride.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +28,6 @@ import dev.digitalducktape.openride.ui.designsystem.OrSize
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
 import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
-import dev.digitalducktape.openride.ui.designsystem.component.OrBanner
 import dev.digitalducktape.openride.ui.designsystem.component.OrBetaBadge
 import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
 import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
@@ -50,9 +46,6 @@ fun HomeRoute(
     onQuickStart: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenGames: () -> Unit = {},
-    updateVersionName: String? = null,
-    onOpenUpdate: () -> Unit = {},
-    onDismissUpdate: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(
@@ -60,9 +53,6 @@ fun HomeRoute(
         onStartRide = { if (viewModel.startQuickRide()) onQuickStart() },
         onSetGoal = viewModel::setGoal,
         onOpenGames = onOpenGames,
-        updateVersionName = updateVersionName,
-        onOpenUpdate = onOpenUpdate,
-        onDismissUpdate = onDismissUpdate,
         modifier = modifier,
     )
 }
@@ -73,8 +63,8 @@ fun HomeRoute(
  * ride**, with the pre-ride goal (PRD P1-3) just above it; *Games* (BETA) opens the games hub.
  * The curated classes live in the Classes tab, not here.
  *
- * Laid out for the 1280 × 528 dp between the top and bottom bars; it scrolls rather than
- * squeezing if a large font scale or the update notice needs more height.
+ * Laid out for the 1280 × 528 dp between the top and bottom bars; the tiles take whatever height
+ * is left, so the shell's notices (update, sensors offline) fit above without scrolling.
  */
 @Composable
 fun HomeScreen(
@@ -83,36 +73,21 @@ fun HomeScreen(
     onSetGoal: (RideGoal) -> Unit,
     onOpenGames: () -> Unit,
     modifier: Modifier = Modifier,
-    updateVersionName: String? = null,
-    onOpenUpdate: () -> Unit = {},
-    onDismissUpdate: () -> Unit = {},
 ) {
     var showGoalDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
     ) {
-        // PRD #22/T22: the launch-time update check surfaces here. Nothing installs without an
-        // explicit tap on the App updates screen.
-        if (updateVersionName != null) {
-            OrBanner(text = "OpenRide $updateVersionName is available") {
-                OrSecondaryButton(text = "Dismiss", onClick = onDismissUpdate)
-                OrAccentButton(text = "Update", onClick = onOpenUpdate)
-            }
-        }
-
         Row(
-            // Both tiles share one height: at least enough to fill the bike window below the
-            // greeting (so the Start button sits low, near the rider's hand), more if a large
-            // font scale needs it.
+            // Both tiles share whatever height the shell leaves (less when a notice shows above),
+            // so Start sits low, near the rider's hand, and nothing ever scrolls.
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = if (updateVersionName != null) TilesMinHeightWithBanner else TilesMinHeight)
-                .height(IntrinsicSize.Min),
+                .weight(1f),
             horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
         ) {
             JustRideTile(
@@ -139,14 +114,6 @@ fun HomeScreen(
         )
     }
 }
-
-/**
- * The tiles' minimum height between the bars (672 − 72 − 72 = 528 dp): what is left after the
- * padding (8 + 24) is 496 dp; the update notice and its gap take another 100 or so. A little is
- * left spare so nothing scrolls on the bike.
- */
-private val TilesMinHeight = 480.dp
-private val TilesMinHeightWithBanner = 380.dp
 
 @Composable
 private fun JustRideTile(
@@ -236,20 +203,6 @@ private fun HomeScreenPreview() {
             onStartRide = {},
             onSetGoal = {},
             onOpenGames = {},
-        )
-    }
-}
-
-@BikePreview
-@Composable
-private fun HomeScreenWithUpdatePreview() {
-    OpenRideTheme {
-        HomeScreen(
-            uiState = HomeUiState(profile = previewRider),
-            onStartRide = {},
-            onSetGoal = {},
-            onOpenGames = {},
-            updateVersionName = "0.6.0",
         )
     }
 }
