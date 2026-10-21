@@ -27,6 +27,8 @@ var catalog: Dictionary = {}
 ## [{game_id, duration_sec}], in play order.
 var slots: Array = []
 var difficulty := "standard"
+## Saved slots left out because their game isn't in the catalog any more (or past MAX_SLOTS).
+var dropped := 0
 
 
 func _init(catalog_entries: Array = [], lineup: Array = [], level := "standard") -> void:
@@ -37,6 +39,8 @@ func _init(catalog_entries: Array = [], lineup: Array = [], level := "standard")
 		var id := str(s.get("game_id", ""))
 		if catalog.has(id) and slots.size() < MAX_SLOTS:
 			slots.append({"game_id": id, "duration_sec": seconds_for(catalog[id], int(s.get("duration_sec", 0)))})
+		else:
+			dropped += 1
 
 
 ## Kotlin's customSeconds: rounded to 30 s, then clamped to the game's limits.

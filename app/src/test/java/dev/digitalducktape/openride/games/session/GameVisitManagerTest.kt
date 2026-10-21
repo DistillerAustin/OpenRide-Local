@@ -63,6 +63,10 @@ class GameVisitManagerTest {
     private var permission = CameraPermission.GRANTED
     private var permissionAsks = 0
 
+    /** While true, database work waits in [heldDb] (a save that takes a while). */
+    private var holdDb = false
+    private val heldDb = mutableListOf<Runnable>()
+
     /** A one-minute timed game, and a game that ends itself. */
     private val quick = GameDeclaration("quick", "Quick", setOf(JustRideSupport.MINUTES, JustRideSupport.OPEN, JustRideSupport.ROUNDS), roundSec = 30, roles = setOf(dev.digitalducktape.openride.games.bridge.SegmentRole.WORK))
     private val racer = GameDeclaration("racer", "Racer", setOf(JustRideSupport.MINUTES), timedEndMode = EndMode.GAME, usesCamera = true)
@@ -71,8 +75,8 @@ class GameVisitManagerTest {
     @Before
     fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRideDatabase::class.java)
-            .setQueryExecutor { it.run() }
-            .setTransactionExecutor { it.run() }
+            .setQueryExecutor { if (holdDb) heldDb += it else it.run() }
+            .setTransactionExecutor { if (holdDb) heldDb += it else it.run() }
             .allowMainThreadQueries()
             .build()
         riderId = runBlocking {
@@ -501,6 +505,29 @@ class GameVisitManagerTest {
         val ride = allRides().single()
         assertEquals(100, ride.durationSec)
         assertEquals(0, runBlocking { db.gameResultDao().getForRide(ride.id) }.size)
+    }
+
+    @Test
+    fun `re-entering games while the last visit saves doesn't send the rider back out`() {
+        // Review of PR #58: the save's onExit ran after the rider had re-entered, moving the new
+        // visit's host to the back and detaching the bridge.
+        val v = visit().enter().playQuickMinute()
+        val firstVisit = hub().str("visit_id")
+        holdDb = true
+        v.call { onExitHub("app") }
+        assertTrue(v.saving.value)
+        v.enter() // Home, then Games again, while the ride is still being written
+
+        holdDb = false
+        while (heldDb.isNotEmpty()) {
+            heldDb.removeAt(0).run()
+            scope.runCurrent()
+        }
+
+        assertTrue(exits.isEmpty())
+        assertNull(navigator.pending.value)
+        assertEquals(1, allRides().size)
+        assertNotEquals(firstVisit, hub().str("visit_id"))
     }
 
     @Test

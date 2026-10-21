@@ -478,10 +478,9 @@ func _build_hud() -> void:
 		_kart_hud.set_track(track)  # a new track (or direction) redraws the minimap
 		_kart_hud.set_gameplay_visible(false, false)
 		_lights = -1
-		r.events.lap_completed.connect(func(kart_id: int, lap: int, _t: float):
-			# "LAP 2/3"; the last lap has its own banner (_on_final_lap).
-			if kart_id == RIDER and lap + 1 < r.laps:
-				_kart_hud.banner("LAP %d/%d" % [lap + 1, r.laps], 1.1)))
+		# A bound method, not a lambda: a lambda capturing `r` would keep every race alive
+		# (race → events → lambda → race).
+		r.events.lap_completed.connect(_on_lap_banner))
 
 
 ## Presentation agent: music and effects (KartAudio: each track's rendered theme and its final-lap
@@ -577,6 +576,12 @@ func _start_countdown() -> void:
 func _on_race_started() -> void:
 	flow = Flow.RACING
 	_kart_hud.go()
+
+
+## "LAP 2/3"; the last lap has its own banner (_on_final_lap).
+func _on_lap_banner(kart_id: int, lap: int, _t: float) -> void:
+	if kart_id == RIDER and race and lap + 1 < race.laps:
+		_kart_hud.banner("LAP %d/%d" % [lap + 1, race.laps], 1.1)
 
 
 func _on_final_lap(kart_id: int) -> void:

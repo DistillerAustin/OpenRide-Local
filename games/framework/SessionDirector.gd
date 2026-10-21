@@ -268,6 +268,9 @@ func _sync_pause_screen() -> void:
 func _on_session_finished(summary: Dictionary) -> void:
 	phase = Phase.SUMMARY
 	Effort.set_live(false)
+	# The result card is a still UI screen, like the hub: the hub's frame cap, not the game's.
+	if in_visit():
+		Engine.max_fps = HUB_MAX_FPS
 	_close_game()
 	_hide_overlays()
 	Session.set_tracker_mode("off")

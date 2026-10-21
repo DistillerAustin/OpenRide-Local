@@ -459,15 +459,17 @@ static func _trade(a: KartState, b: KartState, n: Vector3) -> float:
 	var j := -(1.0 + CONTACT_BOUNCE) * closing / (1.0 / a.weight + 1.0 / b.weight)
 	va -= n * (j / a.weight)
 	vb += n * (j / b.weight)
-	for pair in [[a, va, fa], [b, vb, fb]]:
-		var k: KartState = pair[0]
-		var v: Vector3 = pair[1]
-		var f: Vector3 = pair[2]
-		k.speed = maxf(0.0, v.dot(f))
-		if v.length_squared() > 1.0:
-			var turn := angle_difference(k.heading, atan2(-v.x, -v.z)) * CONTACT_TURN
-			k.heading = wrapf(k.heading + clampf(turn, -CONTACT_MAX_TURN, CONTACT_MAX_TURN), -PI, PI)
+	_take_velocity(a, va, fa)
+	_take_velocity(b, vb, fb)
 	return -closing
+
+
+## A kart's speed and heading after a contact left it moving at `v` (it faced `f`).
+static func _take_velocity(k: KartState, v: Vector3, f: Vector3) -> void:
+	k.speed = maxf(0.0, v.dot(f))
+	if v.length_squared() > 1.0:
+		var turn := angle_difference(k.heading, atan2(-v.x, -v.z)) * CONTACT_TURN
+		k.heading = wrapf(k.heading + clampf(turn, -CONTACT_MAX_TURN, CONTACT_MAX_TURN), -PI, PI)
 
 
 ## Every kart's draft this tick (0..1): within DRAFT_MIN..DRAFT_MAX metres behind another kart

@@ -28,6 +28,7 @@ var rng := RandomNumberGenerator.new()  ## seeded from the segment's `seed`
 var hud: Hud  ## set by Session before prepare()
 var playing := false  ## between start() and the end of the segment
 var paused := false
+var _frozen_views: Array[SubViewport] = []
 var finishing := false  ## after request_finish()
 var played_sec := 0.0  ## gameplay seconds, pauses excluded
 ## The result's `won` (true / false) for games with a winner; null otherwise.
@@ -238,6 +239,19 @@ func set_paused(value: bool) -> void:
 	paused = value
 	# Freezes this scene's nodes (tweens, particles, timers) along with _on_frame.
 	process_mode = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
+	# The game's always-rendering 3D views hold their last frame while paused: no GPU work
+	# behind the pause screen (review of PR #58).
+	if paused:
+		_frozen_views = []
+		for v: SubViewport in find_children("*", "SubViewport", true, false):
+			if v.render_target_update_mode == SubViewport.UPDATE_ALWAYS:
+				v.render_target_update_mode = SubViewport.UPDATE_DISABLED
+				_frozen_views.append(v)
+	else:
+		for v: SubViewport in _frozen_views:
+			if is_instance_valid(v):
+				v.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		_frozen_views = []
 	if paused:
 		_on_pause()
 	else:

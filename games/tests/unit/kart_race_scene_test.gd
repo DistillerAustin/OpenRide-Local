@@ -209,3 +209,21 @@ func test_a_short_grand_prix_runs_to_the_podium_and_ends() -> void:
 	assert_float(float(result.score)).is_greater(0.0)
 	Effort.set_live(false)
 	Effort.begin_segment(false)
+
+
+func test_a_finished_race_is_freed_when_the_next_begins() -> void:
+	# Review of PR #58: lambdas on race.events that captured the race kept every race alive.
+	var game := _game()
+	var old: WeakRef = weakref(game.get("race"))
+	game.call("_begin_race")
+	await get_tree().process_frame
+	assert_object(old.get_ref()).is_null()
+
+
+func test_the_3d_view_stops_rendering_while_paused() -> void:
+	var game := _game()
+	var view: SubViewport = game.get("_view")
+	game.set_paused(true)
+	assert_int(view.render_target_update_mode).is_equal(SubViewport.UPDATE_DISABLED)
+	game.set_paused(false)
+	assert_int(view.render_target_update_mode).is_equal(SubViewport.UPDATE_ALWAYS)

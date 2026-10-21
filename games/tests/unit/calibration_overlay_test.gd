@@ -150,3 +150,17 @@ func test_the_look_follows_the_game_and_falls_back_to_the_house() -> void:
 	assert_object(overlay._prompt.get_theme_font("font")).is_same(look.font(true))
 	overlay.apply_theme(null)
 	assert_object(overlay.theme).is_same(GameTheme.house())
+
+
+var _restyles := 0
+
+
+## Review of PR #58: _update_progress runs every frame of a calibration and set the hint's colour
+## override each time; an unchanged colour must not re-shape the label.
+func test_progress_frames_dont_restyle_the_hint() -> void:
+	_progress("centre", 0.1, 0, 1)
+	_restyles = 0
+	overlay._retry.theme_changed.connect(func(): _restyles += 1)
+	for i in 20:
+		_progress("centre", 0.1 + i * 0.01, 0, 1)
+	assert_int(_restyles).is_equal(0)

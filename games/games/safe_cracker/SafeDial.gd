@@ -96,10 +96,16 @@ var alarm_glow: Node2D
 var spill: Node2D
 var sparkle: CPUParticles2D
 
-var _drawn := {}
-var _reading_drawn := {}
-var _door_drawn := {}
-var _cover_drawn := {}
+## What each layer showed when last drawn, and what it shows now: fixed-size arrays filled in
+## place every frame and compared by value (refresh() runs every frame; no allocation).
+var _drawn := []
+var _reading_drawn := []
+var _door_drawn := []
+var _cover_drawn := []
+var _now := []
+var _reading_now := []
+var _door_now := []
+var _cover_now := []
 var _font: Font
 var _queued: Array = []  ## text waiting for `_flush_text`
 var _face_mat: ShaderMaterial
@@ -201,25 +207,38 @@ func on_target() -> bool:
 ## shows changed.
 func refresh() -> void:
 	needle.rotation = angle_for(reading)
-	var door_state := {"col": colour, "acc": accent, "place": place_index, "n": tumblers_total, "h": target_hidden}
-	if door_state != _door_drawn:
-		_door_drawn = door_state
+	_door_now.resize(5)
+	_door_now[0] = colour
+	_door_now[1] = accent
+	_door_now[2] = place_index
+	_door_now[3] = tumblers_total
+	_door_now[4] = target_hidden
+	if _differs(_door_now, _door_drawn):
 		door.queue_redraw()
 		numerals.queue_redraw()
 		vault.queue_redraw()
-	var state := {"t": target, "tol": tolerance, "h": target_hidden, "f": roundi(hold_frac * 60.0),
-		"c": roundi(closeness * 20.0) if target_hidden else 0, "d": tumblers_done, "n": tumblers_total,
-		"acc": accent, "lp": roundi(light_pop * 24.0)}
-	if state != _drawn:
-		_drawn = state
+	_now.resize(9)
+	_now[0] = target
+	_now[1] = tolerance
+	_now[2] = target_hidden
+	_now[3] = roundi(hold_frac * 60.0)
+	_now[4] = roundi(closeness * 20.0) if target_hidden else 0
+	_now[5] = tumblers_done
+	_now[6] = tumblers_total
+	_now[7] = accent
+	_now[8] = roundi(light_pop * 24.0)
+	if _differs(_now, _drawn):
 		queue_redraw()
-	var reading_state := {"r": roundi(reading), "on": on_target()}
-	if reading_state != _reading_drawn:
-		_reading_drawn = reading_state
+	var on := on_target()
+	_reading_now.resize(2)
+	_reading_now[0] = roundi(reading)
+	_reading_now[1] = on
+	if _differs(_reading_now, _reading_drawn):
 		reading_layer.queue_redraw()
-	var cover_state := {"p": powered, "on": on_target()}
-	if cover_state != _cover_drawn:
-		_cover_drawn = cover_state
+	_cover_now.resize(2)
+	_cover_now[0] = powered
+	_cover_now[1] = on
+	if _differs(_cover_now, _cover_drawn):
 		cover.queue_redraw()
 	var next := tumblers_done < tumblers_total
 	next_light.visible = next
@@ -228,6 +247,14 @@ func refresh() -> void:
 	alarm_glow.visible = alarm > 0.0
 	alarm_glow.modulate.a = 0.35 + 0.65 * alarm
 	_set_bolts(bolts_back(tumblers_done, tumblers_total))
+
+
+## Whether a layer's state `now` differs from what it last drew; `drawn` then takes it.
+static func _differs(now: Array, drawn: Array) -> bool:
+	if now == drawn:
+		return false
+	drawn.assign(now)
+	return true
 
 
 ## The bolts slide back (or out again, for a new safe) over BOLT_SEC: a small redraw while the

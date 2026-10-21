@@ -107,6 +107,9 @@ func _ready() -> void:
 		nav.restore(_saved_stack)
 	if not Session.hub.is_empty():
 		_apply_state(Session.hub)
+	# Swapped in under a plan's result card: built, but hidden (no draws, no bakes) until the
+	# rider taps back to games (hub_entered).
+	visible = Session.director.phase != SessionDirector.Phase.SUMMARY
 	if Session.director.phase == SessionDirector.Phase.HUB:
 		_on_hub_entered()
 	LoadClock.mark("boot", "hub_ready_end")
@@ -136,6 +139,7 @@ func back() -> void:
 
 ## The hub is on screen (a visit started, or "Back to games"): its music plays.
 func _on_hub_entered() -> void:
+	visible = true
 	music.play(state.get("audio", {}))
 
 
@@ -147,19 +151,21 @@ func _on_hub_state(raw: Dictionary) -> void:
 
 func _apply_state(raw: Dictionary) -> void:
 	var first := state.is_empty()
+	var old_rider := "" if first else HubPrefs.rider(state)
 	state = HubState.normalized(raw)
 	_waiting.visible = false
 	music.apply_audio(state.audio)
 	_calibration_state()
 	if _idle_saved or _exiting:
 		return
-	if first or screen == null:
+	# Screens read the rider's picks when they're built, so another rider means a rebuild.
+	if first or screen == null or HubPrefs.rider(state) != old_rider:
 		_show_top()
 	else:
 		screen.refresh(state)
 
 
-func _on_visit_changed(_id: String) -> void:
+func _on_visit_changed(id: String) -> void:
 	# A new visit: back home, nothing remembered from the last one.
 	_saved_stack = []
 	_exiting = false
@@ -170,6 +176,10 @@ func _on_visit_changed(_id: String) -> void:
 		_close_calibration()
 	calibration = HubCalibration.new()
 	nav.restore([])
+	# Session sets its hub before announcing the visit: build from the new visit's state, never
+	# the last one's (another rider may have entered games).
+	if not Session.hub.is_empty() and Session.hub.get("visit_id") == id:
+		state = HubState.normalized(Session.hub)
 	if not state.is_empty():
 		_show_top()
 

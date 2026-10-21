@@ -49,3 +49,19 @@ func test_the_shade_frames_the_card_and_takes_every_touch() -> void:
 			card._card.position - Vector2(1, 1), card._card.position + card._card.size + Vector2(1, 1)]:
 		assert_bool(stops.any(func(r: Rect2) -> bool: return r.has_point(p))).override_failure_message(
 			"no touch cover at %s" % p).is_true()
+
+
+var _restyles := 0
+
+
+## Review of PR #58: set_time_left runs every frame of the intro, and each theme override it set
+## re-shaped the label. A frame that shows the same thing must not touch the styling.
+func test_a_steady_countdown_doesnt_restyle_the_label_every_frame() -> void:
+	for own in [true, false]:
+		var card := _card(own)
+		card.set_time_left(4.9)
+		_restyles = 0
+		card._count.theme_changed.connect(func(): _restyles += 1)
+		for i in 30:
+			card.set_time_left(4.9 - i * 0.016)
+		assert_int(_restyles).override_failure_message("own_countdown=%s" % own).is_equal(0)

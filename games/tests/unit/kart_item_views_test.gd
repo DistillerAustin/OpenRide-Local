@@ -145,3 +145,28 @@ func test_the_game_steps_items_and_hands_them_to_the_bots() -> void:
 	GameOptions.set_value(game.declared(), "auto_items", "on", _rider)
 	game._on_option_changed("auto_items", "on")
 	assert_bool(items.auto_rider).is_true()
+
+
+func test_every_live_hazard_is_drawn() -> void:
+	# Review of PR #58: a 9th goo, a 5th puck or a 4th drone was live (and could spin a kart
+	# out) with no view slot to draw it.
+	var race := _race(8)
+	var items := KartItemLogic.new(race, 1)
+	var views := _views(race, items)
+	for i in KartItemLogic.GOO_MAX + 3:
+		items.give(i % race.karts.size(), "goo")
+		items.use(i % race.karts.size())
+		items.step(DT, [])
+		views.sync(DT)
+		for goo: KartItemLogic.Goo in items.goos:
+			if goo.alive:
+				assert_bool(views._goos.any(func(s): return s.goo == goo and s.node.visible)).is_true()
+	for item in ["puck", "drone"]:
+		for i in 6:
+			items.give(i % race.karts.size(), item)
+			items.use(i % race.karts.size())
+		items.step(DT, [])
+		views.sync(DT)
+		for shot: KartItemLogic.Shot in items.shots:
+			if shot.alive:
+				assert_bool(views._slot_of.has(shot)).override_failure_message("a live %s has no view" % item).is_true()
