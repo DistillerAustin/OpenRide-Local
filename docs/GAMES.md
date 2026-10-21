@@ -649,6 +649,11 @@ For work games, set the thresholds so that 3 stars needs about 1.3× effort. A p
 | `_on_finish_requested()` | The timer ran out: wrap up and call `end_segment()` within 5 s. By default the game ends at once. |
 | `target_text(segment)` | The intro card's target line, e.g. "Hold 250 W" |
 
+Before `_on_prepare`, `prepare()` loads every `.gdshader` under the game's folder once and keeps
+it for the engine's life (`Game.keep_shaders`). The Compatibility renderer compiles per Shader,
+so a Shader freed when its game ended was compiled again on the next start (2-4 s of first
+frames on the tablet). A shader built in code (`Shader.new()`) is built once, in a static.
+
 **What a game calls:**
 
 - `award(points)` scores through `Effort`. It returns what counted.
@@ -1570,7 +1575,7 @@ pier into the river; losing pulls the camera in. It follows the tablet recipe (a
   (`haze_amount`/`hazed` in `tug_look.gdshaderinc`), and the water's flat light is per vertex.
   `prewarm` draws the steam, ripple and droplets behind the intro card so their shaders compile
   then. The lost-round flash tints the view's image instead of a full-screen overlay.
-  `TugQualityGovernor` drops the render scale from 0.62 to 0.55 once if a round's 4 s average
+  `RenderScaleStep` drops the render scale from 0.62 to 0.55 once if a round's 4 s average
   falls under 54 fps (`OPENRIDE_GAMES tug_of_war quality tier=1 fps=… scale=0.55`).
 
 About 13 draw calls for the world (55 before), 57 in play with the HUD (99 before), and 29k
@@ -1582,7 +1587,7 @@ each HUD state instead of a video). `tests/measure_tug.gd` prints the draw calls
 in the intro and in play, GDScript per frame, and each world part's A/B frame-time cost at a
 scaled-up render size (`--scale`, `--scene`, `--shot`). `tug_world_test` covers the shaders, the look table, the baked
 meshes, the per-frame budget, the sky cubemap, the view grid's vignette and the warm-up;
-`tug_game_test` the stats at finish, the flash and the quality step; `tug_quality_governor_test`
+`tug_game_test` the stats at finish, the flash and the quality step; `render_scale_step_test`
 the governor.
 
 **UI** (`framework/ui/UI_STYLE.md`; punch list `games/tug_of_war/UI_POLISH.md`). The look is a

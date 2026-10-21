@@ -55,7 +55,7 @@ var _tension := 0.5
 var _best_rung := 0
 var _results: Array[bool] = []  ## each round's result in order (true: won), for the pips
 ## Steps the 3D view down to a lower render scale if the frame rate stays low in a round.
-var governor := TugQualityGovernor.new()
+var governor := RenderScaleStep.new()
 
 
 func info() -> GameInfo:
@@ -162,7 +162,7 @@ func _on_prepare(seg: Dictionary) -> void:
 		best_of = maxi(int(params.rounds), 1)
 		best_of += 1 - best_of % 2  # best-of needs an odd count
 	logic = TugLogic.new(rng.seed, params, _mode_name, best_of)
-	governor = TugQualityGovernor.new()
+	governor = RenderScaleStep.new()
 	_set_render_scale(RENDER_SCALE)
 	_best_rung = 0
 	_results = []

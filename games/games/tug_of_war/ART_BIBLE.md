@@ -137,7 +137,7 @@ the pull rhythm on the fists.
 | Item | Budget | Now (desktop, 2026-10-20) |
 | --- | --- | --- |
 | fps | 60 with the tracker on (`lean_2d`), at least 55 sustained | 59-62 before the pass (tracker off, 2026-10-03); 48 intro / 35 play after it (tracker on); the performance pass (`GFX_POLISH.md`, Tablet performance) is to be re-measured |
-| Render scale | 0.62 (`TugOfWar.RENDER_SCALE`), 0.55 if a round stays under 54 fps (`TugQualityGovernor`) | 0.62 |
+| Render scale | 0.62 (`TugOfWar.RENDER_SCALE`), 0.55 if a round stays under 54 fps (`RenderScaleStep`) | 0.62 |
 | Sky per pixel | one cubemap read (the full sky only when the time of day changes) | 1 |
 | Per-pixel extras | no vignette, haze or constant light per pixel on the big surfaces | as budgeted |
 | Draw calls in play | ≤ 100 with the HUD (world ≤ 70) | 57 with the HUD (99 before); the world 13 (14 with steam), from 55 |

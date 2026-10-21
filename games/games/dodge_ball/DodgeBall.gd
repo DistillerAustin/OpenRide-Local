@@ -52,6 +52,9 @@ var _run_awarded := 0.0
 var _best_awarded := 0.0
 var _round_limit := -1.0  ## seconds, for a rounds Just Ride (end_mode game)
 var _view: SubViewport
+## The tablet's one quality step: the 3D view from _full_scale to 0.55 if play stays under 54 fps.
+var governor := RenderScaleStep.new()
+var _full_scale := RENDER_SCALE
 var _mode_sec := {"dodge": 0.0, "catch": 0.0}
 var _message_left := 0.0
 var _perf_usec := 0
@@ -132,6 +135,7 @@ func _ready() -> void:
 			world.tuning[key] = bool(tuning.get_value("world", key))
 	world.name = "World"
 	var scale := clampf(float(tuning.get_value("render", "scale", RENDER_SCALE)) if tuned else RENDER_SCALE, 0.4, 1.0)
+	_full_scale = scale
 	_view = SubViewport.new()
 	_view.name = "View3D"
 	_view.size = Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
@@ -183,6 +187,8 @@ func _on_prepare(seg: Dictionary) -> void:
 	if str(seg.get("end_mode", "timer")) == "game" and float(seg.get("duration_sec", -1)) > 0.0:
 		_round_limit = maxf(1.0, float(params.get("rounds", 1))) * DodgeBallLogic.ROUND_SEC
 	_apply_options()
+	governor = RenderScaleStep.new()
+	_set_render_scale(_full_scale)
 
 	hud.set_skin(DodgeStatus.look.hud_skin())
 	_status = DodgeStatus.new(logic.cadence_floor, logic.has_lives, logic.is_catch())
@@ -223,6 +229,13 @@ func _on_option_changed(key: String, _value: String) -> void:
 		_show_message("Catch the balls!" if logic.is_catch() else "Dodge the balls!", 2.0)
 
 
+## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
+func _set_render_scale(scale: float) -> void:
+	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	if _view.size != size:
+		_view.size = size
+
+
 func _apply_options() -> void:
 	world.set_time_of_day(DodgeTimeOfDay.load_preset(DodgeTimeOfDay.resolve(option("scene"))))
 	world.roll_enabled = option("camera_roll") == "on"
@@ -249,6 +262,10 @@ func _on_frame(delta: float) -> void:
 
 
 func _frame(delta: float) -> void:
+	if governor.sample(delta, true):
+		_set_render_scale(governor.render_scale(_full_scale))
+		print("OPENRIDE_GAMES dodge_ball quality tier=%d fps=%.1f scale=%.2f" % [
+			governor.tier, governor.last_fps, governor.render_scale(_full_scale)])
 	var cadence := InputBus.cadence
 	var power := InputBus.power
 	_mode_sec[logic.mode] += delta

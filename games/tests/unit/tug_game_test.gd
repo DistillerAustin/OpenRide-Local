@@ -46,4 +46,4 @@ func test_the_quality_step_shrinks_the_view() -> void:
 	game.governor.tier = 1
 	game._set_render_scale(game.governor.render_scale(game.RENDER_SCALE))
 	assert_int(view.size.x).is_less(full.x)
-	assert_int(view.size.x).is_equal(roundi(HudTheme.W * TugQualityGovernor.LOW_SCALE))
+	assert_int(view.size.x).is_equal(roundi(HudTheme.W * RenderScaleStep.LOW_SCALE))
