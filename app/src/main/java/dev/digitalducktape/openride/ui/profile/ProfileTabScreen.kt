@@ -187,9 +187,8 @@ fun ProfileTabScreen(
                 )
             }
             Text(
-                text = "Also backed up automatically after every ride to " +
-                    MediaStoreAutoBackupStore.RELATIVE_PATH +
-                    MediaStoreAutoBackupStore.fileNameFor(context.packageName),
+                // The folder only: the full file name wrapped over four lines in the column.
+                text = "Also saved after every ride to " + MediaStoreAutoBackupStore.RELATIVE_PATH.trimEnd('/'),
                 style = OrType.Caption,
                 color = OrColors.OnSurfaceMuted,
                 modifier = Modifier.padding(horizontal = OrSpacing.md),

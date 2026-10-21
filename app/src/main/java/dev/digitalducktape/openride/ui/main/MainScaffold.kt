@@ -96,7 +96,26 @@ fun MainScaffold(
             OrTopBar(
                 title = currentTab.label,
                 actions = { topBarActions.content?.invoke(this) },
-                trailing = { RiderChip(profile = activeProfile, onClick = { navigateToTab(MainTabs.Profile) }) },
+                trailing = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SensorStatus(offline = sensorsOffline)
+                        HeartRateStatus(
+                            paired = activeProfile?.pairedHrDeviceAddress != null,
+                            state = heartRateState,
+                            bpm = heartRateBpm,
+                        )
+                        RiderChip(profile = activeProfile, onClick = { navigateToTab(MainTabs.Profile) })
+                    }
+                },
+            )
+            AppNotices(
+                sensorsOffline = sensorsOffline,
+                updateVersionName = availableUpdate?.versionName?.takeUnless { updateBannerDismissed },
+                onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
+                onDismissUpdate = { appContainer.dismissUpdateBanner() },
             )
             NavHost(
                 navController = innerNavController,
