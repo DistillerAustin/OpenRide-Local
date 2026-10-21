@@ -71,6 +71,7 @@ func _ready() -> void:
 	if Engine.has_singleton(BRIDGE):
 		_bridge = Engine.get_singleton(BRIDGE)
 	print("OPENRIDE_GAMES input %s" % ("bridge" if _bridge else "keyboard simulator"))
+	LoadClock.mark("boot", "autoloads_ready_begin")
 
 
 func is_simulated() -> bool:

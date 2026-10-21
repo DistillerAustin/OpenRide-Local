@@ -60,9 +60,11 @@ var _local: Node = null
 
 
 func _ready() -> void:
+	LoadClock.mark("boot", "session_ready_begin")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	director = SessionDirector.new()
 	add_child(director)
+	LoadClock.mark("boot", "session_director")
 	if Engine.has_singleton(BRIDGE):
 		_bridge = Engine.get_singleton(BRIDGE)
 		_bridge.connect("session_started", func(json: String): _on_session_started(_parse(json)))
