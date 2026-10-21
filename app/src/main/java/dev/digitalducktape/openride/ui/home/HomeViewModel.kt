@@ -1,14 +1,17 @@
 package dev.digitalducktape.openride.ui.home
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.core.data.ProfileRepository
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
 import dev.digitalducktape.openride.core.ride.RideGoal
 import dev.digitalducktape.openride.core.ride.RideSessionManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * Home screen (PRD P0-7): greeting for the active profile plus "Quick Start" and the
@@ -32,6 +35,19 @@ class HomeViewModel(
      * Sets the rider's pre-ride goal. Delegates to [RideSessionManager.setGoal], which only
      * takes effect while the session is Idle (i.e. before a ride starts).
      */
+    /**
+     * The whole screen's state in one value. `WhileSubscribed(5_000)` stops the upstream work
+     * while Home is off-screen (or the games activity is in front) but survives a rotation-length
+     * gap without restarting.
+     */
+    val uiState: StateFlow<HomeUiState> = combine(activeProfile, goal) { profile, goal ->
+        HomeUiState(profile = profile, goal = goal)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = HomeUiState(goal = goal.value),
+    )
+
     fun setGoal(goal: RideGoal) = rideSessionManager.setGoal(goal)
 
     /**
