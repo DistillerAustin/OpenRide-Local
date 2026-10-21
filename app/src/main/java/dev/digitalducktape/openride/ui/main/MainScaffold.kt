@@ -1,32 +1,14 @@
 package dev.digitalducktape.openride.ui.main
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -35,9 +17,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.digitalducktape.openride.AppContainer
-import kotlinx.coroutines.flow.map
 import dev.digitalducktape.openride.viewModelFactory
 import dev.digitalducktape.openride.ui.classes.ClassesScreen
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.component.OrNavRail
+import dev.digitalducktape.openride.ui.designsystem.component.OrNavRailItem
 import dev.digitalducktape.openride.ui.classes.ClassesViewModel
 import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
 import dev.digitalducktape.openride.ui.games.launchGames
@@ -50,20 +34,11 @@ import dev.digitalducktape.openride.ui.navigation.MainTabs
 import dev.digitalducktape.openride.ui.profile.ProfileTabScreen
 import dev.digitalducktape.openride.ui.profile.ProfileTabViewModel
 
-private data class TabSpec(val route: String, val label: String, val icon: ImageVector, val emoji: String? = null)
-
-private val TABS = listOf(
-    TabSpec(MainTabs.Home, "Home", Icons.Filled.Home),
-    TabSpec(MainTabs.Classes, "Classes", Icons.Filled.PlayArrow),
-    TabSpec(MainTabs.Games, "Games", Icons.Filled.Star, emoji = "\uD83C\uDFAE"),
-    TabSpec(MainTabs.History, "History", Icons.Filled.DateRange),
-    TabSpec(MainTabs.Profile, "Profile", Icons.Filled.Person),
-)
-
 /**
- * The tabbed section of the app: a bottom [NavigationBar] (Home / Classes / History /
- * Profile — the bike-app tab arrangement, PRD P0-7 / v2 redesign spec) plus a nested
- * `NavHost` for those four destinations. Starting a ride or switching riders navigates the
+ * The tabbed section of the app: the left [OrNavRail] (Home / Classes / Games / History /
+ * Profile, see [TopLevelDestination]; a rail rather than a bottom bar so every tab keeps the
+ * window's full 672 dp of height, docs/MAIN_UI_REFRESH.md §3) plus a nested `NavHost` for those
+ * destinations. Starting a ride or switching riders navigates the
  * *outer* nav controller (passed in), which lives one level up in
  * [dev.digitalducktape.openride.ui.navigation.OpenRideNavHost] — those flows intentionally
  * leave this tabbed chrome behind rather than becoming a fifth tab.
@@ -78,7 +53,7 @@ fun MainScaffold(
     val backStackEntry by innerNavController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Same options whether a tab comes from the bottom bar or an in-screen shortcut (the
+    // Same options whether a tab comes from the rail or an in-screen shortcut (the
     // home header's avatar chip): single top, state saved/restored per tab.
     fun navigateToTab(route: String) {
         innerNavController.navigate(route) {
@@ -90,11 +65,22 @@ fun MainScaffold(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Row(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
+        OrNavRail {
+            TopLevelDestination.entries.forEach { destination ->
+                OrNavRailItem(
+                    label = destination.label,
+                    icon = destination.icon,
+                    emoji = destination.emoji,
+                    selected = currentRoute == destination.route,
+                    onClick = { navigateToTab(destination.route) },
+                )
+            }
+        }
         NavHost(
             navController = innerNavController,
-            startDestination = MainTabs.Home,
-            modifier = Modifier.weight(1f),
+            startDestination = TopLevelDestination.Start.route,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
         ) {
             composable(MainTabs.Home) {
                 val context = LocalContext.current
@@ -195,34 +181,6 @@ fun MainScaffold(
                         outerNavController.navigate(Destinations.ContentSources)
                     },
                     routeHolder = appContainer.routeHolder,
-                )
-            }
-        }
-
-        // Hairline above the bar — the bike app's tab bar sits on a near-black surface
-        // separated from content by a faint divider rather than elevation.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(OpenRideColors.Divider),
-        )
-        NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-            TABS.forEach { tab ->
-                NavigationBarItem(
-                    selected = currentRoute == tab.route,
-                    onClick = { navigateToTab(tab.route) },
-                    icon = {
-                        if (tab.emoji != null) Text(tab.emoji, fontSize = 24.sp) else Icon(imageVector = tab.icon, contentDescription = tab.label)
-                    },
-                    label = { Text(text = tab.label) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
                 )
             }
         }
