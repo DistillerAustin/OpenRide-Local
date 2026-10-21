@@ -145,11 +145,11 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | Phase | Scope | Risk | Status |
 | --- | --- | --- | --- |
 | 0 | This document | none | **done** |
-| 1 | Design system: tokens (colour, type, spacing, sizes, shapes), contrast and touch-size tests, `OpenRideTheme` on the new palette, `OrIcons`, core components, `@BikePreview` | low: theme colours change app-wide, layouts don't | next |
-| 2 | Shell: `TopLevelDestination` model + `OrNavRail` replacing the bottom bar | low–medium: every tab's width shrinks by 120 dp | |
-| 3 | Home: `HomeUiState`, `HomeRoute`/`HomeScreen` split, `collectAsStateWithLifecycle`, new two-column layout on the components | low | |
-| 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | |
-| 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | |
+| 1 | Design system: tokens (colour, type, spacing, sizes, shapes), contrast and touch-size tests, `OpenRideTheme` on the new palette, `OrIcons`, core components, `@BikePreview` | low: theme colours change app-wide, layouts don't | **done** |
+| 2 | Shell: `TopLevelDestination` model + `OrNavRail` replacing the bottom bar | low–medium: every tab's width shrinks by 120 dp | **done** |
+| 3 | Home: `HomeUiState`, `HomeRoute`/`HomeScreen` split, `collectAsStateWithLifecycle`, new two-column layout on the components | low | **done** |
+| 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
+| 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | Profile tab **done**; the other four next |
 | 6 | History, Classes, Creator, Ride summary | medium | |
 | 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | |
 | 8 | Type-safe navigation routes; optionally `:core:designsystem` as a module; Roborazzi screenshots | medium | |
@@ -161,7 +161,33 @@ error state and navigation edge above still exists after the screen moves.
 (baseline 789 tests); new logic gets unit tests (UiState mapping, tokens, destinations). Visual
 checks are Compose previews on the dev machine and, for phases 2, 3 and 7, a ride on the bike.
 
-## 5. Open questions for the rider
+## 5. Implementation notes
+
+Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
+
+- **Two type systems for a while.** `MaterialTheme.typography` is still Material's default, so
+  screens not yet rebuilt keep the layouts they were tuned for. Rebuilt screens use `OrType`.
+  Switch the Material scale to the bike scale only after phase 7, when nothing depends on it.
+- **`OpenRideColors` is a facade.** Its names now point at `OrColors`, which re-skinned every
+  screen at once. Rebuilt code uses `OrColors`; delete the facade when nothing refers to it.
+- **Red is for stopping.** The lime accent always carries dark text (`OnAccent`). `Danger` is a
+  fill with white text only (red text fails contrast on the dark ground), so Material's `error`
+  colour, used for error *text*, stays amber.
+- **Colours checked by test.** `OrColorPairs` lists every foreground/background pair;
+  `OrColorsTest` fails if one drops below WCAG AA. Add new pairs there.
+- **Home fills the window.** The two tiles take a minimum height worked out from the 672 dp
+  window, so Start ride sits low near the rider's hand; the column still scrolls if a large font
+  scale needs it.
+- **Rider select waits for the database** (`null` while loading) so "Add your first rider" never
+  flashes past a rider who exists.
+- **Not touched:** the games host's XML window colours (`res/values/themes.xml`) and its native
+  loading screen belong to the games and keep the old near-black; the Godot hub is out of scope.
+  Room, BLE and sensor code are untouched.
+- **Compose UI tests** need `ui-test-junit4` and `ui-test-manifest`; they were left out tonight
+  to keep the build small. New logic was pulled into pure functions (`HomeUiState`,
+  `ProfileTabLabels`, `TopLevelDestination`, the token and contrast checks) and tested there.
+
+## 6. Open questions for the rider
 
 1. **Accent colour.** Lime "signal" (`#C6F24E`) moves us clearly away from red-on-black. Happy
    with it, or prefer another (for example a cyan)? It is one token in `OrColors`.
