@@ -93,13 +93,13 @@ fun ProfileTabScreen(
     }
 
     TopBarActions {
-        OrSecondaryButton(text = "Edit profile", onClick = onEditProfile)
         OrSecondaryButton(text = "Switch rider", onClick = { showSwitchConfirmation = true })
     }
 
     // One page, no scrolling (the rider's ask, 2026-10-21): three columns of groups under the
-    // shared top bar, which already carries the rider and Edit profile / Switch rider. The
-    // tallest column is about 300 dp of the 528 between the bars, leaving room for a notice.
+    // shared top bar, which carries the rider and Switch rider; Edit profile is a setting like
+    // the rest. The tallest column is about 360 dp of the 528 between the bars, leaving room for
+    // a notice.
     Row(
         modifier = modifier
             .fillMaxSize()
@@ -107,6 +107,14 @@ fun ProfileTabScreen(
         horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+            OrSettingsGroup(title = "Rider") {
+                OrSettingsRow(
+                    title = "Edit profile",
+                    value = activeProfile?.let(ProfileTabLabels::riderDetails) ?: "Name, weight, FTP, avatar",
+                    onClick = onEditProfile,
+                )
+            }
+
             OrSettingsGroup(title = "Ride") {
                 val paired = activeProfile?.pairedHrDeviceAddress != null
                 OrSettingsRow(

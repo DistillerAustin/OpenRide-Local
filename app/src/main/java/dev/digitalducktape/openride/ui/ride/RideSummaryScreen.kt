@@ -1,20 +1,20 @@
 package dev.digitalducktape.openride.ui.ride
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,15 +28,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.digitalducktape.openride.games.session.GameLabels
 import dev.digitalducktape.openride.ui.common.ExportShare
 import dev.digitalducktape.openride.ui.common.GameBadge
 import dev.digitalducktape.openride.ui.common.TimeFormat
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSize
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrChip
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
+import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import kotlinx.coroutines.launch
+
 
 /**
  * Post-ride summary and history detail (PRD P0-5, v2 metrics spec): a metric tab row
@@ -64,113 +76,82 @@ fun RideSummaryScreen(
 
     LaunchedEffect(Unit) { viewModel.load() }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    // One screen, no scrolling (the rider's ask, 2026-10-21): a header with the actions, then
+    // the selected metric's graph filling the left and, when there is any, the games and the
+    // FTP suggestion on the right. Only a very long circuit's game list scrolls, inside its column.
+    Surface(modifier = modifier.fillMaxSize(), color = OrColors.Background) {
+        val current = ride
+        if (current == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = "Loading…", style = OrType.Body, color = OrColors.OnSurfaceMuted)
+            }
+            return@Surface
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 48.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(horizontal = OrSpacing.ScreenGutter, vertical = OrSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(OrSpacing.md),
         ) {
-            val current = ride
-            if (current == null) {
-                Text(
-                    text = "Loading…",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 32.dp),
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text(
-                            text = "Ride complete",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Text(
-                            text = "${TimeFormat.elapsed(current.durationSec)} · " +
-                                (current.calories?.let { "$it kcal" } ?: "%.0f kJ".format(current.outputKj)),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        gameBadge?.let { GameBadge(it, modifier = Modifier.padding(top = 8.dp)) }
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
+                        OrLabel(text = "Ride complete", style = OrType.ScreenTitle, color = OrColors.OnBackground)
+                        gameBadge?.let { GameBadge(it) }
                     }
+                    OrLabel(
+                        text = "${TimeFormat.elapsed(current.durationSec)} · " +
+                            (current.calories?.let { "$it kcal" } ?: "%.0f kJ".format(current.outputKj)),
+                        style = OrType.Body,
+                        color = OrColors.OnSurfaceMuted,
+                    )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(OrSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                    OrSecondaryButton(text = "Export TCX", onClick = {
+                        viewModel.tcxContent()?.let { tcx ->
+                            ExportShare.share(context, "ride_${current.id}.tcx", tcx, "application/vnd.garmin.tcx+xml")
+                        }
+                    })
+                    OrSecondaryButton(text = "Export CSV", onClick = {
+                        viewModel.sampleCsvContent()?.let { csv ->
+                            ExportShare.share(context, "ride_${current.id}.csv", csv, "text/csv")
+                        }
+                    })
+                    OrPrimaryButton(text = "Done", onClick = {
+                        viewModel.dismiss()
+                        onDismiss()
+                    })
+                }
+            }
 
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl)) {
+                Column(modifier = Modifier.weight(3f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
                     MetricTabRow(
                         metrics = RideMetric.available(samples),
                         selected = selectedMetric,
                         onSelect = { selectedMetric = it },
                     )
-
-                    StatBand(
-                        stats = RideMetricStats.stats(selectedMetric, current, samples),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 24.dp),
-                    )
-
+                    StatBand(stats = RideMetricStats.stats(selectedMetric, current, samples), modifier = Modifier.fillMaxWidth())
                     MetricGraph(
                         points = RideMetricStats.points(selectedMetric, samples),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 20.dp),
+                        modifier = Modifier.fillMaxWidth().weight(1f),
                     )
-
-                    if (gameResults.isNotEmpty()) {
-                        GameResultsList(
-                            rows = gameResults,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp),
-                        )
-                    }
-
-                    ExportRow(
-                        onExportTcx = {
-                            viewModel.tcxContent()?.let { tcx ->
-                                ExportShare.share(context, "ride_${current.id}.tcx", tcx, "application/vnd.garmin.tcx+xml")
-                            }
-                        },
-                        onExportCsv = {
-                            viewModel.sampleCsvContent()?.let { csv ->
-                                ExportShare.share(context, "ride_${current.id}.csv", csv, "text/csv")
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 24.dp),
-                    )
-
-                    if (suggestedFtp != null) {
-                        FtpSuggestionCard(
-                            suggestedFtp = suggestedFtp!!,
-                            applied = ftpApplied,
-                            onApply = { scope.launch { viewModel.applySuggestedFtp() } },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp),
-                        )
+                }
+                if (gameResults.isNotEmpty() || suggestedFtp != null) {
+                    Column(modifier = Modifier.weight(2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+                        if (gameResults.isNotEmpty()) {
+                            GameResultsList(rows = gameResults, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
+                        }
+                        suggestedFtp?.let { ftp ->
+                            FtpSuggestionCard(
+                                suggestedFtp = ftp,
+                                applied = ftpApplied,
+                                onApply = { scope.launch { viewModel.applySuggestedFtp() } },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
-            }
-
-            Button(
-                onClick = {
-                    viewModel.dismiss()
-                    onDismiss()
-                },
-                modifier = Modifier.padding(top = 40.dp),
-            ) {
-                Text("Done")
             }
         }
     }
@@ -179,39 +160,22 @@ fun RideSummaryScreen(
 /** A game session's segments (#35): each game, its role and difficulty, score and stars. */
 @Composable
 private fun GameResultsList(rows: List<GameLabels.ResultRow>, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Games",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        rows.forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = row.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = row.detail,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (!row.skipped) {
-                    Text(
-                        text = "★".repeat(row.stars) + "☆".repeat(3 - row.stars),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = OpenRideColors.Accent,
-                    )
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+        OrEyebrow(text = "Games")
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+            items(rows) { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(color = OrColors.Surface, shape = OrShapes.Small)
+                        .padding(horizontal = OrSpacing.md, vertical = OrSpacing.sm + OrSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        OrLabel(text = row.title, style = OrType.Subtitle, color = OrColors.OnBackground)
+                        OrLabel(text = row.detail, style = OrType.Caption, color = OrColors.OnSurfaceMuted)
+                    }
+                    if (!row.skipped) StarRating(stars = row.stars)
                 }
             }
         }
@@ -219,22 +183,20 @@ private fun GameResultsList(rows: List<GameLabels.ResultRow>, modifier: Modifier
 }
 
 /**
- * Export actions (PRD P1-1/P1-2, T14): a TCX file (with the full per-second series, for
- * Apple Health via a third-party bridge app) and a plain per-second CSV, both handed to the
- * Android share sheet via [ExportShare].
+ * 0–3 stars as icons: the tablet's font has no ★/☆ glyphs (they drew as boxes with an X, rider
+ * bike test 2026-10-21). Earned stars in the accent, the rest dimmed.
  */
 @Composable
-private fun ExportRow(
-    onExportTcx: () -> Unit,
-    onExportCsv: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        OutlinedButton(onClick = onExportTcx) { Text("Export TCX") }
-        OutlinedButton(onClick = onExportCsv) { Text("Export CSV") }
+private fun StarRating(stars: Int, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.semantics { contentDescription = "$stars of 3 stars" }) {
+        repeat(3) { i ->
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = null,
+                tint = if (i < stars) OrColors.Accent else OrColors.Outline,
+                modifier = Modifier.size(OrSize.NavIcon),
+            )
+        }
     }
 }
 
@@ -249,28 +211,18 @@ private fun FtpSuggestionCard(
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        Text(
-            text = "Estimated FTP: ${suggestedFtp}W",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = "95% of your best 20-minute average power this ride",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Row(
+        modifier = modifier.background(OrColors.Surface, OrShapes.Small).padding(OrSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            OrLabel(text = "Estimated FTP: ${suggestedFtp} W", style = OrType.Subtitle, color = OrColors.OnBackground)
+            Text(text = "95% of your best 20 minutes", style = OrType.Caption, color = OrColors.OnSurfaceMuted)
+        }
         if (applied) {
-            Text(
-                text = "FTP updated",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            OrLabel(text = "FTP updated", style = OrType.Button, color = OrColors.Success)
         } else {
-            Button(onClick = onApply, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Update my FTP")
-            }
+            OrAccentButton(text = "Update FTP", onClick = onApply)
         }
     }
 }
@@ -283,28 +235,9 @@ private fun MetricTabRow(
     onSelect: (RideMetric) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
         metrics.forEach { metric ->
-            val isSelected = metric == selected
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = if (isSelected) OpenRideColors.Accent else MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(20.dp),
-                    )
-                    .clickable { onSelect(metric) }
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = metric.label,
-                    style = MetricTextStyles.TileLabel,
-                    color = if (isSelected) {
-                        OpenRideColors.OnAccent
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            OrChip(text = metric.label, selected = metric == selected, onClick = { onSelect(metric) })
         }
     }
 }
@@ -318,18 +251,18 @@ private fun StatBand(stats: List<MetricStat>, modifier: Modifier = Modifier) {
                 Text(
                     text = stat.label,
                     style = MetricTextStyles.TileLabel,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = OrColors.Accent,
                 )
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = stat.value,
                         style = MetricTextStyles.TileValueLarge,
-                        color = MaterialTheme.colorScheme.onBackground,
+                        color = OrColors.OnBackground,
                     )
                     Text(
                         text = stat.unit,
                         style = MetricTextStyles.UnitLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = OrColors.OnSurfaceMuted,
                         modifier = Modifier.padding(start = 6.dp, bottom = 10.dp),
                     )
                 }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -121,6 +123,12 @@ fun MainScaffold(
                 navController = innerNavController,
                 startDestination = TopLevelDestination.Start.route,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
+                // No transitions (rider, 2026-10-21): the default cross-fade left the old tab's
+                // top-bar actions showing mid-fade and felt inconsistent.
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
             ) {
                 composable(MainTabs.Home) {
                     val context = LocalContext.current

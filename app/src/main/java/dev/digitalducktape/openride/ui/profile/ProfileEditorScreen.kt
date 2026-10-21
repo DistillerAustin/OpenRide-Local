@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -303,6 +304,9 @@ private fun PickerCircle(
             .requiredSize(PICKER_CIRCLE_SIZE)
             .background(color = background, shape = CircleShape)
             .then(ring)
+            // Clip first: unclipped, the press ripple drew a square behind the round swatch
+            // (rider bike test, 2026-10-21).
+            .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

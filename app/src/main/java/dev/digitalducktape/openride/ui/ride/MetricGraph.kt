@@ -3,7 +3,7 @@ package dev.digitalducktape.openride.ui.ride
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,7 +27,7 @@ import dev.digitalducktape.openride.ui.theme.OpenRideColors
 @Composable
 fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
     if (points.size < 2) {
-        Box(modifier = modifier.fillMaxWidth().height(GraphHeight), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier.fillMaxWidth().heightIn(min = GraphMinHeight), contentAlignment = Alignment.Center) {
             Text(
                 text = "Not enough data for a graph",
                 style = MaterialTheme.typography.bodyMedium,
@@ -44,7 +44,7 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
     val gridColor = OpenRideColors.Divider
     val labelColor = OpenRideColors.OnSurfaceVariant
 
-    Canvas(modifier = modifier.fillMaxWidth().height(GraphHeight)) {
+    Canvas(modifier = modifier.fillMaxWidth().heightIn(min = GraphMinHeight)) {
         val labelPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.argb(
                 (labelColor.alpha * 255).toInt(),
@@ -104,7 +104,8 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
     }
 }
 
-private val GraphHeight = 220.dp
+/** The graph takes the height its caller gives it (the summary fills its column), never less. */
+private val GraphMinHeight = 160.dp
 
 /** Rounds up to a friendly axis maximum (e.g. 437 → 500), so gridline labels stay clean. */
 private fun niceCeiling(value: Int): Int {
