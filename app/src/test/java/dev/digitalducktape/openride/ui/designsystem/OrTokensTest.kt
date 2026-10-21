@@ -18,16 +18,17 @@ class OrTokensTest {
     }
 
     @Test
-    fun `touch targets are at least 64 dp, and the primary action at least 80 dp`() {
-        assertTrue(OrSize.TouchMin >= 64.dp)
-        assertTrue(OrSize.PrimaryAction >= 80.dp)
-        assertTrue(OrSize.RailItemHeight >= OrSize.TouchMin)
+    fun `touch targets are at least 44 dp, buttons 48, the primary action 56`() {
+        assertTrue(OrSize.TouchMin >= 44.dp)
+        assertTrue(OrSize.Button >= OrSize.TouchMin)
+        assertTrue(OrSize.PrimaryAction >= OrSize.Button)
         assertTrue(OrSize.SettingsRow >= OrSize.TouchMin)
+        assertTrue(OrSize.BottomBar >= OrSize.TouchMin)
     }
 
     @Test
-    fun `five rail destinations fit in the window height`() {
-        assertTrue(OrSize.RailItemHeight * 5 <= BikeWindow.Height)
+    fun `the top and bottom bars leave at least 500 dp of content height`() {
+        assertTrue(BikeWindow.Height - OrSize.TopBar - OrSize.BottomBar >= 500.dp)
     }
 
     @Test

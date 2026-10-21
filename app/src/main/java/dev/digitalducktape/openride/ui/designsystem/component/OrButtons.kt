@@ -48,14 +48,14 @@ fun OrPrimaryButton(
             disabledContainerColor = OrColors.SurfaceRaised,
             disabledContentColor = OrColors.OnSurfaceMuted,
         ),
-        contentPadding = PaddingValues(horizontal = OrSpacing.xl),
+        contentPadding = PaddingValues(horizontal = OrSpacing.lg),
         modifier = modifier.heightIn(min = OrSize.PrimaryAction),
     ) {
         ButtonContent(text, icon, OrType.ButtonLarge, OrSize.IconInline)
     }
 }
 
-/** A filled accent button at the riding touch minimum, for a tile's own action. */
+/** A filled accent button, for a tile's own action. */
 @Composable
 fun OrAccentButton(
     text: String,
@@ -75,13 +75,13 @@ fun OrAccentButton(
             disabledContentColor = OrColors.OnSurfaceMuted,
         ),
         contentPadding = PaddingValues(horizontal = OrSpacing.lg),
-        modifier = modifier.heightIn(min = OrSize.TouchMin),
+        modifier = modifier.heightIn(min = OrSize.Button),
     ) {
         ButtonContent(text, icon, OrType.Button, OrSize.IconInline)
     }
 }
 
-/** An outlined secondary action at the riding touch minimum. */
+/** An outlined secondary action. */
 @Composable
 fun OrSecondaryButton(
     text: String,
@@ -100,7 +100,7 @@ fun OrSecondaryButton(
             disabledContentColor = OrColors.OnSurfaceMuted,
         ),
         contentPadding = PaddingValues(horizontal = OrSpacing.lg),
-        modifier = modifier.heightIn(min = OrSize.TouchMin),
+        modifier = modifier.heightIn(min = OrSize.Button),
     ) {
         ButtonContent(text, icon, OrType.Button, OrSize.IconInline)
     }
@@ -125,7 +125,7 @@ fun OrDangerButton(
             disabledContentColor = OrColors.OnSurfaceMuted,
         ),
         contentPadding = PaddingValues(horizontal = OrSpacing.lg),
-        modifier = modifier.heightIn(min = OrSize.TouchMin),
+        modifier = modifier.heightIn(min = OrSize.Button),
     ) {
         ButtonContent(text, null, OrType.Button, OrSize.IconInline)
     }
@@ -135,9 +135,9 @@ fun OrDangerButton(
 private fun ButtonContent(text: String, icon: ImageVector?, style: TextStyle, iconSize: Dp) {
     if (icon != null) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(iconSize))
-        Text(text, style = style, modifier = Modifier.padding(start = OrSpacing.sm))
+        OrLabel(text, style = style, modifier = Modifier.padding(start = OrSpacing.sm))
     } else {
-        Text(text, style = style)
+        OrLabel(text, style = style)
     }
 }
 

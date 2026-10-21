@@ -13,7 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,27 +56,18 @@ fun HistoryScreen(
     var month by remember { mutableStateOf(YearMonth.now()) }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "History",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                if (rows.isNotEmpty()) {
-                    OutlinedButton(onClick = {
-                        scope.launch {
-                            val csv = viewModel.historyCsvContent()
-                            ExportShare.share(context, "ride_history.csv", csv, "text/csv")
-                        }
-                    }) {
-                        Text("Export CSV")
-                    }
+        Column(modifier = Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 24.dp)) {
+            if (rows.isNotEmpty()) {
+                TopBarActions {
+                    OrSecondaryButton(
+                        text = "Export CSV",
+                        onClick = {
+                            scope.launch {
+                                val csv = viewModel.historyCsvContent()
+                                ExportShare.share(context, "ride_history.csv", csv, "text/csv")
+                            }
+                        },
+                    )
                 }
             }
 
@@ -88,7 +80,7 @@ fun HistoryScreen(
                     )
                 }
             } else {
-                StatsBand(stats = stats, modifier = Modifier.fillMaxWidth().padding(top = 20.dp))
+                StatsBand(stats = stats, modifier = Modifier.fillMaxWidth())
 
                 // Below the band: ride list on the left, calendar + records on the right —
                 // the landscape split of the profile-overview references.

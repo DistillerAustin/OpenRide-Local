@@ -1,6 +1,5 @@
 package dev.digitalducktape.openride.ui.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,16 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.core.ride.RideGoal
-import dev.digitalducktape.openride.ui.common.ProfileAvatar
 import dev.digitalducktape.openride.ui.designsystem.BikePreview
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSize
@@ -56,7 +48,6 @@ import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 fun HomeRoute(
     viewModel: HomeViewModel,
     onQuickStart: () -> Unit,
-    onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenGames: () -> Unit = {},
     updateVersionName: String? = null,
@@ -68,7 +59,6 @@ fun HomeRoute(
         uiState = uiState,
         onStartRide = { if (viewModel.startQuickRide()) onQuickStart() },
         onSetGoal = viewModel::setGoal,
-        onOpenProfile = onOpenProfile,
         onOpenGames = onOpenGames,
         updateVersionName = updateVersionName,
         onOpenUpdate = onOpenUpdate,
@@ -78,20 +68,19 @@ fun HomeRoute(
 }
 
 /**
- * Home tab (PRD P0-7), stateless: the update notice, a greeting with the rider's avatar (tap for
- * the Profile tab), and two tiles side by side. *Just ride* holds the screen's one primary action,
- * an 80 dp **Start ride**, with the pre-ride goal (PRD P1-3) just above it; *Games* (BETA) opens
- * the games hub. The curated classes live in the Classes tab, not here.
+ * Home tab (PRD P0-7), stateless: the update notice and two tiles side by side, under the shared
+ * top bar (which carries the rider). *Just ride* holds the screen's one primary action, **Start
+ * ride**, with the pre-ride goal (PRD P1-3) just above it; *Games* (BETA) opens the games hub.
+ * The curated classes live in the Classes tab, not here.
  *
- * Laid out for the bike window (1160 × 672 dp beside the rail); it scrolls rather than squeezing
- * if a large font scale or the update notice needs more height.
+ * Laid out for the 1280 × 528 dp between the top and bottom bars; it scrolls rather than
+ * squeezing if a large font scale or the update notice needs more height.
  */
 @Composable
 fun HomeScreen(
     uiState: HomeUiState,
     onStartRide: () -> Unit,
     onSetGoal: (RideGoal) -> Unit,
-    onOpenProfile: () -> Unit,
     onOpenGames: () -> Unit,
     modifier: Modifier = Modifier,
     updateVersionName: String? = null,
@@ -104,7 +93,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = OrSpacing.ScreenGutter, vertical = OrSpacing.xl),
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
     ) {
         // PRD #22/T22: the launch-time update check surfaces here. Nothing installs without an
@@ -115,8 +104,6 @@ fun HomeScreen(
                 OrAccentButton(text = "Update", onClick = onOpenUpdate)
             }
         }
-
-        Greeting(uiState = uiState, onOpenProfile = onOpenProfile)
 
         Row(
             // Both tiles share one height: at least enough to fill the bike window below the
@@ -154,37 +141,12 @@ fun HomeScreen(
 }
 
 /**
- * The tiles' minimum height in the 672 dp bike window: what is left after the vertical padding
- * (2 × 32), the greeting (80) and its gap (24) is 504 dp; the update notice and its gap take
- * another 120. A little is left spare so nothing scrolls on the bike.
+ * The tiles' minimum height between the bars (672 − 72 − 72 = 528 dp): what is left after the
+ * padding (8 + 24) is 496 dp; the update notice and its gap take another 100 or so. A little is
+ * left spare so nothing scrolls on the bike.
  */
 private val TilesMinHeight = 480.dp
-private val TilesMinHeightWithBanner = 360.dp
-
-@Composable
-private fun Greeting(uiState: HomeUiState, onOpenProfile: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            OrEyebrow(text = "Welcome back")
-            Text(
-                text = uiState.riderName,
-                style = OrType.ScreenTitle,
-                color = OrColors.OnBackground,
-                modifier = Modifier.padding(top = OrSpacing.xs),
-            )
-        }
-        // Tapping the rider's own face is the natural "go to my profile" gesture.
-        ProfileAvatar(
-            profile = uiState.profile,
-            size = OrSize.PrimaryAction,
-            emojiSize = 36.sp,
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = onOpenProfile)
-                .semantics { contentDescription = "Open your profile" },
-        )
-    }
-}
+private val TilesMinHeightWithBanner = 380.dp
 
 @Composable
 private fun JustRideTile(
@@ -273,7 +235,6 @@ private fun HomeScreenPreview() {
             uiState = HomeUiState(profile = previewRider, goal = RideGoal.Duration(30 * 60)),
             onStartRide = {},
             onSetGoal = {},
-            onOpenProfile = {},
             onOpenGames = {},
         )
     }
@@ -287,7 +248,6 @@ private fun HomeScreenWithUpdatePreview() {
             uiState = HomeUiState(profile = previewRider),
             onStartRide = {},
             onSetGoal = {},
-            onOpenProfile = {},
             onOpenGames = {},
             updateVersionName = "0.6.0",
         )

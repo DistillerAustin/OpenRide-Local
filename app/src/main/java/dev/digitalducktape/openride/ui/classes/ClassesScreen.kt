@@ -31,6 +31,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import dev.digitalducktape.openride.ui.designsystem.OrSize
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -137,33 +142,17 @@ private fun LoadedContent(
 ) {
     val hasAnything = gridVideos?.isNotEmpty() ?: rows.any { it.videos.isNotEmpty() }
 
-    Column(modifier = modifier.fillMaxSize().padding(vertical = 32.dp, horizontal = 48.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Classes",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            // No dice/shuffle glyph is available without adding material-icons-extended (this
-            // app only depends on material-icons-core), so the button is text-only rather
-            // than pulling in a new dependency for one icon.
-            Button(onClick = onRandomRide, enabled = hasAnything) {
-                Text(text = "Random Ride")
-            }
-        }
+    TopBarActions {
+        OrAccentButton(text = "Random ride", onClick = onRandomRide, enabled = hasAnything)
+    }
 
+    Column(modifier = modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 0.dp, bottom = 16.dp)) {
         FilterBar(
             filters = filters,
             onCategorySelected = onCategorySelected,
             onSortSelected = onSortSelected,
             onLengthSelected = onLengthSelected,
             onHideTakenToggled = onHideTakenToggled,
-            modifier = Modifier.padding(top = 16.dp),
         )
 
         if (anyRefreshFailed) {
@@ -266,7 +255,8 @@ private fun FilterBar(
             FilterChip(
                 selected = filters.category == category,
                 onClick = { onCategorySelected(category) },
-                label = { Text(category.label) },
+                label = { OrLabel(category.label, style = OrType.Button) },
+                modifier = Modifier.heightIn(min = OrSize.TouchMin),
             )
         }
 
@@ -286,7 +276,8 @@ private fun FilterBar(
         FilterChip(
             selected = filters.hideTaken,
             onClick = { onHideTakenToggled(!filters.hideTaken) },
-            label = { Text("Hide completed") },
+            label = { OrLabel("Hide completed", style = OrType.Button) },
+            modifier = Modifier.heightIn(min = OrSize.TouchMin),
         )
     }
 }
@@ -302,8 +293,8 @@ private fun <T> DropdownFilter(
     var expanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        OutlinedButton(onClick = { expanded = true }) {
-            Text(label)
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.heightIn(min = OrSize.TouchMin)) {
+            OrLabel(label, style = OrType.Button)
             Icon(
                 imageVector = Icons.Filled.ArrowDropDown,
                 contentDescription = null,

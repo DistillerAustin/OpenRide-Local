@@ -45,10 +45,8 @@ fun GamesLauncherScreen(saving: Boolean, onEnter: () -> Unit, modifier: Modifier
         verticalArrangement = Arrangement.spacedBy(OrSpacing.lg, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
-            Text("\uD83C\uDFAE Games", style = OrType.ScreenTitle, color = OrColors.OnBackground)
-            OrBetaBadge()
-        }
+        // The title is in the shared top bar; the BETA tag stays with the screen's pitch.
+        OrBetaBadge()
         Text(
             "Pick games and circuits inside. Your whole visit is one ride.",
             style = OrType.Body,
@@ -58,7 +56,7 @@ fun GamesLauncherScreen(saving: Boolean, onEnter: () -> Unit, modifier: Modifier
         OrPrimaryButton(
             text = "Enter Games",
             onClick = onEnter,
-            modifier = Modifier.widthIn(min = 420.dp).padding(top = OrSpacing.md),
+            modifier = Modifier.widthIn(min = 320.dp).padding(top = OrSpacing.md),
         )
         if (saving) {
             OrBanner(

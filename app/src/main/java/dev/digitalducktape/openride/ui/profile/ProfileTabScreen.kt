@@ -33,6 +33,7 @@ import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
+import dev.digitalducktape.openride.ui.designsystem.component.TopBarActions
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
@@ -92,6 +93,11 @@ fun ProfileTabScreen(
         if (text != null) pendingRestoreContent = text
     }
 
+    TopBarActions {
+        OrSecondaryButton(text = "Edit profile", onClick = onEditProfile)
+        OrSecondaryButton(text = "Switch rider", onClick = { showSwitchConfirmation = true })
+    }
+
     // Two columns for the landscape window: who is riding on the left, the settings groups on
     // the right (they scroll; the rider column stays put).
     Row(
@@ -99,10 +105,10 @@ fun ProfileTabScreen(
         horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl),
     ) {
         Column(
-            modifier = Modifier.width(RiderColumnWidth).fillMaxHeight().padding(vertical = OrSpacing.xl),
+            modifier = Modifier.width(RiderColumnWidth).fillMaxHeight().padding(vertical = OrSpacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ProfileAvatar(profile = activeProfile, size = 136.dp, emojiSize = 60.sp)
+            ProfileAvatar(profile = activeProfile, size = 112.dp, emojiSize = 48.sp)
             Text(
                 text = activeProfile?.name ?: "No rider selected",
                 style = OrType.ScreenTitle,
@@ -118,16 +124,6 @@ fun ProfileTabScreen(
                     modifier = Modifier.padding(top = OrSpacing.xs),
                 )
             }
-            OrSecondaryButton(
-                text = "Edit profile",
-                onClick = onEditProfile,
-                modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.xl),
-            )
-            OrSecondaryButton(
-                text = "Switch rider",
-                onClick = { showSwitchConfirmation = true },
-                modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.md),
-            )
         }
 
         Column(
@@ -135,7 +131,7 @@ fun ProfileTabScreen(
                 .weight(1f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = OrSpacing.xl),
+                .padding(top = OrSpacing.sm, bottom = OrSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
         ) {
             OrSettingsGroup(title = "Ride") {

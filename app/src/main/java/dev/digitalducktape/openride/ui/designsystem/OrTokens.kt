@@ -31,28 +31,32 @@ object OrSpacing {
 }
 
 /**
- * Sizes tuned for a rider about a metre away, mid-pedal stroke (§0 rules 2 and 3). Material's
- * 48 dp minimum is a desk number; on the bike 64 dp (96 px, about 10 mm) is the floor.
+ * Control sizes (docs/MAIN_UI_REFRESH.md §3, revised 2026-10-21 after the rider saw the first
+ * mockups: the 64/80 dp first pass read as oversized on the 1280 × 672 dp window). 44 dp is about
+ * 7 mm at density 1.5, still a thumb's width; nothing tappable is smaller.
  */
 object OrSize {
-    /** Smallest touch target for anything tapped while riding. */
-    val TouchMin = 64.dp
+    /** Smallest touch target: chips, toggles, icon buttons. */
+    val TouchMin = 44.dp
+
+    /** Ordinary buttons (secondary, accent, danger). */
+    val Button = 48.dp
 
     /** A screen's one primary action (Start ride, Enter Games). */
-    val PrimaryAction = 80.dp
+    val PrimaryAction = 56.dp
 
-    /** Width of the left navigation rail. */
-    val RailWidth = 120.dp
+    /** The shared top bar ([dev.digitalducktape.openride.ui.designsystem.component.OrTopBar]). */
+    val TopBar = 72.dp
 
-    /** Height of one rail destination: five of them fit in [BikeWindow.Height] with room spare. */
-    val RailItemHeight = 104.dp
+    /** The bottom navigation bar: 108 px of the window's 1008. */
+    val BottomBar = 72.dp
 
-    val RailIcon = 36.dp
+    val NavIcon = 28.dp
 
     /** A settings row (title, value, chevron). */
-    val SettingsRow = 72.dp
+    val SettingsRow = 56.dp
 
-    val IconInline = 28.dp
+    val IconInline = 24.dp
 }
 
 /** Corner radii. */

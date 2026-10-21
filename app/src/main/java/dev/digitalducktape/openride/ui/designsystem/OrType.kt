@@ -14,28 +14,28 @@ import androidx.compose.ui.unit.sp
  * yet been rebuilt keep the layout they were tuned for.
  */
 object OrType {
-    /** A screen's title ("History", the rider's name on Home). */
-    val ScreenTitle = TextStyle(fontSize = 40.sp, lineHeight = 46.sp, fontWeight = FontWeight.Bold)
+    /** A screen's title, in the shared top bar ("Home", "History"). */
+    val ScreenTitle = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
 
     /** A tile's or section's title ("Just ride"). */
-    val Title = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+    val Title = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
 
     /** A row's title, a dialog heading. */
-    val Subtitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+    val Subtitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
 
     /** Body copy. */
-    val Body = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Normal)
+    val Body = TextStyle(fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Normal)
 
     /** Secondary copy: captions, values in settings rows. Not for anything read mid-ride. */
     val Caption = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal)
 
     /** Button text. */
-    val Button = TextStyle(fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
+    val Button = TextStyle(fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold)
 
     /** The primary action's text (Start ride). */
-    val ButtonLarge = TextStyle(fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold)
+    val ButtonLarge = TextStyle(fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
 
-    /** Navigation rail labels. */
+    /** Bottom navigation labels. */
     val NavLabel = TextStyle(fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
 
     /** Tracked-caps label above a title or a number. Callers pass uppercase text. */
@@ -45,7 +45,7 @@ object OrType {
     val Badge = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 
     /** A big number in a stat block (history totals, summary). */
-    val StatValue = TextStyle(fontSize = 44.sp, lineHeight = 48.sp, fontWeight = FontWeight.Bold)
+    val StatValue = TextStyle(fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold)
 
     /** Every style, for the size-floor tests. */
     val all: Map<String, TextStyle> = mapOf(
