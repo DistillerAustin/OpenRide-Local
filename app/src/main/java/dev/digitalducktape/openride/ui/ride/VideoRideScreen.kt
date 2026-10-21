@@ -16,9 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +42,12 @@ import dev.digitalducktape.openride.ui.common.TimeFormat
 import dev.digitalducktape.openride.ui.theme.MetricTextStyles
 import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import kotlinx.coroutines.launch
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
+import dev.digitalducktape.openride.ui.designsystem.component.OrDangerButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
 
 /**
  * The in-app class player (v2 spec, superseding the T10 YouTube-app handoff): a full-bleed
@@ -124,23 +128,15 @@ fun VideoRideScreen(
     }
 
     if (showEndConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showEndConfirmation = false },
-            title = { Text("End ride?") },
-            text = { Text("This will stop and save your ride.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showEndConfirmation = false
-                    endRideAndShowSummary()
-                }) {
-                    Text("End Ride")
-                }
+        OrConfirmDialog(
+            title = "End ride?",
+            text = "This will stop and save your ride.",
+            confirmText = "End ride",
+            onConfirm = {
+                showEndConfirmation = false
+                endRideAndShowSummary()
             },
-            dismissButton = {
-                TextButton(onClick = { showEndConfirmation = false }) {
-                    Text("Cancel")
-                }
-            },
+            onDismiss = { showEndConfirmation = false },
         )
     }
 }
@@ -285,37 +281,15 @@ private fun TopStripContent(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OverlayButton(
+        Row(horizontalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
+            // Raised fill behind the outlined button: it sits on video.
+            OrSecondaryButton(
                 text = if (uiState.isPaused) "Resume" else "Pause",
                 onClick = onPauseResume,
+                modifier = Modifier.background(OrColors.SurfaceRaised, OrShapes.Small),
             )
-            OverlayButton(text = "End Ride", onClick = onEndRide, emphasized = true)
+            OrDangerButton(text = "End ride", onClick = onEndRide)
         }
-    }
-}
-
-@Composable
-private fun OverlayButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    emphasized: Boolean = false,
-) {
-    Box(
-        modifier = modifier
-            .background(
-                color = if (emphasized) OpenRideColors.Danger else OpenRideColors.SurfaceVariant,
-                shape = RoundedCornerShape(24.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-    ) {
-        Text(
-            text = text,
-            color = OpenRideColors.OnBackground,
-            fontWeight = FontWeight.Bold,
-        )
     }
 }
 
