@@ -250,3 +250,17 @@ func _until(condition: Callable, timeout_ms := 2000) -> void:
 	var start := Time.get_ticks_msec()
 	while not condition.call() and Time.get_ticks_msec() - start < timeout_ms:
 		await get_tree().process_frame
+
+
+## The music cache's size comes from each WAV's length: reading `data` copies it (6 MB a stem
+## for Cadence Karaoke), which froze the main thread ~300 ms on every render on the bike.
+func test_the_cache_size_doesnt_copy_the_stems() -> void:
+	for stereo in [false, true]:
+		var wav := AudioStreamWAV.new()
+		wav.format = AudioStreamWAV.FORMAT_16_BITS
+		wav.stereo = stereo
+		wav.mix_rate = 32000
+		var pcm := PackedByteArray()
+		pcm.resize(32000 * (4 if stereo else 2))
+		wav.data = pcm
+		assert_int(AudioDirector.wav_bytes(wav)).is_equal(pcm.size())
