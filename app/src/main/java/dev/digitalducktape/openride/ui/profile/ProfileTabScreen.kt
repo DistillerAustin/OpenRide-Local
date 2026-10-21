@@ -1,19 +1,19 @@
 package dev.digitalducktape.openride.ui.profile
 
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,22 +26,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
-import dev.digitalducktape.openride.core.profile.WeightUnits
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsDivider
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsGroup
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsRow
 import kotlinx.coroutines.launch
+
+/** Width of the Profile tab's rider column. */
+private val RiderColumnWidth = 320.dp
 
 /**
  * Profile nav tab: shows the active rider, offers "Switch rider" (PRD P0-3/P1-6 — tap-to-
  * confirm before clearing the active profile and returning to profile select, so a stray tap
  * mid-session can't silently log the next ride under the wrong rider), quick shortcuts to
  * stock Android Wi-Fi/device settings (PRD P1-5, T12), and whole-database backup/restore
- * (PRD P1-8, T15).
+ * (PRD P1-8, T15). Laid out as the rider on the left and grouped settings rows on the right
+ * (Ride, Classes, Device, Backup & restore), every row a 72 dp touch target.
  */
 @Composable
 fun ProfileTabScreen(
@@ -82,158 +92,135 @@ fun ProfileTabScreen(
         if (text != null) pendingRestoreContent = text
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    // Two columns for the landscape window: who is riding on the left, the settings groups on
+    // the right (they scroll; the rider column stays put).
+    Row(
+        modifier = modifier.fillMaxSize().padding(horizontal = OrSpacing.ScreenGutter),
+        horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl),
+    ) {
         Column(
-            // Scrollable: with Edit profile added, the stack can exceed the screen.
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(48.dp),
+            modifier = Modifier.width(RiderColumnWidth).fillMaxHeight().padding(vertical = OrSpacing.xl),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ProfileAvatar(profile = activeProfile, size = 96.dp, emojiSize = 40.sp)
+            ProfileAvatar(profile = activeProfile, size = 136.dp, emojiSize = 60.sp)
             Text(
                 text = activeProfile?.name ?: "No rider selected",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 16.dp),
+                style = OrType.ScreenTitle,
+                color = OrColors.OnBackground,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = OrSpacing.md),
             )
-            activeProfile?.let { profile ->
-                val details = buildList {
-                    profile.weightKg?.let { add("${WeightUnits.formatLbs(it)} lb") }
-                    profile.ftp?.let { add("FTP ${it}W") }
-                }
-                if (details.isNotEmpty()) {
-                    Text(
-                        text = details.joinToString("  •  "),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
+            activeProfile?.let(ProfileTabLabels::riderDetails)?.let { details ->
+                Text(
+                    text = details,
+                    style = OrType.Body,
+                    color = OrColors.OnSurfaceMuted,
+                    modifier = Modifier.padding(top = OrSpacing.xs),
+                )
+            }
+            OrSecondaryButton(
+                text = "Edit profile",
+                onClick = onEditProfile,
+                modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.xl),
+            )
+            OrSecondaryButton(
+                text = "Switch rider",
+                onClick = { showSwitchConfirmation = true },
+                modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.md),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = OrSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+        ) {
+            OrSettingsGroup(title = "Ride") {
+                val paired = activeProfile?.pairedHrDeviceAddress != null
+                OrSettingsRow(
+                    title = "Heart-rate strap",
+                    value = ProfileTabLabels.heartRateStrap(paired),
+                    valueColor = if (paired) OrColors.Success else OrColors.OnSurfaceMuted,
+                    onClick = onManageHeartRateStrap,
+                )
+                OrSettingsDivider()
+                // GPX route import (PRD #21/T21).
+                OrSettingsRow(
+                    title = "Route (GPX)",
+                    value = routeError
+                        ?: activeRoute?.let { ProfileTabLabels.routeSummary(it.name, it.totalDistanceMeters) }
+                        ?: "No route loaded",
+                    valueColor = if (routeError != null) OrColors.Warning else OrColors.OnSurfaceMuted,
+                ) {
+                    if (activeRoute != null) {
+                        OrSecondaryButton(text = "Clear", onClick = {
+                            routeHolder.clear()
+                            routeError = null
+                        })
+                    }
+                    OrSecondaryButton(
+                        text = if (activeRoute == null) "Load route" else "Change",
+                        onClick = { pickRouteFile.launch("*/*") },
                     )
                 }
             }
 
-            OutlinedButton(
-                onClick = onEditProfile,
-                modifier = Modifier.width(280.dp).padding(top = 32.dp),
-            ) {
-                Text("Edit profile")
+            OrSettingsGroup(title = "Classes") {
+                OrSettingsRow(
+                    title = "Content sources",
+                    value = "Your creators and playlists",
+                    onClick = onManageContentSources,
+                )
             }
 
-            OutlinedButton(
-                onClick = { showSwitchConfirmation = true },
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("Switch rider")
+            // PRD P1-5 (T12): stock Android settings, for when OpenRide is the tablet's launcher.
+            OrSettingsGroup(title = "Device") {
+                OrSettingsRow(
+                    title = "Wi-Fi",
+                    value = "Android Wi-Fi settings",
+                    onClick = { launchSettings(context, Settings.ACTION_WIFI_SETTINGS) },
+                )
+                OrSettingsDivider()
+                OrSettingsRow(
+                    title = "Device settings",
+                    value = "Android settings: volume, display, Bluetooth",
+                    onClick = { launchSettings(context, Settings.ACTION_SETTINGS) },
+                )
+                OrSettingsDivider()
+                OrSettingsRow(title = "App updates", onClick = onManageAppUpdates)
             }
 
-            SettingsShortcutsRow(modifier = Modifier.padding(top = 16.dp))
-
-            OutlinedButton(
-                onClick = onManageHeartRateStrap,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text(
-                    if (activeProfile?.pairedHrDeviceAddress != null) {
-                        "Heart-rate strap: paired"
-                    } else {
-                        "Pair heart-rate strap"
+            // Whole-database backup and restore (PRD P1-8, T15).
+            OrSettingsGroup(title = "Backup & restore") {
+                OrSettingsRow(
+                    title = "Back up",
+                    value = "Share a backup file of every rider and ride",
+                    onClick = {
+                        scope.launch {
+                            val backup = viewModel.createBackupContent()
+                            ExportShare.share(context, "openride_backup.json", backup, "application/json")
+                        }
                     },
                 )
-            }
-
-            OutlinedButton(
-                onClick = onManageAppUpdates,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("App updates")
-            }
-
-            OutlinedButton(
-                onClick = onManageContentSources,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("Content sources")
-            }
-
-            Text(
-                text = "Route (GPX)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 32.dp),
-            )
-            activeRoute?.let { route ->
-                Text(
-                    text = "%s  •  %.2f mi".format(
-                        route.name ?: "Loaded route",
-                        route.totalDistanceMeters / 1609.344,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
+                OrSettingsDivider()
+                OrSettingsRow(
+                    title = "Restore from file",
+                    value = restoreError ?: "Replaces everything on this bike",
+                    valueColor = if (restoreError != null) OrColors.Warning else OrColors.OnSurfaceMuted,
+                    onClick = { pickBackupFile.launch("application/json") },
                 )
             }
-            routeError?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                OutlinedButton(onClick = { pickRouteFile.launch("*/*") }) {
-                    Text(if (activeRoute == null) "Load Route" else "Change Route")
-                }
-                if (activeRoute != null) {
-                    OutlinedButton(onClick = {
-                        routeHolder.clear()
-                        routeError = null
-                    }) {
-                        Text("Clear Route")
-                    }
-                }
-            }
-
-            Text(
-                text = "Backup & restore",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 32.dp),
-            )
             Text(
                 text = "Also backed up automatically after every ride to " +
                     MediaStoreAutoBackupStore.RELATIVE_PATH +
                     MediaStoreAutoBackupStore.fileNameFor(context.packageName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
+                style = OrType.Caption,
+                color = OrColors.OnSurfaceMuted,
+                modifier = Modifier.padding(horizontal = OrSpacing.md),
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        val backup = viewModel.createBackupContent()
-                        ExportShare.share(context, "openride_backup.json", backup, "application/json")
-                    }
-                }) {
-                    Text("Back Up")
-                }
-                OutlinedButton(onClick = { pickBackupFile.launch("application/json") }) {
-                    Text("Restore from file")
-                }
-            }
-            restoreError?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
         }
     }
 
