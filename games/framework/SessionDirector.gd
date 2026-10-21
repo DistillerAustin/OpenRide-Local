@@ -57,6 +57,8 @@ var _last_count := 0
 var calibrated_mode := ""
 
 var _log_left := FRAME_LOG_SEC
+var _booted := false
+var _first_frames := 0  ## frames after the intro card shows, timed for the log
 var _pause_screen_up := false
 ## The current pause began (or ran) under a calibration: its resume plays no cue.
 var _calibration_pause := false
@@ -157,8 +159,11 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	Engine.max_fps = PLAY_MAX_FPS
 	done_panel.visible = false
 	var game_id := str(segment.get("game_id", ""))
+	LoadClock.mark("start", "segment_started game=%s" % game_id)
 	info = GameRegistry.info(game_id)
+	LoadClock.mark("start", "info")
 	var next := _take_game(game_id) if info else null
+	LoadClock.mark("start", "instantiated")
 	if next == null:
 		push_error("SessionDirector: unknown game '%s'; skipping it" % game_id)
 		_close_game()
@@ -166,6 +171,7 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 		_report(skipped_result(game_id))
 		return
 	_show_game(next)
+	LoadClock.mark("start", "in_tree")
 	var camera_mode := next.tracker_mode_for_segment(segment)
 	if camera_mode != info.tracker_mode:
 		info = info.with_tracker_mode(camera_mode)
@@ -176,6 +182,7 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 	game.hud = hud
 	pause_overlay.set_options(info.options, game.option)
 	game.prepare(segment)
+	LoadClock.mark("start", "prepared")
 	game.set_paused(Session.paused)
 	# The camera mode goes to Kotlin only once the game has loaded: the session's first camera
 	# mode starts the calibration, and a game that builds for seconds in prepare() (Kart Race's
@@ -193,6 +200,8 @@ func _on_segment_started(new_segment: Dictionary) -> void:
 		previous_info.title if previous_info else str(previous.get("game_id", "")), can_skip(),
 		game.how_to_text(segment), game.intro_visual())
 	phase = Phase.INTRO
+	_first_frames = 3
+	LoadClock.mark("start", "intro_shown")
 	_intro_left = float(segment.get("intro_sec", 0))
 	_last_count = ceili(_intro_left) + 1
 	if _intro_left <= 0.0:
@@ -296,7 +305,7 @@ func return_to_hub() -> void:
 	if Session.tracker_mode != "off":
 		Session.set_tracker_mode("off")
 	Engine.max_fps = HUB_MAX_FPS
-	print(memory_line())
+	_log_memory()
 	hub_entered.emit()
 
 
@@ -305,6 +314,13 @@ func return_to_hub() -> void:
 func _on_hub_state(_state: Dictionary) -> void:
 	if phase == Phase.IDLE:
 		return_to_hub()
+
+
+## Logs memory_line a frame later, once the game scene's queue_free has run: logged at once,
+## it counted the departing game's SubViewports (Kart Race's 12) as if they had leaked.
+func _log_memory() -> void:
+	await get_tree().process_frame
+	print(memory_line())
 
 
 ## `OPENRIDE_GAMES memory static=… objects=… nodes=… orphans=… viewports=…`.
@@ -362,6 +378,14 @@ func _report(result: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var frame_ms := LoadClock.frame(phase_name())
+	GameRegistry.poll()
+	if not _booted:
+		_booted = true
+		LoadClock.mark("boot", "first_frame")
+	if _first_frames > 0:
+		_first_frames -= 1
+		LoadClock.mark("start", "frame ms=%d" % frame_ms)
 	if Session.active:
 		_sync_pause_screen()
 	match phase:

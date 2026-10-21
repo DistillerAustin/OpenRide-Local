@@ -65,9 +65,12 @@ var taps := 0  ## button-down clicks played (for tests)
 
 
 func _ready() -> void:
+	LoadClock.mark("boot", "hub_ready_begin")
 	name = "Hub"
 	get_tree().node_added.connect(_on_node_added)
 	SfxSynth.stream.call_deferred(TAP_SOUND)  # render the click now, not on the first tap
+	# Every game's title and options, on a loader thread: the cards don't wait for them.
+	GameRegistry.warm_infos.call_deferred()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	queue.per_frame = 2
@@ -106,6 +109,7 @@ func _ready() -> void:
 		_apply_state(Session.hub)
 	if Session.director.phase == SessionDirector.Phase.HUB:
 		_on_hub_entered()
+	LoadClock.mark("boot", "hub_ready_end")
 	print("OPENRIDE_GAMES hub ready renderer=%s adapter=%s" % [
 		RenderingServer.get_current_rendering_method(), RenderingServer.get_video_adapter_name()])
 
@@ -186,6 +190,7 @@ func _show_top() -> void:
 		nav.restore([])  # the game left the catalog or lost the camera
 		top = nav.top()
 		id = HubNav.HOME
+	_prefetch(id, top.args)
 	screen = SCREENS[id].new()
 	screen.name = id.to_pascal_case() + "Screen"
 	screen.setup(state, top.args, queue)
@@ -205,6 +210,19 @@ func _show_top() -> void:
 	# No fade: the bakes draw premultiplied (a faded parent would brighten them), and each
 	# card appears as its bake renders (two a frame) anyway.
 	_screens.add_child(screen)
+
+
+## Loads the game the rider is looking at on a loader thread, so Start doesn't wait for it: the
+## game's scene on its screen, a circuit's first game on the circuit's. Anywhere else, nothing is
+## held (the tablet has 2 GB).
+func _prefetch(id: String, args: Dictionary) -> void:
+	if id == HubNav.GAME:
+		GameRegistry.prefetch([str(args.get("game_id", ""))])
+	elif id == HubNav.CIRCUIT:
+		var slots: Array = HubState.circuit(state, str(args.get("circuit_id", ""))).get("slots", [])
+		GameRegistry.prefetch([str(slots[0].get("game_id", ""))] if not slots.is_empty() and slots[0] is Dictionary else [])
+	else:
+		GameRegistry.release()
 
 
 func _start(request: Dictionary) -> void:

@@ -164,8 +164,9 @@ func game_card(e: Dictionary) -> Control:
 	var inset := HubTheme.PICTURE_INSET
 	var pic_size := Vector2(HubTheme.GAME_CARD.x - 2 * inset, (HubTheme.GAME_CARD.x - 2 * inset) * 9.0 / 16.0)
 	box.add_child(HubArt.picture(id, pic_size, HubTheme.CARD_RADIUS - inset))
-	var info := GameRegistry.info(id)
-	var title_text: String = info.title if info else str(e.title)
+	# Never blocks: the title comes from hub_state until the declarations load in the background.
+	var info := GameRegistry.cached_info(id)
+	var title_text: String = info.title if info else str(e.get("title", id.capitalize()))
 	var title := HubTheme.label(title_text, fit_size(title_text, HubTheme.CARD_TITLE, pic_size.x), GameTheme.INK, true)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
