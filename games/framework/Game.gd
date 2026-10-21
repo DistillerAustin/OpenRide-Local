@@ -182,7 +182,35 @@ func has_ended() -> bool:
 	return _ended
 
 
+## Every shader under a game's folder, loaded on its first start and kept for the engine's life.
+## A Shader freed when its game ends is compiled again on the next start (the Compatibility
+## renderer compiles per Shader): on the tablet that cost 2-4 s of the first frames of every
+## start, not just the first. Keyed by folder.
+static var _kept_shaders := {}
+
+
+static func keep_shaders(dir: String) -> int:
+	if not _kept_shaders.has(dir):
+		var found: Array[Shader] = []
+		_collect_shaders(dir, found)
+		_kept_shaders[dir] = found
+	return _kept_shaders[dir].size()
+
+
+static func _collect_shaders(dir: String, out: Array[Shader]) -> void:
+	for f in ResourceLoader.list_directory(dir):
+		if f.ends_with("/"):
+			_collect_shaders(dir.path_join(f.trim_suffix("/")), out)
+			continue
+		f = f.trim_suffix(".remap")
+		if f.ends_with(".gdshader"):
+			var sh := load(dir.path_join(f)) as Shader
+			if sh:
+				out.append(sh)
+
+
 func prepare(new_segment: Dictionary) -> void:
+	keep_shaders(get_script().resource_path.get_base_dir())
 	_prepared = true
 	_ended = false
 	segment = new_segment

@@ -21,6 +21,8 @@ extends Node3D
 ## freezes them. Pools are fixed and preallocated; the tablet budget is a handful of draw calls
 ## while nothing is flying.
 
+static var _rotor_shader: Shader  ## see _make_rotor_shader
+
 const SHADERS := "res://games/kart_race/world/shaders/"
 const POD_LIFT := 1.1  ## the capsule's centre over the road
 const POD_BOB := 0.12
@@ -801,6 +803,16 @@ func _rotor_mesh() -> ArrayMesh:
 func _rotor_material() -> ShaderMaterial:
 	if _materials.has("rotor_mat"):
 		return _materials.rotor_mat
+	if _rotor_shader == null:
+		_rotor_shader = _make_rotor_shader()
+	var mat := ShaderMaterial.new()
+	mat.shader = _rotor_shader
+	_materials["rotor_mat"] = mat
+	return mat
+
+
+## Built once per engine and kept: a new Shader each race would be compiled again (Game.gd).
+static func _make_rotor_shader() -> Shader:
 	var sh := Shader.new()
 	sh.code = """
 shader_type spatial;
@@ -817,10 +829,7 @@ void fragment() {
 	ALPHA = disc * (0.16 + blades * 0.35) + hub * 0.9;
 }
 """
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	_materials["rotor_mat"] = mat
-	return mat
+	return sh
 
 
 func _trail_node(node_name: String) -> MeshInstance3D:
