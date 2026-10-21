@@ -8,13 +8,22 @@ uniform vec2 rect_size = vec2(314.0, 177.0);  // the picture's size in px
 uniform float radius = 16.0;
 uniform float feather = 1.5;
 
+// The picture's own corners, not UV: a cropped picture (STRETCH_KEEP_ASPECT_COVERED, as for a
+// track thumbnail in a slot of another shape) samples only part of its texture, so its UV never
+// reaches 0 or 1 and a UV mask would leave square corners.
+varying vec2 local;
+
+void vertex() {
+	local = VERTEX;
+}
+
 float rounded_box(vec2 p, vec2 half_size, float r) {
 	vec2 q = abs(p) - half_size + vec2(r);
 	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
 void fragment() {
-	vec2 p = (UV - 0.5) * rect_size;
+	vec2 p = local - rect_size * 0.5;
 	float d = rounded_box(p, rect_size * 0.5, radius);
 	vec4 c = COLOR;  // the texture, already sampled and tinted
 	c.a *= clamp(0.5 - d / feather, 0.0, 1.0);
