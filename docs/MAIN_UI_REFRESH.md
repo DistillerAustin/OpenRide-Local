@@ -170,9 +170,10 @@ Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
   Switch the Material scale to the bike scale only after phase 7, when nothing depends on it.
 - **`OpenRideColors` is a facade.** Its names now point at `OrColors`, which re-skinned every
   screen at once. Rebuilt code uses `OrColors`; delete the facade when nothing refers to it.
-- **Red is for stopping.** The lime accent always carries dark text (`OnAccent`). `Danger` is a
-  fill with white text only (red text fails contrast on the dark ground), so Material's `error`
-  colour, used for error *text*, stays amber.
+- **The accent is the rider's avatar colour** (`riderAccent`), End ride included (rider,
+  2026-10-21). `Danger` is kept for destructive confirms like Restore; it is a fill with white
+  text only (red text fails contrast on the dark ground), so Material's `error` colour, used
+  for error *text*, stays amber.
 - **Colours checked by test.** `OrColorPairs` lists every foreground/background pair;
   `OrColorsTest` fails if one drops below WCAG AA. Add new pairs there.
 - **Home fills the window.** The two tiles take a minimum height worked out from the 672 dp

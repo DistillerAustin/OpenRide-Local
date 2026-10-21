@@ -43,7 +43,7 @@ import dev.digitalducktape.openride.ui.theme.MetricTextStyles
 import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import kotlinx.coroutines.launch
 import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
-import dev.digitalducktape.openride.ui.designsystem.component.OrDangerButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
 import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrColors
@@ -132,6 +132,8 @@ fun VideoRideScreen(
             title = "End ride?",
             text = "This will stop and save your ride.",
             confirmText = "End ride",
+            // The rider's colour, not red (rider's ask, 2026-10-21).
+            destructive = false,
             onConfirm = {
                 showEndConfirmation = false
                 endRideAndShowSummary()
@@ -288,7 +290,7 @@ private fun TopStripContent(
                 onClick = onPauseResume,
                 modifier = Modifier.background(OrColors.SurfaceRaised, OrShapes.Small),
             )
-            OrDangerButton(text = "End ride", onClick = onEndRide)
+            OrAccentButton(text = "End ride", onClick = onEndRide)
         }
     }
 }
