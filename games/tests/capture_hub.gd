@@ -31,7 +31,7 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(_out)
 	_session = root.get_node("Session")
 	var local: Node = _session._local
-	local.hub.rider.name = "Alex"
+	local.hub.rider.name = "Ed"
 	change_scene_to_file("res://hub/Hub.tscn")
 	await process_frame
 	await process_frame

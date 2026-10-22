@@ -16,11 +16,13 @@ It's installed using a free tool called [OpenPelo](https://github.com/doudar/Ope
 
 ## New in 1.0
 
-- **The Games hub** — pick games and circuits, build your own circuits, calibrate the camera once, and play as many as you like; the whole visit is saved as one ride.
-- **Kart Race** — a new game: a Grand Prix of 3-lap kart races against seven rivals. Pedal to drive, lean to steer, add resistance to drift.
-- **A new look for every game**, and much faster loading.
-- **A new screen design** — tabs along the bottom, bigger and simpler controls, the bike's sensor and heart-rate status always in view, and each rider's own colour.
-- **Easier to install** — OpenRide is now in [OpenPelo](https://github.com/doudar/Openpelo)'s app catalog. See [Getting the app](#getting-the-app).
+This update brings a new Kart Race, a games hub for your workouts, better game graphics, music and sounds, and a new look for the whole app.
+
+- **Games hub (BETA)** — pick games and circuits, build your own circuits, and play as many as you like. The whole session saves as one ride.
+- **New game, Kart Race** — 3-lap races against seven rivals on four tracks. Pedal to drive, lean to steer, and add resistance to drift. Grab items along the way and see if you can be first across the line.
+- **Better graphics and sound** — every game has a new look, new music and new sound effects, and they load faster too.
+- **A new look for the app** — bigger controls, sensor and heart-rate status always in view, and simpler navigation with tabs along the bottom.
+- **Easier to install** — you can now install OpenRide straight from [OpenPelo](https://github.com/doudar/Openpelo)'s app catalog. See [Getting the app](#getting-the-app).
 
 ## What it does
 

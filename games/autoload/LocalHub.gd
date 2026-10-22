@@ -36,7 +36,7 @@ const PRESETS := {"circuit-20": 2, "circuit-30": 4, "circuit-45": 6}
 const INTRO_SEC := 10
 const CUSTOM_MAX_SLOTS := 12
 const CUSTOM_MAX_SEC := 90 * 60
-const RIDER_NAME := "Alex"  ## LocalSession.RIDER_NAME
+const RIDER_NAME := "Ed"  ## LocalSession.RIDER_NAME
 
 var visit_id := ""
 var phase := ""  ## "" (no visit), hub, plan, saving, ended

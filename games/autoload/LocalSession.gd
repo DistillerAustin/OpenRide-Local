@@ -23,7 +23,7 @@ const GRACE_SEC := 5.0
 const DEFAULT_GAME_ID := "demo"
 ## The desktop's stand-in profile name (`session_started`'s `rider_name`), for plans that don't
 ## carry one.
-const RIDER_NAME := "Alex"
+const RIDER_NAME := "Ed"
 ## Simulated calibration: seconds per step.
 const CALIBRATION_STEPS := {"centre": 3.0, "left": 2.0, "right": 2.0, "in": 2.0, "back": 2.0}
 const CALIBRATION_REPORT_SEC := 0.1
