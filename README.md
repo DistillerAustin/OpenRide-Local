@@ -14,6 +14,14 @@ It's installed using a free tool called [OpenPelo](https://github.com/doudar/Ope
   <img src="docs/screenshots/classes.png" width="32%" alt="Classes catalog" />
 </p>
 
+## New in 1.0
+
+- **The Games hub** — pick games and circuits, build your own circuits, calibrate the camera once, and play as many as you like; the whole visit is saved as one ride.
+- **Kart Race** — a new game: a Grand Prix of 3-lap kart races against seven rivals. Pedal to drive, lean to steer, add resistance to drift.
+- **A new look for every game**, and much faster loading.
+- **A new screen design** — tabs along the bottom, bigger and simpler controls, the bike's sensor and heart-rate status always in view, and each rider's own colour.
+- **Easier to install** — OpenRide is now in [OpenPelo](https://github.com/doudar/Openpelo)'s app catalog. See [Getting the app](#getting-the-app).
+
 ## What it does
 
 - **Live stats while you ride** — cadence, resistance, power, and speed, pulled straight from the bike itself, with no subscription required
@@ -88,42 +96,34 @@ Please keep any new game original: mechanics can be inspired by classic ideas, b
 
 ## Getting the app
 
-OpenRide isn't available in an app store — you install it onto the bike's tablet yourself, either by downloading a ready-built APK from GitHub or by building it from this repo. This does take a little technical setup, but the steps below walk through everything.
+OpenRide isn't in an app store, but you don't need to be technical to install it: it's listed in [OpenPelo](https://github.com/doudar/Openpelo)'s app catalog, so installing it takes a few clicks.
 
-### What you'll need
+### Install with OpenPelo (recommended)
 
-- A Peloton Bike (Gen 2) or Bike+, with [OpenPelo](https://github.com/doudar/Openpelo) already set up on it. OpenPelo is what gives your computer the ability to talk to the bike's tablet — set that up first, following its own instructions.
-- A computer with `adb` installed (this is Android's device-connection tool, part of the free "Android SDK platform-tools" download).
+1. **Set up OpenPelo** on your computer and connect it to the bike, following [its instructions](https://github.com/doudar/Openpelo#connect-a-device). OpenPelo brings its own connection tools; you don't need to install anything else.
+2. **Pick OpenRide.** In OpenPelo, choose the bike under **Target Device**. In **Compatible applications**, open the **Fitness** category (or **All apps**) and tick **OpenRide**.
+3. **Click Install selected.** OpenPelo downloads the latest OpenRide release from this repo and installs it; **ADB activity** shows the progress.
+4. **Open OpenRide** on the bike. It starts on a "Who's riding?" screen: add a rider and you're in.
 
-### Step 1: Get the APK
+### Other ways to install
 
-**Option A — download it (recommended):** grab the latest `openride-real-*.apk` from the [Releases page](https://github.com/digitalducktape/openride/releases/latest) and save it somewhere on your computer.
+- **A downloaded APK:** grab the latest `openride-real-*.apk` from the [Releases page](https://github.com/digitalducktape/openride/releases/latest), then use OpenPelo's **Install local APK**, or `adb install -r openride-real-*.apk` if you already use `adb`.
+- **Build it yourself:** you'll need Java 21, the [Godot 4.7.2](https://godotengine.org/download/archive/) editor (the mini-games are a Godot project; see [docs/GAMES.md](docs/GAMES.md)) and a copy of this repo. Then, in a terminal opened to that folder:
 
-**Option B — build it yourself:** if you'd rather build from source, you'll also need Java 21, the [Godot 4.7.2](https://godotengine.org/download/archive/) editor (the mini-games are a Godot project — see [docs/GAMES.md](docs/GAMES.md)), and a copy of this repo (`git clone`, or download it as a ZIP from GitHub and unzip it). Then, in a terminal opened to that folder:
+  ```sh
+  export GODOT_BIN=/Applications/Godot.app/Contents/MacOS/Godot   # wherever Godot 4.7.2 is
+  ./gradlew :app:assembleDebugReal
+  ```
 
-```sh
-export GODOT_BIN=/Applications/Godot.app/Contents/MacOS/Godot   # wherever Godot 4.7.2 is
-./gradlew :app:assembleDebugReal
-```
+  The app lands at `app/build/outputs/apk/debugReal/app-debugReal.apk`; install it as above.
 
-This compiles OpenRide into an installable file at `app/build/outputs/apk/debugReal/app-debugReal.apk`.
+### Make it the bike's home screen (optional)
 
-### Step 2: Install it on the bike
-
-Connect to the bike's tablet with `adb` (per OpenPelo's instructions), then run (substituting whichever APK path you ended up with above):
-
-```sh
-adb install -r app-debugReal.apk
-adb shell am start -n dev.digitalducktape.openride.real/dev.digitalducktape.openride.MainActivity
-```
-
-The app should open to a profile selection screen — you're in.
-
-From here, making OpenRide the screen that greets you when the bike turns on, and making sure a software update doesn't undo any of this, are covered step-by-step in **[docs/INSTALL.md](docs/INSTALL.md)**. Please read it in full before going further — the order of steps there matters.
+Making OpenRide the screen that greets you when the bike turns on, and making sure a Peloton software update doesn't undo any of this, are covered step by step in **[docs/INSTALL.md](docs/INSTALL.md)**. Please read it in full before starting: the order of steps there matters.
 
 ### Staying up to date
 
-Once it's installed, OpenRide checks this repo's [Releases](https://github.com/digitalducktape/openride/releases) on its own each time it launches, and shows a notice at the top of the screen when a newer build is available — tap it (or go to **Profile → App updates**) to download and install, no `adb` required. See [docs/INSTALL.md](docs/INSTALL.md#in-app-updates-t22--22) for details.
+Once it's installed, OpenRide checks this repo's [Releases](https://github.com/digitalducktape/openride/releases) on its own each time it launches, and shows a notice at the top of the screen when a newer build is available. Tap it (or go to **Profile → App updates**) to download and install; no computer needed. Reinstalling from OpenPelo's catalog also gets you the latest release. See [docs/INSTALL.md](docs/INSTALL.md#in-app-updates-t22--22) for details.
 
 ## For developers
 
