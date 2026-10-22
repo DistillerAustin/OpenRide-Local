@@ -22,6 +22,9 @@ object OrIcons {
     val Home: ImageVector = Icons.Filled.Home
     val Classes: ImageVector = Icons.Filled.PlayArrow
     val Games: ImageVector = Icons.Filled.Star
+
+    /** A game's rating star; its own name so the Games tab icon can change without it. */
+    val Star: ImageVector = Icons.Filled.Star
     val History: ImageVector = Icons.Filled.DateRange
     val Profile: ImageVector = Icons.Filled.Person
     val Settings: ImageVector = Icons.Filled.Settings

@@ -70,11 +70,6 @@ import dev.digitalducktape.openride.ui.theme.OpenRideTheme
  */
 private val BackIcon: ImageVector = Icons.AutoMirrored.Filled.ArrowBack
 
-/**
- * The star in a game's 0–3 rating. `OrIcons` has no `Star` of its own yet; [OrIcons.Games] is
- * Material's filled star, so it is used here. Swap to `OrIcons.Star` once one exists.
- */
-private val RatingStar: ImageVector = OrIcons.Games
 
 /**
  * A round, icon-only button at the touch minimum ([OrSize.TouchMin]): month arrows on the
@@ -119,7 +114,13 @@ fun OrScreenHeader(
         modifier = modifier.fillMaxWidth().heightIn(min = OrSize.TopBar),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OrSecondaryButton(text = backLabel, onClick = onBack, icon = BackIcon)
+        // Read as "Back to Classes", not just the destination's name.
+        OrSecondaryButton(
+            text = backLabel,
+            onClick = onBack,
+            icon = BackIcon,
+            modifier = if (backLabel == "Back") Modifier else Modifier.semantics { contentDescription = "Back to $backLabel" },
+        )
         OrLabel(
             text = title,
             style = OrType.ScreenTitle,
@@ -276,7 +277,7 @@ fun OrStarRating(stars: Int, modifier: Modifier = Modifier, max: Int = 3, size: 
     Row(modifier = modifier.semantics { contentDescription = "$stars of $max stars" }) {
         repeat(max) { i ->
             Icon(
-                imageVector = RatingStar,
+                imageVector = OrIcons.Star,
                 contentDescription = null,
                 tint = if (i < stars) OrColors.Accent else OrColors.Outline,
                 modifier = Modifier.size(size),

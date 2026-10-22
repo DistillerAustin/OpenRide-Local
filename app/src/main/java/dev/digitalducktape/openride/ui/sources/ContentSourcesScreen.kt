@@ -21,6 +21,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -262,7 +264,11 @@ private fun SourceRow(
         // Built-ins can only be hidden — keeping them means a rider can always get the
         // original catalog back without reinstalling.
         if (!source.builtIn) {
-            OrSecondaryButton(text = "Remove", onClick = onDelete)
+            OrSecondaryButton(
+                text = "Remove",
+                onClick = onDelete,
+                modifier = Modifier.semantics { contentDescription = "Remove ${source.displayName}" },
+            )
         }
     }
 }
