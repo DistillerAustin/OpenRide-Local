@@ -30,7 +30,7 @@ It's installed using a free tool called [OpenPelo](https://github.com/doudar/Ope
 - **A library of free classes** — a constantly-updating selection of cycling videos pulled in automatically, so there's always something new to ride to
 - **Mini-games (BETA)** — five pedal-powered games, including a full Kart Race, plus 20-, 30- and 45-minute game circuits and circuits you build yourself. [Details below](#mini-games-beta)
 - **Ride history and personal bests** — a calendar of every past ride, plus your all-time best output, cadence, and duration
-- **Export your ride data** — download any ride as a file (FIT, TCX, or CSV) to keep or use elsewhere, so your data is always yours
+- **Export your ride data** — download any ride as a file (TCX or CSV) to keep or use elsewhere, so your data is always yours
 - **Heart-rate strap and Bluetooth headphone support** — pair a heart-rate monitor, and headphone audio just works once paired
 
 <p align="center">
@@ -131,7 +131,7 @@ The rest of this section is technical detail for anyone contributing to the code
 
 - Kotlin + Jetpack Compose, single-activity, `minSdk 30` (the tablet's Android 11), package `dev.digitalducktape.openride`
 - Sensor access sits behind a `BikeDataSource` abstraction with a `MockBikeDataSource` (simulated ride) so all UI/logic development runs in a standard emulator; only the real system-service binding needs the physical bike
-- Room database: `Profile` / `Ride` / `RideSample` (per-second samples — required for FIT/TCX export)
+- Room database: `Profile` / `Ride` / `RideSample` (per-second samples — required for TCX export)
 - Content browser fetches per-channel YouTube RSS (`/feeds/videos.xml?channel_id=…`) on-device: no API key, no quota, no backend
 - Mini-games are a Godot 4.7.2 project in `games/`, embedded through `GameHostActivity` and the `OpenRideBridge` plugin; APK builds export it, so they need `GODOT_BIN` pointing at the Godot editor (unit tests don't) — see [docs/GAMES.md](docs/GAMES.md)
 
