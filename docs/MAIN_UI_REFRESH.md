@@ -161,7 +161,7 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | 3 | Home: `HomeUiState`, `HomeRoute`/`HomeScreen` split, `collectAsStateWithLifecycle`, new two-column layout on the components | low | **done** |
 | 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
 | 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | Profile tab **done**; the other four next |
-| 6 | History, Classes, Creator, Ride summary | medium | |
+| 6 | History, Classes, Creator, Ride summary; the goal dialog, `GameBadge`, `ProfileAvatar`; shared browse components in `OrBrowse.kt` | medium | **done** (branch `ui-browse-screens`); call sites still use the forwarding `…Screen(viewModel)` overloads |
 | 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | |
 | 8 | Type-safe navigation routes; optionally `:core:designsystem` as a module; Roborazzi screenshots | medium | |
 
@@ -195,6 +195,27 @@ Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
 - **Not touched:** the games host's XML window colours (`res/values/themes.xml`) and its native
   loading screen belong to the games and keep the old near-black; the Godot hub is out of scope.
   Room, BLE and sensor code are untouched.
+- **Phase 6 (History, Classes, Creator, Ride summary).** Each screen has a `…Route` that owns
+  the view model and a stateless `…Screen(uiState, …)` with a `@BikePreview`. `MainScaffold`
+  and `OpenRideNavHost` were not touched, so each file keeps a `…Screen(viewModel, …)` overload
+  that forwards to its Route; switch the call sites to the Routes and delete the overloads.
+  Pure state mapping is tested: `ClassesScreenState` (loading / shelves / grid / empty, filtered
+  or not, refresh-failed banner), `PlaylistShelf` (a creator's lazy playlist shelves),
+  `HistoryLabels` and `CalendarGrid`, `RideSummaryUiState`, and `GoalForm` (the goal dialog).
+- **Browse components** live in `designsystem/component/OrBrowse.kt`: `OrScreenHeader` (Back +
+  title, for flows outside the tabs), `OrShelfHeader`, `OrStat` / `OrStatBand`, `OrListRow`,
+  `OrLoading` / `OrSpinner`, `OrEmptyState`, `OrStarRating`, `OrOverlayBadge`, `OrDropdownChip`
+  (a Material `DropdownMenu` on Or tokens), `OrFormDialog`, `OrRadioRow`, `OrTextField`, and
+  `OrIconButton`.
+- **History fits without scrolling:** the lifetime and personal-records bands share one row
+  across the top, so the calendar (32 dp days, 44 dp month buttons) fits beside the ride list,
+  and the ride list is the only thing that scrolls.
+- **Stars are icons.** `OrStarRating` draws `OrIcons.Games` (Material's filled star), because
+  `OrIcons` has no `Star` yet; the tablet's font has no ★/☆. Unearned stars are `Outline` on
+  `Surface`: decorative, since the count is also in the content description.
+- **Thumbnail badges are solid `Surface` pills,** not translucent, so their text uses pairs that
+  are already checked (text and success on surface) and never depends on the picture under it.
+- **The graph's axis labels** are 16 sp (`OrType.Caption`), up from 11 dp.
 - **Compose UI tests** need `ui-test-junit4` and `ui-test-manifest`; they were left out tonight
   to keep the build small. New logic was pulled into pure functions (`HomeUiState`,
   `ProfileTabLabels`, `TopLevelDestination`, the token and contrast checks) and tested there.
