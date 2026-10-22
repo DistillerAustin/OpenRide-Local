@@ -29,7 +29,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.viewModelFactory
-import dev.digitalducktape.openride.ui.classes.ClassesScreen
+import dev.digitalducktape.openride.ui.classes.ClassesRoute
 import dev.digitalducktape.openride.core.sensor.offlineFor
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
@@ -39,7 +39,7 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrTopBar
 import dev.digitalducktape.openride.ui.classes.ClassesViewModel
 import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
 import dev.digitalducktape.openride.ui.games.launchGames
-import dev.digitalducktape.openride.ui.history.HistoryScreen
+import dev.digitalducktape.openride.ui.history.HistoryRoute
 import dev.digitalducktape.openride.ui.history.HistoryViewModel
 import dev.digitalducktape.openride.ui.home.HomeRoute
 import dev.digitalducktape.openride.ui.home.HomeViewModel
@@ -192,7 +192,7 @@ fun MainScaffold(
                 )
             }
             composable(MainTabs.Classes) {
-                ClassesScreen(
+                ClassesRoute(
                     viewModel = classesViewModel,
                     onStartVideoRide = { videoId ->
                         outerNavController.navigate(Destinations.videoRide(videoId))
@@ -208,7 +208,7 @@ fun MainScaffold(
                 GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
             }
             composable(MainTabs.History) {
-                HistoryScreen(
+                HistoryRoute(
                     viewModel = historyViewModel,
                     onRideSelected = { rideId ->
                         outerNavController.navigate(Destinations.rideSummary(rideId))

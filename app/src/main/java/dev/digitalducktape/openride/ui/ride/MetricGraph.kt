@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,12 +14,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import dev.digitalducktape.openride.ui.common.TimeFormat
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrType
 
 /**
  * Metric-over-time line graph for the ride detail screen (v2 metrics spec, after the
  * original bike UI's per-ride chart): horizontal gridlines with value labels on the right,
- * minute labels along the bottom, and the series drawn in the accent color. Plain [Canvas],
+ * minute labels along the bottom, and the series drawn in the rider's accent ([OrColors]). Plain [Canvas],
  * no charting library. [points] are (tSec, value) pairs ordered by tSec — exactly what
  * [RideMetricStats.points] produces.
  */
@@ -30,8 +30,8 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
         Box(modifier = modifier.fillMaxWidth().heightIn(min = GraphMinHeight), contentAlignment = Alignment.Center) {
             Text(
                 text = "Not enough data for a graph",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = OrType.Body,
+                color = OrColors.OnSurfaceMuted,
             )
         }
         return
@@ -40,9 +40,9 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
     val maxValue = niceCeiling(points.maxOf { it.second })
     val minTSec = points.first().first
     val maxTSec = points.last().first.coerceAtLeast(minTSec + 1)
-    val lineColor = OpenRideColors.Accent
-    val gridColor = OpenRideColors.Divider
-    val labelColor = OpenRideColors.OnSurfaceVariant
+    val lineColor = OrColors.Accent
+    val gridColor = OrColors.Divider
+    val labelColor = OrColors.OnSurfaceMuted
 
     Canvas(modifier = modifier.fillMaxWidth().heightIn(min = GraphMinHeight)) {
         val labelPaint = android.graphics.Paint().apply {
@@ -52,10 +52,11 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
                 (labelColor.green * 255).toInt(),
                 (labelColor.blue * 255).toInt(),
             )
-            textSize = 11.dp.toPx()
+            // Axis labels at the caption size (16 sp, the floor for any text; §0 rule 3).
+            textSize = OrType.Caption.fontSize.toPx()
             isAntiAlias = true
         }
-        val bottomInset = 18.dp.toPx()
+        val bottomInset = OrType.Caption.lineHeight.toPx()
         val width = size.width
         val plotHeight = size.height - bottomInset
 
@@ -100,7 +101,7 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
                 lineTo(xFor(tSec), yFor(value))
             }
         }
-        drawPath(path = path, color = lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
+        drawPath(path = path, color = lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
@@ -108,7 +109,7 @@ fun MetricGraph(points: List<Pair<Int, Int>>, modifier: Modifier = Modifier) {
 private val GraphMinHeight = 160.dp
 
 /** Rounds up to a friendly axis maximum (e.g. 437 → 500), so gridline labels stay clean. */
-private fun niceCeiling(value: Int): Int {
+internal fun niceCeiling(value: Int): Int {
     if (value <= 0) return 4
     val candidates = sequenceOf(4, 8, 20, 40, 80, 100, 120, 160, 200, 240, 300, 400, 500, 600, 800, 1000)
     candidates.firstOrNull { it >= value }?.let { return it }

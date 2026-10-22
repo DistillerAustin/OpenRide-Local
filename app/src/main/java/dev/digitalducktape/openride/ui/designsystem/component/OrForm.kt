@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -177,12 +178,12 @@ fun OrSwatch(
  * removed when it ends, so it is never an idle animation (§0 rule 4).
  */
 @Composable
-fun OrSpinner(modifier: Modifier = Modifier) {
+fun OrSpinner(modifier: Modifier = Modifier, size: Dp = OrSize.IconInline + OrSpacing.sm) {
     CircularProgressIndicator(
         color = OrColors.Accent,
         trackColor = Color.Transparent,
         strokeWidth = OrSpacing.xs,
-        modifier = modifier.size(OrSize.IconInline + OrSpacing.sm),
+        modifier = modifier.size(size),
     )
 }
 

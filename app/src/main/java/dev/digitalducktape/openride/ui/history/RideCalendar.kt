@@ -1,32 +1,39 @@
 package dev.digitalducktape.openride.ui.history
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
+import dev.digitalducktape.openride.ui.designsystem.ComponentPreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrIcons
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrIconButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 /**
- * Month calendar with ride days marked (v2 metrics spec, after the profile overview's
- * activity calendar): Monday-first grid, accent-filled circles on days with a ride, an
- * outline on today, ‹ › month navigation in the header.
+ * Month calendar with ride days marked (v2 metrics spec): a Monday-first grid ([CalendarGrid]),
+ * accent-filled circles on days with a ride, an accent ring on today, and previous/next month
+ * buttons at the touch minimum in the header.
  */
 @Composable
 fun RideCalendar(
@@ -37,53 +44,33 @@ fun RideCalendar(
     today: LocalDate = LocalDate.now(),
 ) {
     Column(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "‹",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clickable { onMonthChange(month.minusMonths(1)) }
-                    .padding(horizontal = 16.dp),
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OrIconButton(
+                icon = OrIcons.Chevron,
+                contentDescription = "Previous month",
+                onClick = { onMonthChange(month.minusMonths(1)) },
+                iconModifier = Modifier.rotate(180f),
             )
-            Text(
-                text = month.format(MonthFormatter),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = "›",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clickable { onMonthChange(month.plusMonths(1)) }
-                    .padding(horizontal = 16.dp),
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                OrLabel(text = month.format(MonthFormatter), style = OrType.Subtitle, color = OrColors.OnBackground)
+            }
+            OrIconButton(
+                icon = OrIcons.Chevron,
+                contentDescription = "Next month",
+                onClick = { onMonthChange(month.plusMonths(1)) },
             )
         }
 
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.sm)) {
             for (label in DayLabels) {
-                Text(
-                    text = label,
-                    style = MetricTextStyles.UnitLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    OrEyebrow(text = label)
+                }
             }
         }
 
-        // Monday-first leading blanks, then the month's days in 7-column rows.
-        val leadingBlanks = month.atDay(1).dayOfWeek.value - 1
-        val cells: List<LocalDate?> =
-            List(leadingBlanks) { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
-        cells.chunked(7).forEach { week ->
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        CalendarGrid.weeks(month).forEach { week ->
+            Row(modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.xs)) {
                 week.forEach { day ->
                     DayCell(
                         day = day,
@@ -92,41 +79,51 @@ fun RideCalendar(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                repeat(7 - week.size) {
-                    Box(modifier = Modifier.weight(1f))
-                }
             }
         }
     }
 }
 
 private val MonthFormatter = DateTimeFormatter.ofPattern("MMMM yyyy")
-private val DayLabels = listOf("MO", "TU", "WE", "TH", "FR", "SA", "SU")
+private val DayLabels = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+private val DaySize = 32.dp
 
 @Composable
 private fun DayCell(day: LocalDate?, hasRide: Boolean, isToday: Boolean, modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.height(DaySize), contentAlignment = Alignment.Center) {
         if (day != null) {
+            val ring = if (isToday && !hasRide) Modifier.border(2.dp, OrColors.Accent, CircleShape) else Modifier
             Box(
                 modifier = Modifier
-                    .size(34.dp)
-                    .background(
-                        color = if (hasRide) OpenRideColors.Accent else androidx.compose.ui.graphics.Color.Transparent,
-                        shape = CircleShape,
-                    ),
+                    .size(DaySize)
+                    .background(color = if (hasRide) OrColors.Accent else Color.Transparent, shape = CircleShape)
+                    .then(ring),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
+                OrLabel(
                     text = "${day.dayOfMonth}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (hasRide || isToday) FontWeight.Bold else FontWeight.Normal,
+                    style = if (hasRide || isToday) OrType.Caption.copy(fontWeight = FontWeight.Bold) else OrType.Caption,
                     color = when {
-                        hasRide -> OpenRideColors.OnAccent
-                        isToday -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        hasRide -> OrColors.OnAccent
+                        isToday -> OrColors.Accent
+                        else -> OrColors.OnSurfaceMuted
                     },
                 )
             }
         }
+    }
+}
+
+@ComponentPreview
+@Composable
+private fun RideCalendarPreview() {
+    OpenRideTheme {
+        RideCalendar(
+            month = YearMonth.of(2026, 10),
+            rideDates = setOf(LocalDate.of(2026, 10, 3), LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 20)),
+            onMonthChange = {},
+            today = LocalDate.of(2026, 10, 21),
+            modifier = Modifier.size(width = 560.dp, height = 340.dp).padding(OrSpacing.md),
+        )
     }
 }

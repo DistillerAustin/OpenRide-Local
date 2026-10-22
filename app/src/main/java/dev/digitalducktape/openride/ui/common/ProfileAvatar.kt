@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,6 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import coil.compose.AsyncImage
 import dev.digitalducktape.openride.core.data.Profile
+import dev.digitalducktape.openride.ui.designsystem.OrColors
 import java.io.File
 
 /**
@@ -33,7 +33,7 @@ fun ProfileAvatar(
 ) {
     ProfileAvatar(
         photoPath = profile?.avatarPhotoPath,
-        color = profile?.let { Color(it.avatarColor) } ?: MaterialTheme.colorScheme.surfaceVariant,
+        color = profile?.let { Color(it.avatarColor) } ?: OrColors.SurfaceRaised,
         emoji = profile?.avatarEmoji ?: "👤",
         size = size,
         emojiSize = emojiSize,

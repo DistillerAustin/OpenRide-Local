@@ -16,7 +16,7 @@ import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.BuildConfig
 import dev.digitalducktape.openride.games.session.VisitDestination
 import dev.digitalducktape.openride.viewModelFactory
-import dev.digitalducktape.openride.ui.creator.CreatorScreen
+import dev.digitalducktape.openride.ui.creator.CreatorRoute
 import dev.digitalducktape.openride.ui.creator.CreatorViewModel
 import dev.digitalducktape.openride.ui.sources.ContentSourcesRoute
 import dev.digitalducktape.openride.ui.sources.ContentSourcesViewModel
@@ -32,7 +32,7 @@ import dev.digitalducktape.openride.ui.profile.HrPairingViewModel
 import dev.digitalducktape.openride.ui.ride.InRideScreen
 import dev.digitalducktape.openride.ui.ride.InRideViewModel
 import dev.digitalducktape.openride.ui.ride.VideoRideScreen
-import dev.digitalducktape.openride.ui.ride.RideSummaryScreen
+import dev.digitalducktape.openride.ui.ride.RideSummaryRoute
 import dev.digitalducktape.openride.ui.ride.RideSummaryViewModel
 
 /**
@@ -242,7 +242,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            CreatorScreen(
+            CreatorRoute(
                 viewModel = viewModel,
                 onStartVideoRide = { videoId ->
                     navController.navigate(Destinations.videoRide(videoId))
@@ -267,7 +267,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            RideSummaryScreen(
+            RideSummaryRoute(
                 viewModel = viewModel,
                 onDismiss = { navController.popBackStack() },
             )
