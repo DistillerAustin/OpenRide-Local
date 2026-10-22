@@ -42,7 +42,7 @@ func _run() -> void:
 	HubPrefs.forget_rider("1")
 	_session = root.get_node("Session")
 	_local = _session._local
-	_local.hub.rider.name = "Edward"
+	_local.hub.rider.name = "Alex"
 	_local.hub.rider.ftp_is_default = false
 	change_scene_to_file("res://hub/Hub.tscn")
 	await process_frame

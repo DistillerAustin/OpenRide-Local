@@ -9,7 +9,7 @@ OpenRide is a free, independent workout app for the Peloton Bike (Gen 2) and Bik
 It's installed using a free tool called [OpenPelo](https://github.com/doudar/Openpelo), which lets you add apps to the bike's tablet. This doesn't require rooting the device or unlocking anything permanently.
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="32%" alt="Home screen with Quick Start" />
+  <img src="docs/screenshots/home.png" width="32%" alt="Home: Quick start and the Games tile, tabs along the bottom" />
   <img src="docs/screenshots/live_ride.png" width="32%" alt="Live ride metrics" />
   <img src="docs/screenshots/classes.png" width="32%" alt="Classes catalog" />
 </p>
@@ -48,7 +48,7 @@ Workouts that play like games. Tap **Enter Games** (the **Games** tab, or the *G
 
 <p align="center">
   <img src="docs/screenshots/games_hub.png" width="49%" alt="The Games hub: games and circuits to pick from" />
-  <img src="docs/screenshots/circuit_progress.png" width="49%" alt="A game circuit, with its progress strip along the top" />
+  <img src="docs/screenshots/circuit_progress.png" width="49%" alt="A 30-minute circuit: its warm-up, work and recovery segments, ready to start" />
 </p>
 
 ### The games
@@ -60,6 +60,10 @@ Workouts that play like games. Tap **Enter Games** (the **Games** tab, or the *G
 <p align="center">
   <img src="docs/screenshots/game_safe_cracker.png" width="49%" alt="Safe Cracker: a dial to turn with the resistance knob" />
   <img src="docs/screenshots/game_cadence_karaoke.png" width="49%" alt="Cadence Karaoke: keep the ball in the box by holding a target cadence" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/game_kart_race.png" width="49%" alt="Kart Race: racing along a harbour at sunset, fourth of eight" />
+  <img src="docs/screenshots/game_kart_race_options.png" width="49%" alt="Kart Race in the hub: pick your kart and starting track" />
 </p>
 
 | Game | How it plays |
