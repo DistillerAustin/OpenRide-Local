@@ -160,7 +160,7 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | 2 | Shell: `TopLevelDestination` model, `OrTopBar` and `OrNavBar` (a rail first, then the bottom bar the rider chose) | low–medium | **done** |
 | 3 | Home: `HomeUiState`, `HomeRoute`/`HomeScreen` split, `collectAsStateWithLifecycle`, new two-column layout on the components | low | **done** |
 | 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
-| 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | Profile tab **done**; the other four next |
+| 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | **done** (5a Profile tab; 5b the other four, branch `ui-settings-screens`) |
 | 6 | History, Classes, Creator, Ride summary | medium | |
 | 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | |
 | 8 | Type-safe navigation routes; optionally `:core:designsystem` as a module; Roborazzi screenshots | medium | |
@@ -174,7 +174,7 @@ checks are Compose previews on the dev machine and, for phases 2, 3 and 7, a rid
 
 ## 5. Implementation notes
 
-Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
+Decisions taken while building phases 1–5, for whoever picks up phase 6:
 
 - **Two type systems for a while.** `MaterialTheme.typography` is still Material's default, so
   screens not yet rebuilt keep the layouts they were tuned for. Rebuilt screens use `OrType`.
@@ -195,6 +195,22 @@ Decisions taken while building phases 1–5a, for whoever picks up phase 5b:
 - **Not touched:** the games host's XML window colours (`res/values/themes.xml`) and its native
   loading screen belong to the games and keep the old near-black; the Godot hub is out of scope.
   Room, BLE and sensor code are untouched.
+- **Settings flows (phase 5b).** Profile editor, HR pairing, App updates and Content sources are
+  full-screen outer destinations, so each draws its own `OrTopBar` (title, then Cancel/Save or
+  Done as its actions) over two tiles that fit 1280 × 672 dp without scrolling; only the release
+  notes and the source and strap lists scroll. Each is a `…Route` (ViewModel, launchers,
+  permissions, coroutines) and a stateless `…Screen` with a `@BikePreview`; `OpenRideNavHost`
+  calls the Routes. View models are untouched; the derived text and button visibility live in
+  `ProfileEditorLabels`, `HrPairingLabels` (with the permission prompt per `BlePermissionState`),
+  `UpdateLabels` and `ContentSourcesUiState` / `ContentSourceLabels`, all unit-tested.
+- **Form controls** are in `component/OrForm.kt`: `OrTextField` (Material's outlined field on
+  `SurfaceRaised`, accent focus, errors in `Warning` on a line that is always reserved),
+  `OrSwitch`, `OrSwatch` (44 dp round picker, ring inside) and `OrSpinner`. The spinner only
+  shows while a look-up, scan or download is in flight, so it is never an idle animation. The
+  text selection highlight is the accent at 30 %: at 40 % white text on it fell to 4.4 : 1.
+- **The profile editor previews the rider's colour.** It provides `riderAccent` of the colour
+  being picked, so Save and the focused field change with the swatch, as the app will once that
+  rider is active. Save and Cancel stay in the top bar, above the on-screen keyboard.
 - **Compose UI tests** need `ui-test-junit4` and `ui-test-manifest`; they were left out tonight
   to keep the build small. New logic was pulled into pure functions (`HomeUiState`,
   `ProfileTabLabels`, `TopLevelDestination`, the token and contrast checks) and tested there.
