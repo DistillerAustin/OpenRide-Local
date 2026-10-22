@@ -31,13 +31,21 @@ class BridgeMessagesTest {
 
         val json = parse(BridgeMessages.encode(plan))
 
-        assertEquals(setOf("kind", "plan_id", "difficulty", "total_sec", "segments", "rider_id"), json.keys)
+        assertEquals(setOf("kind", "plan_id", "difficulty", "total_sec", "segments", "rider_id", "rider_name"), json.keys)
         assertEquals("just_ride", json["kind"]!!.jsonPrimitive.content)
         assertEquals("standard", json["difficulty"]!!.jsonPrimitive.content)
         val segment = json["segments"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("game_id", "role", "duration_sec"), segment.keys)
         assertEquals("free", segment["role"]!!.jsonPrimitive.content)
         assertEquals(-1, segment["duration_sec"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `the rider's name is an optional plan key`() {
+        val plan = SessionPlanMessage(SessionKind.JUST_RIDE, "p", Difficulty.STANDARD, -1, emptyList(), riderId = 3L, riderName = "Ed")
+
+        assertEquals("Ed", parse(BridgeMessages.encode(plan))["rider_name"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, parse(BridgeMessages.encode(plan.copy(riderName = null)))["rider_name"])
     }
 
     @Test
@@ -163,5 +171,203 @@ class BridgeMessagesTest {
         assertEquals(CalibrationMode.LEAN_X, CalibrationMode.fromWire("lean_x"))
         assertEquals(CalibrationMode.LEAN_2D, CalibrationMode.fromWire("lean_2d"))
         assertNull(CalibrationMode.fromWire("off"))
+    }
+
+    // --- v1.1: the Games hub ----------------------------------------------------------------
+
+    @Test
+    fun `a result's variant is parsed`() {
+        val result = BridgeMessages.parseResult("""{"game_id":"dodge_ball","score":10,"stars":1,"variant":"catch"}""")!!
+
+        assertEquals("catch", result.variant)
+        assertEquals("", BridgeMessages.parseResult("""{"game_id":"dodge_ball"}""")!!.variant)
+        assertEquals("", BridgeMessages.parseResult("""{"game_id":"dodge_ball","variant":null}""")!!.variant)
+    }
+
+    @Test
+    fun `visit keys on session_started appear only in a visit`() {
+        val plan = SessionPlanMessage(SessionKind.JUST_RIDE, "p", Difficulty.STANDARD, 70, emptyList())
+        val visit = plan.copy(visitId = "v-1", planIndex = 2, calibrated = "lean_x")
+
+        val json = parse(BridgeMessages.encode(visit))
+
+        assertEquals("v-1", json["visit_id"]!!.jsonPrimitive.content)
+        assertEquals(2, json["plan_index"]!!.jsonPrimitive.content.toInt())
+        assertEquals("lean_x", json["calibrated"]!!.jsonPrimitive.content)
+        assertFalse("visit_id" in parse(BridgeMessages.encode(plan)).keys)
+    }
+
+    @Test
+    fun `visit keys on session_finished appear only in a visit`() {
+        val summary = SessionSummary(null, emptyList(), SessionTotals(0.0, 0, 0, 0), JsonObject(emptyMap()))
+        val visit = summary.copy(visitId = "v-1", planIndex = 0, planId = "circuit-20", difficulty = Difficulty.HARD)
+
+        val json = parse(BridgeMessages.encode(visit))
+
+        assertEquals(
+            setOf("ride_id", "results", "totals", "bests", "visit_id", "plan_index", "plan_id", "difficulty"),
+            json.keys,
+        )
+        assertEquals("hard", json["difficulty"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, json["ride_id"])
+    }
+
+    private fun hubState() = HubStateMessage(
+        visitId = "v-1760890000000",
+        phase = HubPhase.HUB,
+        rider = HubRider(id = 3, name = "Ed", avatarPng = "/cache/games/avatar_3.png", avatarColor = "#4F7CFF", ftpWatts = 150, ftpIsDefault = true),
+        settings = HubSettings(cameraGames = true, music = "auto", musicVolume = 0.8, sfxVolume = 1.0),
+        audio = AudioSettings(music = true, musicVolume = 0.8, sfxVolume = 1.0),
+        camera = HubCamera(permission = CameraPermission.GRANTED, available = true, calibrated = "lean_x", sameDayExtremes = true),
+        catalog = listOf(
+            HubCatalogGame(
+                id = "kart_race", title = "Kart Race", supports = listOf("minutes", "open"), minSec = 300, maxSec = 3600,
+                minRounds = 1, maxRounds = 10, roundSec = 60, roles = emptyList(), usesCamera = true,
+                minuteSteps = listOf(5, 10, 15, 20, 30, 45, 60), circuitRole = SegmentRole.FREE,
+            ),
+        ),
+        circuits = listOf(HubCircuit("circuit-20", 20, 1120, listOf(HubCircuitSlot("cadence_karaoke", SegmentRole.WARMUP, 180)))),
+        bests = HubBests(
+            games = listOf(HubGameBest("dodge_ball", "just-ride:dodge_ball:minutes:20", Difficulty.STANDARD, "", 5400.0, 2, 4)),
+            plans = listOf(HubPlanBest("circuit-20", Difficulty.STANDARD, 9100.0, 21)),
+        ),
+        visit = HubVisit(
+            recording = true, rideSec = 754, gameplaySec = 690,
+            plans = listOf(HubVisitPlan("just-ride:kart_race:minutes:10", Difficulty.STANDARD, 812.0, 2, listOf("kart_race"))),
+        ),
+    )
+
+    @Test
+    fun `hub_state uses the contract keys at every level`() {
+        val json = parse(BridgeMessages.encode(hubState()))
+
+        assertEquals(
+            setOf("hub_version", "visit_id", "phase", "rider", "settings", "audio", "camera", "catalog", "circuits", "bests", "visit"),
+            json.keys,
+        )
+        assertEquals(1, json["hub_version"]!!.jsonPrimitive.content.toInt())
+        assertEquals("hub", json["phase"]!!.jsonPrimitive.content)
+        assertEquals(
+            setOf("id", "name", "avatar_png", "avatar_color", "ftp_watts", "ftp_is_default"),
+            json["rider"]!!.jsonObject.keys,
+        )
+        assertEquals(setOf("camera_games", "music", "music_volume", "sfx_volume"), json["settings"]!!.jsonObject.keys)
+        assertEquals(setOf("music", "music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
+        val camera = json["camera"]!!.jsonObject
+        assertEquals(setOf("permission", "available", "calibrated", "same_day_extremes"), camera.keys)
+        assertEquals("granted", camera["permission"]!!.jsonPrimitive.content)
+        val game = json["catalog"]!!.jsonArray.single().jsonObject
+        assertEquals(
+            setOf(
+                "id", "title", "supports", "min_sec", "max_sec", "min_rounds", "max_rounds", "round_sec", "roles",
+                "uses_camera", "minute_steps", "circuit_role",
+            ),
+            game.keys,
+        )
+        assertEquals("free", game["circuit_role"]!!.jsonPrimitive.content)
+        val circuit = json["circuits"]!!.jsonArray.single().jsonObject
+        assertEquals(setOf("id", "minutes", "total_sec", "slots"), circuit.keys)
+        assertEquals(setOf("game_id", "role", "duration_sec"), circuit["slots"]!!.jsonArray.single().jsonObject.keys)
+        val bests = json["bests"]!!.jsonObject
+        assertEquals(
+            setOf("game_id", "plan_id", "difficulty", "variant", "score", "stars", "plays"),
+            bests["games"]!!.jsonArray.single().jsonObject.keys,
+        )
+        assertEquals(setOf("plan_id", "difficulty", "score", "stars"), bests["plans"]!!.jsonArray.single().jsonObject.keys)
+        val visit = json["visit"]!!.jsonObject
+        assertEquals(setOf("recording", "ride_sec", "gameplay_sec", "plans"), visit.keys)
+        assertEquals(
+            setOf("plan_id", "difficulty", "score", "stars", "game_ids"),
+            visit["plans"]!!.jsonArray.single().jsonObject.keys,
+        )
+    }
+
+    @Test
+    fun `hub_state round-trips, and a guest rider has a null id`() {
+        val state = hubState().copy(rider = HubRider(null, "", null, "#808080", 150, true))
+
+        assertEquals(state, BridgeMessages.decodeHubState(BridgeMessages.encode(state)))
+        assertEquals(JsonNull, parse(BridgeMessages.encode(state))["rider"]!!.jsonObject["id"])
+    }
+
+    @Test
+    fun `plan_rejected carries the request as sent and the reason word`() {
+        val request = buildJsonObject { put("kind", "just_ride"); put("game_id", "nope") }
+        val message = PlanRejectedMessage(request, PlanRejectReason.UNKNOWN_GAME)
+
+        val json = parse(BridgeMessages.encode(message))
+
+        assertEquals(setOf("request", "reason"), json.keys)
+        assertEquals(request, json["request"])
+        assertEquals("unknown_game", json["reason"]!!.jsonPrimitive.content)
+        assertEquals(
+            listOf("unknown_game", "unsupported_mode", "camera_unavailable", "busy", "empty_circuit", "too_long"),
+            PlanRejectReason.entries.map { parse(BridgeMessages.encode(PlanRejectedMessage(request, it)))["reason"]!!.jsonPrimitive.content },
+        )
+        assertEquals(message, BridgeMessages.decodePlanRejected(BridgeMessages.encode(message)))
+    }
+
+    @Test
+    fun `visit_ended uses the contract keys`() {
+        val message = VisitEndedMessage(visitId = "v-1", rideId = 42, saved = true, discardedReason = "", next = "app", reason = "exit")
+
+        val json = parse(BridgeMessages.encode(message))
+
+        assertEquals(setOf("visit_id", "ride_id", "saved", "discarded_reason", "next", "reason"), json.keys)
+        assertEquals(42, json["ride_id"]!!.jsonPrimitive.content.toInt())
+        assertEquals(message, BridgeMessages.decodeVisitEnded(BridgeMessages.encode(message)))
+        assertEquals(JsonNull, parse(BridgeMessages.encode(message.copy(rideId = null)))["ride_id"])
+    }
+
+    @Test
+    fun `plan requests parse every kind, with GDScript floats as ints`() {
+        assertEquals(
+            PlanRequestMessage(kind = PlanRequestKind.JUST_RIDE, gameId = "kart_race", mode = "minutes", length = 10, difficulty = Difficulty.STANDARD),
+            BridgeMessages.parsePlanRequest("""{"kind":"just_ride","game_id":"kart_race","mode":"minutes","length":10.0,"difficulty":"standard"}"""),
+        )
+        assertEquals(
+            PlanRequestMessage(kind = PlanRequestKind.CIRCUIT, presetId = "circuit-30", difficulty = Difficulty.HARD),
+            BridgeMessages.parsePlanRequest("""{"kind":"circuit","preset_id":"circuit-30","difficulty":"hard"}"""),
+        )
+        assertEquals(
+            PlanRequestMessage(
+                kind = PlanRequestKind.CUSTOM,
+                difficulty = Difficulty.EASY,
+                slots = listOf(PlanRequestSlot("cadence_karaoke", 180), PlanRequestSlot("kart_race", 600)),
+            ),
+            BridgeMessages.parsePlanRequest(
+                """{"kind":"custom","difficulty":"easy","slots":[{"game_id":"cadence_karaoke","duration_sec":180.0},{"game_id":"kart_race","duration_sec":600}]}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `plan requests ignore unknown keys and default what's missing`() {
+        val request = BridgeMessages.parsePlanRequest("""{"kind":"just_ride","game_id":"dodge_ball","mode":"open","future":1}""")!!
+
+        assertEquals(Difficulty.STANDARD, request.difficulty)
+        assertEquals(0, request.length)
+        assertEquals(emptyList<PlanRequestSlot>(), request.slots)
+        assertEquals("", request.presetId)
+    }
+
+    @Test
+    fun `unreadable plan requests parse to null`() {
+        assertNull(BridgeMessages.parsePlanRequest("nope"))
+        assertNull(BridgeMessages.parsePlanRequest("""{"game_id":"x"}"""))
+        assertNull(BridgeMessages.parsePlanRequest("""{"kind":"teleport"}"""))
+    }
+
+    @Test
+    fun `settings updates parse by key, and anything else is null`() {
+        assertEquals(SettingUpdate.CameraGames(false), BridgeMessages.parseSetting("camera_games", "false"))
+        assertEquals(SettingUpdate.Music("off"), BridgeMessages.parseSetting("music", "\"off\""))
+        assertEquals(SettingUpdate.MusicVolume(0.5), BridgeMessages.parseSetting("music_volume", "0.5"))
+        assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "1"))
+        assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "7.0")) // clamped
+        assertNull(BridgeMessages.parseSetting("music", "\"loud\""))
+        assertNull(BridgeMessages.parseSetting("camera_games", "\"yes\""))
+        assertNull(BridgeMessages.parseSetting("brightness", "1"))
+        assertNull(BridgeMessages.parseSetting("music_volume", "not json"))
     }
 }

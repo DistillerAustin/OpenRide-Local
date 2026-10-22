@@ -4,13 +4,18 @@ extends Node3D
 ## game scene (`DodgeBall.gd`) feeds it each frame. Built in code for GL Compatibility on the
 ## Gen 2 tablet (PowerVR GX6250), so every choice here is about draw calls and fill rate:
 ##
-##   - One sun (no shadows) and colour ambient light; night lighting (headlight, street lamps)
-##     is emission in the road shader, not real lights (each is an extra pass in Compatibility).
-##   - The road and verges are single planes whose shaders scroll with distance travelled.
+##   - One hand light (framework/shaders/world_look.gdshaderinc, Dodge's grade in
+##     shaders/look.gdshaderinc): the road, verges, scenery, horizon, sky and handlebars are
+##     unshaded and light, haze and grade themselves from one look (`set_time_of_day`). Night
+##     lighting (headlight, street lamps) is added light in the shaders, not real lights (each
+##     is an extra pass in Compatibility). Only the balls take the engine sun.
+##   - The road and verges are single planes whose shaders scroll with distance travelled; a
+##     far ring of hills and a tree line (one mesh) closes the view.
 ##   - Scenery comes in three 50 m chunks that leapfrog forward as they pass the bike, each a few
 ##     MultiMeshes (one draw call per model per chunk), so nothing moves per instance.
 ##   - Balls, their shadows and their warnings are three MultiMeshes, updated per frame.
-##   - Feedback uses pooled CPUParticles3D and Label3D; screen effects are one canvas shader.
+##   - Bursts and sparks are one pooled MultiMesh of streaks moved by its vertex shader;
+##     popups are pooled Label3D; screen effects are one canvas shader.
 ##
 ## Comfort on a stationary bike: the view only moves sideways with the rider's own lean, rolls
 ## a few degrees at most (and not at all when the rider turns it off), and the hit shake is a
@@ -19,6 +24,7 @@ extends Node3D
 const DodgeTimeOfDayRes := preload("res://games/dodge_ball/TimeOfDay.gd")
 
 const RIDER_LINE_Z := -1.4  ## where balls reach the bike (just ahead of the camera)
+const POPUP_INK := Color("0e1b3d")  ## the floating points' outline: Dodge Ball's ink (DodgeStatus.look)
 const EYE_HEIGHT := 1.45
 const CAMERA_PITCH := -7.0
 const ROLL_MAX_DEG := 3.0
@@ -39,6 +45,15 @@ const BALLS_MAX := 32
 const BOUNCE_PERIOD := 0.55
 const BOUNCE_HEIGHT := 0.7
 const GHOST_SEC := 0.6
+const BARK := Color(0.42, 0.29, 0.19)
+const TREE_SWAY := 0.0016  ## m of sway per m² of height (a 7 m tree's crown moves about 8 cm)
+const BUSH_SWAY := 0.012
+const FENCE_OFFSET := 4.5  ## m from the kerb to the fence line
+const FENCE_SPACING := 3.125  ## m between posts; the fence's scroll wraps at this
+const FENCE_LEN := 175.0  ## m of fence ahead of the bike (past the far plane, 170)
+const FX_POOL := 64  ## streaks and chunks alive at once (a hit writes 24; ART_BIBLE §9)
+const HORIZON_HILLS := 155.0  ## m to the hills (inside the far plane, 170)
+const HORIZON_TREES := 125.0  ## m to the distant tree line
 
 ## Dodge: danger reds. Catch: reward golds, so the mode is unmistakable at a glance.
 const BALL_COLORS := {
@@ -80,12 +95,19 @@ var _blob_mm: MultiMesh
 var _warn_mm: MultiMesh
 var _chunks: Array[Node3D] = []
 var _halo_mat: StandardMaterial3D
-var _bursts: Array[CPUParticles3D] = []
-var _sparks: Array[CPUParticles3D] = []
+var _scenery_mats := {}  ## the hand-lit scenery materials by surface colour, shared by every chunk
+var _horizon: MeshInstance3D
+var _fence: MeshInstance3D
+var _fx_until := 0.0  ## _anim_t when the last live FX instance dies (the pool is hidden after)
+var _bars_mat: ShaderMaterial
+var _blob_mats: Array[ShaderMaterial] = []
+var _fx_mm: MultiMesh
+var _fx_mat: ShaderMaterial
+var _fx_mmi: MultiMeshInstance3D
+var _fx_next := 0
+var _fx_rng := RandomNumberGenerator.new()
 var _shards: CPUParticles3D
 var _popups: Array[Label3D] = []
-var _next_burst := 0
-var _next_spark := 0
 var _next_popup := 0
 var _roll := 0.0
 var _shield_flash := 0.0
@@ -105,6 +127,7 @@ func _ready() -> void:
 	_noise = _noise_texture()
 	_build_environment()
 	_build_road()
+	_build_horizon()
 	_build_scenery()
 	_build_rig()
 	_build_balls()
@@ -121,12 +144,14 @@ func _apply_tuning() -> void:
 		_env.environment.fog_enabled = false
 	for chunk in _chunks:
 		chunk.visible = tuning.get("scenery", true)
+	_fence.visible = tuning.get("scenery", true)
+	_horizon.visible = tuning.get("scenery", true)
 	for node in get_children():
 		if node is MeshInstance3D and node.material_override == _verge_mat:
 			node.visible = tuning.get("verges", true)
 		if node is MeshInstance3D and node.material_override == _road_mat:
 			node.visible = tuning.get("road", true)
-		if node is MultiMeshInstance3D:
+		if node is MultiMeshInstance3D and node != _fx_mmi:
 			node.visible = tuning.get("balls", true)
 	for node in camera.get_children():
 		node.visible = tuning.get("rig", true)
@@ -154,8 +179,13 @@ func update_view(delta: float, logic: DodgeBallLogic, cadence_speed: float, lean
 		chunk.position.z += road_speed * delta
 		if chunk.position.z - CHUNK_LEN > 4.0:
 			chunk.position.z -= CHUNK_LEN * CHUNKS
+	_fence.position.z = fmod(distance, FENCE_SPACING)
 
 	_rig.position.x = logic.rider_x
+	# The horizon keeps its distance: it follows the rider sideways and never scrolls.
+	_horizon.position.x = logic.rider_x
+	_fx_mat.set_shader_parameter("now", _anim_t)
+	_fx_mmi.visible = _anim_t < _fx_until
 	_road_mat.set_shader_parameter("rider_x", logic.rider_x)
 	var target_roll := -clampf(lean, -1.0, 1.0) * deg_to_rad(ROLL_MAX_DEG) if roll_enabled else 0.0
 	_roll = lerpf(_roll, target_roll, 1.0 - exp(-6.0 * delta))
@@ -199,16 +229,16 @@ func set_time_of_day(tod: DodgeTimeOfDay) -> void:
 	var env := _env.environment
 	_sky_mat.set_shader_parameter("top_color", tod.sky_top)
 	_sky_mat.set_shader_parameter("horizon_color", tod.sky_horizon)
-	_sky_mat.set_shader_parameter("ground_color", tod.sky_ground)
-	_sky_mat.set_shader_parameter("sun_color", tod.sun_color)
+	_sky_mat.set_shader_parameter("below_color", tod.sky_ground)
+	_sky_mat.set_shader_parameter("disc_color", tod.sun_color)
 	_sky_mat.set_shader_parameter("sun_size", tod.sun_size)
 	_sky_mat.set_shader_parameter("halo", tod.halo)
 	_sky_mat.set_shader_parameter("stars", tod.stars)
 	_sky_mat.set_shader_parameter("clouds", tod.clouds)
 	_sky_mat.set_shader_parameter("cloud_color", tod.cloud_color)
-	var e := deg_to_rad(tod.sun_elevation)
-	var a := deg_to_rad(tod.sun_azimuth)
-	var to_sun := Vector3(sin(a) * cos(e), sin(e), -cos(a) * cos(e))
+	_sky_mat.set_shader_parameter("cloud_shade", tod.cloud_color.lerp(tod.sky_top, 0.45) * 0.82)
+	var to_sun := WorldLook.sun_dir(tod.sun_elevation, tod.sun_azimuth)
+	# The engine sun now lights only the balls (and places the sky's disc).
 	_sun.basis = Basis.looking_at(-to_sun, Vector3.UP if absf(to_sun.y) < 0.99 else Vector3.FORWARD)
 	_sun.light_color = tod.sun_color
 	_sun.light_energy = tod.sun_energy
@@ -216,15 +246,11 @@ func set_time_of_day(tod: DodgeTimeOfDay) -> void:
 	env.ambient_light_energy = tod.ambient_energy
 	env.fog_light_color = tod.fog_color
 	env.fog_density = tod.fog_density
-	# The road and verges light and fog themselves (see road.gdshader): a flat surface under
-	# the sun gets sin(elevation) of it, plus the ambient light.
-	var light := tod.ambient * tod.ambient_energy + tod.sun_color * tod.sun_energy * maxf(sin(e), 0.12)
-	for mat in [_road_mat, _verge_mat]:
-		mat.set_shader_parameter("light_color", Vector3(light.r, light.g, light.b))
-		mat.set_shader_parameter("fog_color", tod.fog_color)
-		mat.set_shader_parameter("fog_density", tod.fog_density if tuning.get("fog", true) else 0.0)
+	WorldLook.apply(look_materials(), look_for(tod, tuning.get("fog", true)))
 	_road_mat.set_shader_parameter("headlight", tod.headlight)
 	_road_mat.set_shader_parameter("lamp_glow", tod.lamp_glow)
+	for mat in _scenery_mats.values():
+		mat.set_shader_parameter("lamp_glow", tod.lamp_glow)
 	_halo_mat.albedo_color = Color(1.0, 0.8, 0.5, clampf(tod.lamp_glow, 0.0, 1.0))
 	for chunk in _chunks:
 		chunk.get_node("Halos").visible = tod.lamp_glow > 0.05
@@ -232,29 +258,55 @@ func set_time_of_day(tod: DodgeTimeOfDay) -> void:
 		env.fog_enabled = false
 
 
+## The shared light (`WorldLook`) for a time of day: the sun at its place and strength, the
+## ambient as the sky's half of the hemisphere (the ground's a darker share of it), the fog as
+## the haze. Energies scale the colours in linear light, as the engine's lights did (the
+## uniforms are `source_color`, so they're handed over in sRGB).
+static func look_for(tod: DodgeTimeOfDay, fog := true) -> Dictionary:
+	var ambient := tod.ambient.srgb_to_linear() * tod.ambient_energy
+	return {
+		"sun_dir": WorldLook.sun_dir(tod.sun_elevation, tod.sun_azimuth),
+		"sun_color": _to_srgb(tod.sun_color.srgb_to_linear() * tod.sun_energy),
+		"sky_color": _to_srgb(ambient),
+		"ground_color": _to_srgb(ambient * 0.7),
+		"haze_color": tod.fog_color,
+		"haze_density": tod.fog_density if fog else 0.0,
+		"haze_max": 0.9 if tod.id == "day" else 0.93,
+	}
+
+
+static func _to_srgb(linear: Color) -> Color:
+	var c := linear.linear_to_srgb()
+	c.a = 1.0
+	return c
+
+
+## Every material that lights itself with the shared look.
+func look_materials() -> Array:
+	var mats: Array = [_road_mat, _verge_mat, _sky_mat, _bars_mat, _horizon.material_override]
+	mats.append_array(_scenery_mats.values())
+	mats.append_array(_blob_mats)
+	return mats
+
+
 # --- Feedback ---
 
 ## A hit: the ball bursts at `x`, the screen nudges sideways.
 func hit_fx(x: float, kind: String, catch_mode := false, shake := 1.0) -> void:
-	var p := _bursts[_next_burst]
-	_next_burst = (_next_burst + 1) % _bursts.size()
 	# A little ahead of the bars, so the burst reads as the ball breaking up, not as debris in
-	# the rider's face.
-	p.position = Vector3(x, 0.5, RIDER_LINE_Z - 2.0)
-	p.color = ball_color(kind, catch_mode)
-	p.restart()
+	# the rider's face: chunks of the ball tumble out sideways and fall, hot streaks fly off.
+	var at := Vector3(x, 0.5, RIDER_LINE_Z - 2.0)
+	var col := ball_color(kind, catch_mode)
+	burst(at, col, 16, 3.0, 7.0, -12.0, 0.7, 0.09, true)
+	burst(at, col.lightened(0.35), 8, 4.0, 8.0, -6.0, 0.35, 0.05, false)
 	_shake = shake
 
 
 ## Catch: a caught ball bursts into gold sparks at the bike, and the points float up.
 func catch_fx(ball: Dictionary, points: float, bonus: bool) -> void:
-	var p := _sparks[_next_spark]
-	_next_spark = (_next_spark + 1) % _sparks.size()
-	p.position = Vector3(ball.x1, 0.7, RIDER_LINE_Z - 1.0)
-	p.color = Color(1.0, 0.85, 0.3)
-	p.restart()
+	burst(Vector3(ball.x1, 0.7, RIDER_LINE_Z - 1.0), Color(1.0, 0.85, 0.3), 18, 2.0, 4.5, -3.0, 0.45, 0.045, false)
 	_shield_flash = maxf(_shield_flash, 0.35)
-	_popup(ball.x1, points, true if bonus else false, Color(1.0, 0.85, 0.3))
+	_popup(ball.x1, points, bonus, GameTheme.TARGET if bonus else Color.WHITE)
 
 
 ## Catch: a missed ball rolls on past the bike.
@@ -282,13 +334,39 @@ func shield_ready_fx() -> void:
 
 ## A clean dodge: sparks where the ball passed, and the points floating up.
 func dodge_fx(ball: Dictionary, points: float, bonus: bool) -> void:
-	var p := _sparks[_next_spark]
-	_next_spark = (_next_spark + 1) % _sparks.size()
-	p.position = Vector3(ball.x1, 0.5, RIDER_LINE_Z)
-	p.color = Color(0.6, 0.95, 1.0)
-	p.restart()
+	burst(Vector3(ball.x1, 0.5, RIDER_LINE_Z), Color(0.6, 0.95, 1.0), 14, 2.0, 4.0, 0.0, 0.45, 0.04, false)
 	_ghost(ball)
-	_popup(ball.x1, points, bonus, Color(1.0, 0.82, 0.25) if bonus else Color(1, 1, 1))
+	_popup(ball.x1, points, bonus, GameTheme.TARGET if bonus else Color.WHITE)
+
+
+## Writes `count` streaks (or tumbling `chunks`) into the pooled FX MultiMesh, starting now at
+## `at`: speeds between `v_min` and `v_max`, out sideways and up and never at the rider, under
+## `gravity` (m/s², on y), living `life` seconds, `size` m. Written once; the vertex shader
+## (shaders/fx.gdshader) moves them, so nothing runs per frame after.
+func burst(at: Vector3, color: Color, count: int, v_min: float, v_max: float, gravity: float,
+		life: float, size: float, chunks: bool) -> void:
+	for i in count:
+		_fx_mm.set_instance_transform(_fx_next, fx_instance(_fx_rng, at, v_min, v_max, gravity, life, size, chunks))
+		_fx_mm.set_instance_color(_fx_next, color)
+		_fx_mm.set_instance_custom_data(_fx_next, Color(_anim_t, 0, 0, 0))
+		_fx_next = (_fx_next + 1) % FX_POOL
+	_fx_until = maxf(_fx_until, _anim_t + life + 0.05)
+	_fx_mmi.visible = true
+
+
+## One FX instance's data, packed in its transform as shaders/fx.gdshader reads it: the origin,
+## the velocity (basis x), (gravity, life, size) (basis y) and (kind, seed) (basis z).
+static func fx_instance(rng: RandomNumberGenerator, at: Vector3, v_min: float, v_max: float,
+		gravity: float, life: float, size: float, chunks: bool) -> Transform3D:
+	var speed := rng.randf_range(v_min, v_max)
+	var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(0.25, 1.0), rng.randf_range(-0.7, 0.35)).normalized()
+	if dir.z > 0.3:
+		# At most 17° toward the rider: debris never flies at the face (ART_BIBLE §7).
+		var rest := Vector2(dir.x, dir.y).normalized() * sqrt(1.0 - 0.09)
+		dir = Vector3(rest.x, rest.y, 0.3)
+	var data := Basis(dir * speed, Vector3(gravity, life * rng.randf_range(0.75, 1.0), size * rng.randf_range(0.7, 1.3)),
+		Vector3(1.0 if chunks else 0.0, rng.randf(), 0.0))
+	return Transform3D(data, at)
 
 
 func _ghost(ball: Dictionary) -> void:
@@ -304,7 +382,6 @@ func _popup(x_at: float, points: float, _bonus: bool, color: Color) -> void:
 	_next_popup = (_next_popup + 1) % _popups.size()
 	label.text = "+%d" % roundi(points)
 	label.modulate = color
-	label.outline_modulate = Color(0, 0, 0, 0.8)
 	var x := clampf(lerpf(x_at, _rig.position.x, 0.5), _rig.position.x - 1.2, _rig.position.x + 1.2)
 	label.position = Vector3(x, 0.9, RIDER_LINE_Z - 3.0)
 	label.visible = true
@@ -318,13 +395,11 @@ func _popup(x_at: float, points: float, _bonus: bool, color: Color) -> void:
 ## Fires every effect once in view, behind the intro card, so their shaders compile then and not
 ## at the first hit (that hitch read 9 fps on the tablet).
 func prewarm() -> void:
-	var all: Array[CPUParticles3D] = []
-	all.append_array(_bursts)
-	all.append_array(_sparks)
-	all.append(_shards)
-	for p in all:
-		p.position = Vector3(_rig.position.x, 1.0, RIDER_LINE_Z - 6.0)
-		p.restart()
+	var ahead := Vector3(_rig.position.x, 1.0, RIDER_LINE_Z - 6.0)
+	burst(ahead, Color(1, 1, 1), 2, 1.0, 2.0, -6.0, 0.3, 0.05, true)
+	burst(ahead, Color(1, 1, 1), 2, 1.0, 2.0, 0.0, 0.3, 0.05, false)
+	_shards.position = ahead
+	_shards.restart()
 	_streaks.emitting = true
 	_popup(_rig.position.x, 10.0, false, Color(1, 1, 1))
 
@@ -392,16 +467,87 @@ func _build_road() -> void:
 		add_child(verge)
 
 
-## Each chunk: lamps both sides (staggered), trees, bushes and rocks, a few cones on the kerb.
+## The far edge of the world: a ring of low rolling hills and, in front of it, a distant tree
+## line, both one vertex-coloured mesh on the scenery shader, hazed nearly to the haze's cap so
+## they read as far away. It follows the rider sideways only (`update_view`), never the scroll.
+func _build_horizon() -> void:
+	_horizon = MeshInstance3D.new()
+	_horizon.name = "Horizon"
+	_horizon.mesh = horizon_mesh()
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://games/dodge_ball/shaders/scenery.gdshader")
+	mat.set_shader_parameter("use_vertex_color", true)
+	mat.set_shader_parameter("haze_scale", 2.5)
+	mat.set_shader_parameter("ao_height", 0.001)
+	_horizon.material_override = mat
+	_horizon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_horizon)
+
+
+## The horizon's mesh: an arc ahead (±85° of straight ahead) of hills 6-14 m high at
+## HORIZON_HILLS, and chunky tree crowns 4-9 m high at HORIZON_TREES. Both reach 8 m below the
+## ground, so no gap shows under them past the verges' far edges.
+static func horizon_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3(0, 0, 1))
+	_arc(st, HORIZON_HILLS, 96, func(a: float) -> float:
+		return 10.0 + 2.6 * sin(a * 3.1 + 0.6) + 1.4 * sin(a * 7.3 + 2.0),
+		Color(0.36, 0.52, 0.3), Color(0.24, 0.36, 0.22))
+	_arc(st, HORIZON_TREES, 220, func(a: float) -> float:
+		var lump := absf(sin(a * 37.0)) * 0.6 + absf(sin(a * 91.0 + 1.3)) * 0.4
+		return 4.5 + 3.5 * lump + 1.0 * sin(a * 5.0),
+		Color(0.2, 0.36, 0.2), Color(0.14, 0.26, 0.15))
+	return st.commit()
+
+
+static func _arc(st: SurfaceTool, radius: float, segments: int, height: Callable, top: Color, foot: Color) -> void:
+	var span := deg_to_rad(85.0)
+	for i in segments:
+		var a0 := lerpf(-span, span, float(i) / segments)
+		var a1 := lerpf(-span, span, float(i + 1) / segments)
+		var p0 := Vector3(sin(a0), 0, -cos(a0)) * radius
+		var p1 := Vector3(sin(a1), 0, -cos(a1)) * radius
+		var corners := [p0 + Vector3(0, -8, 0), p1 + Vector3(0, -8, 0),
+			p1 + Vector3(0, float(height.call(a1)), 0), p0 + Vector3(0, float(height.call(a0)), 0)]
+		var colours := [foot, foot, top, top]
+		# Clockwise seen from the rider (Godot's front faces).
+		for k in [0, 2, 1, 0, 3, 2]:
+			st.set_color(colours[k])
+			st.add_vertex(corners[k])
+
+
+## Each chunk: lamps both sides (staggered), trees, bushes and rocks, a few cones on the kerb, a
+## post-and-rail fence each side, and a painted contact disc under everything that stands.
 func _build_scenery() -> void:
-	var lamp := _cheap(_model_mesh("light-curved.glb"))
-	var trees := [_recolor(_model_mesh("tree_default.glb"), Color(0.32, 0.56, 0.2)),
-		_recolor(_model_mesh("tree_oak.glb"), Color(0.26, 0.48, 0.17)),
-		_recolor(_model_mesh("tree_pineTallA.glb"), Color(0.16, 0.36, 0.2)),
-		_recolor(_model_mesh("tree_cone.glb"), Color(0.38, 0.6, 0.22))]
-	var bush := _recolor(_model_mesh("plant_bushLarge.glb"), Color(0.3, 0.52, 0.2))
-	var rock := _recolor(_model_mesh("rock_largeA.glb"), Color(0.5, 0.5, 0.47), Color(0.42, 0.41, 0.39))
-	var cone := _cheap(_model_mesh("construction-cone.glb"))
+	var lamp := _hand_lit(_glow_tip(_model_mesh("light-curved.glb")), _scenery_mats)
+	var trees := [_hand_lit(_model_mesh("tree_default.glb"), _scenery_mats, Color(0.32, 0.56, 0.2), BARK, TREE_SWAY),
+		_hand_lit(_model_mesh("tree_oak.glb"), _scenery_mats, Color(0.26, 0.48, 0.17), BARK, TREE_SWAY),
+		_hand_lit(_model_mesh("tree_pineTallA.glb"), _scenery_mats, Color(0.16, 0.36, 0.2), BARK, TREE_SWAY),
+		_hand_lit(_model_mesh("tree_cone.glb"), _scenery_mats, Color(0.38, 0.6, 0.22), BARK, TREE_SWAY)]
+	var bush := _hand_lit(_model_mesh("plant_bushLarge.glb"), _scenery_mats, Color(0.3, 0.52, 0.2), BARK, BUSH_SWAY)
+	# Rocks: a lighter top over a darker foot (the painted AO over their whole height).
+	var rock := _hand_lit(_model_mesh("rock_largeA.glb"), _scenery_mats, Color(0.56, 0.56, 0.53),
+		Color(0.46, 0.45, 0.43), 0.0, 0.9)
+	var cone := _hand_lit(_model_mesh("construction-cone.glb"), _scenery_mats)
+	# One fence for the whole road (a draw call, not one a chunk): it scrolls like the chunks and
+	# steps back a post spacing as it passes, which can't be seen.
+	_fence = MeshInstance3D.new()
+	_fence.name = "Fence"
+	_fence.mesh = fence_mesh()
+	_fence.material_override = _scenery_material(_scenery_mats, Color(1, 1, 1), null, 0.0, 1.0, false, true)
+	_fence.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_fence)
+	var disc := QuadMesh.new()
+	disc.size = Vector2.ONE
+	disc.orientation = PlaneMesh.FACE_Y
+	var disc_mat := ShaderMaterial.new()
+	disc_mat.shader = load("res://games/dodge_ball/shaders/blob.gdshader")
+	disc_mat.set_shader_parameter("core", 0.3)
+	disc_mat.set_shader_parameter("darkness", 1.0)
+	disc_mat.set_shader_parameter("strength", 0.42)
+	disc.material = disc_mat
+	_blob_mats.append(disc_mat)
 	_halo_mat = StandardMaterial3D.new()
 	_halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -438,6 +584,7 @@ func _build_scenery() -> void:
 		rng.seed = 7919 * (c + 1)
 		var lamp_xf: Array[Transform3D] = []
 		var halo_xf: Array[Transform3D] = []
+		var discs: Array[Transform3D] = []
 		var lamp_x := DodgeBallLogic.ROAD_HALF + 1.2
 		for k in int(CHUNK_LEN / LAMP_SPACING):
 			for side in [-1.0, 1.0]:
@@ -448,6 +595,7 @@ func _build_scenery() -> void:
 				lamp_xf.append(Transform3D(basis, Vector3(side * lamp_x, 0, z)))
 				var head := Basis(Vector3.UP, yaw) * head_local
 				halo_xf.append(Transform3D(Basis(), Vector3(side * lamp_x, -0.15, z) + head))
+				discs.append(_disc(Vector3(side * lamp_x, 0, z), 0.7))
 		if lamp:
 			chunk.add_child(_multimesh(lamp, lamp_xf, "Lamps"))
 		var halos := _multimesh(halo_quad, halo_xf, "Halos")
@@ -458,7 +606,7 @@ func _build_scenery() -> void:
 			per_tree.append([] as Array[Transform3D])
 		for i in 26:
 			var side := -1.0 if i % 2 == 0 else 1.0
-			var x := side * rng.randf_range(DodgeBallLogic.ROAD_HALF + 3.5, 32.0)
+			var x := side * clear_of_fence(rng.randf_range(DodgeBallLogic.ROAD_HALF + 3.5, 32.0))
 			var z := -rng.randf_range(0.0, CHUNK_LEN)
 			var which := rng.randi_range(0, 3)
 			var mesh: Mesh = trees[which]
@@ -467,6 +615,7 @@ func _build_scenery() -> void:
 			var h := rng.randf_range(5.0, 9.0) * (1.3 if which == 2 else 1.0)
 			var s := h / maxf(0.01, mesh.get_aabb().size.y)
 			per_tree[which].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(x, 0, z)))
+			discs.append(_disc(Vector3(x, 0, z), maxf(mesh.get_aabb().size.x, mesh.get_aabb().size.z) * s * 0.75))
 		for which in 4:
 			if trees[which] and not per_tree[which].is_empty():
 				var xfs: Array[Transform3D] = []
@@ -479,9 +628,11 @@ func _build_scenery() -> void:
 			var xfs: Array[Transform3D] = []
 			for i in int(pair[1]):
 				var side := -1.0 if i % 2 == 0 else 1.0
-				var x := side * rng.randf_range(DodgeBallLogic.ROAD_HALF + 1.8, 20.0)
+				var x := side * clear_of_fence(rng.randf_range(DodgeBallLogic.ROAD_HALF + 1.8, 20.0))
 				var s: float = rng.randf_range(pair[2], pair[3]) / maxf(0.01, mesh.get_aabb().size.y)
-				xfs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(x, 0, -rng.randf_range(0.0, CHUNK_LEN))))
+				var at := Vector3(x, 0, -rng.randf_range(0.0, CHUNK_LEN))
+				xfs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), at))
+				discs.append(_disc(at, maxf(mesh.get_aabb().size.x, mesh.get_aabb().size.z) * s * 1.1))
 			chunk.add_child(_multimesh(mesh, xfs, pair[4]))
 		if cone and c == 1:
 			var cones: Array[Transform3D] = []
@@ -489,6 +640,60 @@ func _build_scenery() -> void:
 			for i in 4:
 				cones.append(Transform3D(Basis().scaled(Vector3.ONE * cs), Vector3(-(DodgeBallLogic.ROAD_HALF + 0.6), 0, -10.0 - i * 2.5)))
 			chunk.add_child(_multimesh(cone, cones, "Cones"))
+		var disc_mmi := _multimesh(disc, discs, "Discs")
+		chunk.add_child(disc_mmi)
+
+
+## An |x| for scenery that keeps it at least 1.2 m off the fence line (pushed outwards).
+static func clear_of_fence(ax: float) -> float:
+	var line := DodgeBallLogic.ROAD_HALF + FENCE_OFFSET
+	return ax + 2.4 if absf(ax - line) < 1.2 else ax
+
+
+## A contact disc's transform: `diameter` m across, flat on the ground just above the verge.
+static func _disc(at: Vector3, diameter: float) -> Transform3D:
+	return Transform3D(Basis().scaled(Vector3(diameter, 1.0, diameter)), Vector3(at.x, 0.03, at.z))
+
+
+## The fence (both sides, from just behind the bike to FENCE_LEN ahead): weathered posts every
+## FENCE_SPACING and two rails, vertex-coloured, about 1.2k triangles.
+static func fence_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var post := Color(0.62, 0.53, 0.41)
+	var rail := Color(0.78, 0.7, 0.57)
+	var x := DodgeBallLogic.ROAD_HALF + FENCE_OFFSET
+	var posts := int(FENCE_LEN / FENCE_SPACING) + 2
+	var start := FENCE_SPACING * 2.0
+	for side in [-1.0, 1.0]:
+		for i in posts:
+			_box(st, Vector3(side * x, 0.45, start - i * FENCE_SPACING), Vector3(0.12, 0.9, 0.12), post)
+		for y in [0.42, 0.78]:
+			var length := posts * FENCE_SPACING
+			_box(st, Vector3(side * (x - 0.07), y, start - length * 0.5), Vector3(0.05, 0.1, length), rail)
+	return st.commit()
+
+
+## A box without its bottom face (10 triangles) into `st`.
+static func _box(st: SurfaceTool, centre: Vector3, size: Vector3, color: Color) -> void:
+	var h := size * 0.5
+	var faces := [[Vector3.UP, Vector3.RIGHT, Vector3.BACK], [Vector3.RIGHT, Vector3.BACK, Vector3.UP],
+		[Vector3.LEFT, Vector3.FORWARD, Vector3.UP], [Vector3.BACK, Vector3.LEFT, Vector3.UP],
+		[Vector3.FORWARD, Vector3.RIGHT, Vector3.UP]]
+	for f in faces:
+		var n: Vector3 = f[0]
+		var u: Vector3 = f[1]
+		var v: Vector3 = f[2]
+		var c := centre + n * h
+		var du := u * h
+		var dv := v * h
+		var quad := [c - du - dv, c + du - dv, c + du + dv, c - du + dv]
+		# Wind each face to face out along n (counter-clockwise seen from outside, Godot's front).
+		var order := [0, 2, 1, 0, 3, 2] if u.cross(v).dot(n) > 0.0 else [0, 1, 2, 0, 2, 3]
+		st.set_color(color)
+		st.set_normal(n)
+		for k in order:
+			st.add_vertex(quad[k])
 
 
 func _build_rig() -> void:
@@ -503,52 +708,19 @@ func _build_rig() -> void:
 	camera.far = 170.0
 	_rig.add_child(camera)
 	camera.make_current()
-	# Handlebars, in the camera's frame so they stay put while the world rolls by.
-	var bars := Node3D.new()
+	# Handlebars, in the camera's frame so they stay put while the world rolls by: bar, grips,
+	# drops, stem and head merged into one vertex-coloured mesh, hand-lit (shaders/bars.gdshader).
+	# Vertex alpha is the metal's sheen.
+	var bars := MeshInstance3D.new()
+	bars.name = "Bars"
 	bars.position = Vector3(0, -0.335, -0.58)
 	bars.rotation_degrees.x = -CAMERA_PITCH
+	bars.mesh = handlebar_mesh()
+	_bars_mat = ShaderMaterial.new()
+	_bars_mat.shader = load("res://games/dodge_ball/shaders/bars.gdshader")
+	bars.material_override = _bars_mat
+	bars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	camera.add_child(bars)
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.4, 0.42, 0.46)
-	metal.metallic = 0.6
-	metal.roughness = 0.35
-	var rubber := StandardMaterial3D.new()
-	rubber.albedo_color = Color(0.05, 0.05, 0.06)
-	rubber.roughness = 0.9
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = Color(0.95, 0.4, 0.15)
-	var bar := CylinderMesh.new()
-	bar.top_radius = 0.016
-	bar.bottom_radius = 0.016
-	bar.height = 0.56
-	bar.radial_segments = 10
-	bar.rings = 1
-	bars.add_child(_part(bar, metal, Vector3.ZERO, Vector3(0, 0, 90)))
-	var grip := CylinderMesh.new()
-	grip.top_radius = 0.021
-	grip.bottom_radius = 0.021
-	grip.height = 0.13
-	grip.radial_segments = 10
-	grip.rings = 1
-	for side in [-1.0, 1.0]:
-		bars.add_child(_part(grip, rubber, Vector3(side * 0.33, 0, 0), Vector3(0, 0, 90)))
-		var drop := CylinderMesh.new()
-		drop.top_radius = 0.014
-		drop.bottom_radius = 0.014
-		drop.height = 0.12
-		drop.radial_segments = 8
-		drop.rings = 1
-		bars.add_child(_part(drop, metal, Vector3(side * 0.27, -0.05, -0.02), Vector3(25, 0, 0)))
-	var stem := BoxMesh.new()
-	stem.size = Vector3(0.05, 0.05, 0.16)
-	bars.add_child(_part(stem, accent, Vector3(0, -0.02, 0.07), Vector3(-12, 0, 0)))
-	var head := CylinderMesh.new()
-	head.top_radius = 0.03
-	head.bottom_radius = 0.034
-	head.height = 0.3
-	head.radial_segments = 10
-	head.rings = 1
-	bars.add_child(_part(head, accent, Vector3(0, -0.16, 0.14), Vector3(-15, 0, 0)))
 	# The shield: a faint curved screen ahead of the bars.
 	var shield := MeshInstance3D.new()
 	var quad := QuadMesh.new()
@@ -560,6 +732,55 @@ func _build_rig() -> void:
 	shield.material_override = _shield_mat
 	shield.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	camera.add_child(shield)
+
+
+## The handlebars as one mesh: the parts the bars were built from (7 draw calls before), each
+## vertex-coloured. Metal is a cool grey with sheen (alpha 1), the grips matte rubber, the stem
+## and head the accent #F26626.
+static func handlebar_mesh() -> ArrayMesh:
+	var metal := Color(0.42, 0.44, 0.49, 1.0)
+	var rubber := Color(0.06, 0.06, 0.07, 0.0)
+	var accent := Color("f26626", 0.35)
+	var parts := []
+	parts.append([_cylinder(0.016, 0.016, 0.56, 10), metal, Vector3.ZERO, Vector3(0, 0, 90)])
+	for side in [-1.0, 1.0]:
+		parts.append([_cylinder(0.021, 0.021, 0.13, 10), rubber, Vector3(side * 0.33, 0, 0), Vector3(0, 0, 90)])
+		parts.append([_cylinder(0.014, 0.014, 0.12, 8), metal, Vector3(side * 0.27, -0.05, -0.02), Vector3(25, 0, 0)])
+	var stem := BoxMesh.new()
+	stem.size = Vector3(0.05, 0.05, 0.16)
+	parts.append([stem, accent, Vector3(0, -0.02, 0.07), Vector3(-12, 0, 0)])
+	parts.append([_cylinder(0.03, 0.034, 0.3, 10), accent, Vector3(0, -0.16, 0.14), Vector3(-15, 0, 0)])
+	return _merged(parts)
+
+
+static func _cylinder(top: float, bottom: float, height: float, segments: int) -> CylinderMesh:
+	var c := CylinderMesh.new()
+	c.top_radius = top
+	c.bottom_radius = bottom
+	c.height = height
+	c.radial_segments = segments
+	c.rings = 1
+	return c
+
+
+## Bakes `parts` ([mesh, colour, position, rotation in degrees], placed as a child node would
+## be) into one vertex-coloured ArrayMesh.
+static func _merged(parts: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for part in parts:
+		var mesh: Mesh = part[0]
+		var xf := Transform3D(Basis.from_euler((part[3] as Vector3) * (PI / 180.0)), part[2])
+		var arrays := mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for i in indices:
+			st.set_color(part[1])
+			st.set_normal((xf.basis * normals[i]).normalized())
+			st.add_vertex(xf * verts[i])
+	st.index()
+	return st.commit()
 
 
 func _build_balls() -> void:
@@ -578,6 +799,7 @@ func _build_balls() -> void:
 	var blob_mat := ShaderMaterial.new()
 	blob_mat.shader = load("res://games/dodge_ball/shaders/blob.gdshader")
 	blob.material = blob_mat
+	_blob_mats.append(blob_mat)
 	_blob_mm = _dynamic_mm(blob, false)
 	var strip := QuadMesh.new()
 	strip.size = Vector2(1.1, 11.0)
@@ -596,37 +818,37 @@ func _build_balls() -> void:
 
 
 func _build_fx() -> void:
-	var chunk_mesh := BoxMesh.new()
-	chunk_mesh.size = Vector3.ONE * 0.06
-	var vc := StandardMaterial3D.new()
-	vc.vertex_color_use_as_albedo = true
-	vc.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	vc.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	chunk_mesh.material = vc
-	for i in 3:
-		var p := _particles(chunk_mesh, 24, 0.7, 3.0, 7.0)
-		p.gravity = Vector3(0, -12, 0)
-		p.direction = Vector3(0, 0.6, 1)
-		p.spread = 70.0
-		_bursts.append(p)
-	var spark := SphereMesh.new()
-	spark.radius = 0.04
-	spark.height = 0.08
-	spark.radial_segments = 6
-	spark.rings = 3
+	# Bursts and sparks: one pooled MultiMesh of quads, moved by shaders/fx.gdshader.
+	_fx_rng.seed = 4242
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	_fx_mat = ShaderMaterial.new()
+	_fx_mat.shader = load("res://games/dodge_ball/shaders/fx.gdshader")
+	quad.material = _fx_mat
+	_fx_mm = MultiMesh.new()
+	_fx_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_fx_mm.use_colors = true
+	_fx_mm.use_custom_data = true
+	_fx_mm.mesh = quad
+	_fx_mm.instance_count = FX_POOL
+	for i in FX_POOL:
+		# Born long ago: every slot starts dead.
+		_fx_mm.set_instance_transform(i, Transform3D(Basis(Vector3.ZERO, Vector3(0, 0.1, 0), Vector3.ZERO), Vector3.ZERO))
+		_fx_mm.set_instance_custom_data(i, Color(-1000.0, 0, 0, 0))
+	_fx_mmi = MultiMeshInstance3D.new()
+	_fx_mmi.name = "Fx"
+	_fx_mmi.multimesh = _fx_mm
+	_fx_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# The shader places the instances: one box round the near road keeps them from being culled.
+	_fx_mmi.custom_aabb = AABB(Vector3(-20, -2, -40), Vector3(40, 14, 44))
+	# Hidden while nothing is alive (a burst shows it), so an idle pool costs no draw call.
+	_fx_mmi.visible = false
+	add_child(_fx_mmi)
 	var add := StandardMaterial3D.new()
 	add.vertex_color_use_as_albedo = true
 	add.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	add.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	add.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	spark.material = add
-	for i in 3:
-		var p := _particles(spark, 14, 0.45, 2.0, 4.0)
-		p.gravity = Vector3.ZERO
-		p.direction = Vector3(0, 0.3, 1)
-		p.spread = 50.0
-		p.color = Color(0.6, 0.95, 1.0)
-		_sparks.append(p)
 	var shard := PrismMesh.new()
 	shard.size = Vector3(0.1, 0.14, 0.02)
 	shard.material = add
@@ -667,8 +889,11 @@ func _build_fx() -> void:
 	for i in 4:
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		# The shared display face with the game's navy ink (framework/ui/UI_STYLE.md).
+		label.font = GameTheme.display_font()
 		label.font_size = 96
 		label.outline_size = 18
+		label.outline_modulate = POPUP_INK
 		label.pixel_size = 0.004
 		label.no_depth_test = true
 		label.visible = false
@@ -689,7 +914,8 @@ func _draw_balls(delta: float, logic: DodgeBallLogic) -> void:
 		var z := z_for_eta(ball.eta, _ball_speed.get(ball.id, -1.0))
 		var x := DodgeBallLogic.ball_x(ball)
 		var y := BALL_RADIUS()
-		if ball.kind != "double" and int(ball.id) % 2 == 1:
+		var bouncing: bool = ball.kind != "double" and int(ball.id) % 2 == 1
+		if bouncing:
 			# Every other ball bounces, landing on the beat of BOUNCE_PERIOD and on the line.
 			var phase: float = ball.eta / BOUNCE_PERIOD
 			y += BOUNCE_HEIGHT * absf(sin(PI * phase)) * clampf(ball.eta / 0.6, 0.35, 1.0)
@@ -698,9 +924,11 @@ func _draw_balls(delta: float, logic: DodgeBallLogic) -> void:
 				ball_bounced.emit(clampf(1.0 - ball.eta / 1.6, 0.1, 1.0))
 			_bounce_phase[ball.id] = landing
 		var near := clampf(1.0 - ball.eta / 1.2, 0.0, 1.0)
-		_set_ball(n, Vector3(x, y, z), ball.kind, near, glow, catch_mode)
-		_blob_mm.set_instance_transform(n, Transform3D(Basis(), Vector3(x, 0.015, z)))
-		_blob_mm.set_instance_custom_data(n, Color(clampf(1.2 - (y - BALL_RADIUS()) * 0.8, 0.2, 1.0), 0, 0, 0))
+		var lift := y - BALL_RADIUS()
+		_set_ball(n, Vector3(x, y, z), ball.kind, near, glow, catch_mode, squash_for(lift) if bouncing else 0.0)
+		# The shadow tightens and darkens as a bouncing ball comes down, so its height reads.
+		_blob_mm.set_instance_transform(n, Transform3D(Basis().scaled(Vector3.ONE * shadow_scale(lift)), Vector3(x, 0.015, z)))
+		_blob_mm.set_instance_custom_data(n, Color(clampf(1.2 - lift * 0.8, 0.2, 1.0), 0, 0, 0))
 		n += 1
 		# The warning strip in the lane where it will arrive.
 		var urgency := clampf(1.0 - ball.eta / ball.eta0, 0.0, 1.0)
@@ -732,11 +960,23 @@ func _draw_balls(delta: float, logic: DodgeBallLogic) -> void:
 		_ball_speed = live
 
 
-func _set_ball(i: int, pos: Vector3, kind: String, near: float, glow: float, catch_mode := false) -> void:
+func _set_ball(i: int, pos: Vector3, kind: String, near: float, glow: float, catch_mode := false, squash := 0.0) -> void:
 	var spin := Basis(Vector3.RIGHT, (pos.z - distance) / BALL_RADIUS())
-	_ball_mm.set_instance_transform(i, Transform3D(spin, pos))
+	# A faint squash as a bouncing ball lands: in world axes, over the spin, sitting on the road.
+	var squashed := Basis.from_scale(Vector3(1.0 + squash * 0.5, 1.0 - squash, 1.0 + squash * 0.5)) * spin
+	_ball_mm.set_instance_transform(i, Transform3D(squashed, pos - Vector3(0, squash * BALL_RADIUS(), 0)))
 	_ball_mm.set_instance_color(i, ball_color(kind, catch_mode))
 	_ball_mm.set_instance_custom_data(i, Color(near, glow, 1.0 if catch_mode else 0.0, 0))
+
+
+## How much a ball `lift` m off the road squashes (0-0.14): only in its last 8 cm down.
+static func squash_for(lift: float) -> float:
+	return 0.14 * clampf(1.0 - lift / 0.08, 0.0, 1.0)
+
+
+## The ball shadow's scale for a ball `lift` m up: tight at the road, wider in the air.
+static func shadow_scale(lift: float) -> float:
+	return lerpf(0.85, 1.3, clampf(lift / BOUNCE_HEIGHT, 0.0, 1.0))
 
 
 # --- Helpers ---
@@ -814,6 +1054,71 @@ static func _cheap(mesh: Mesh) -> Mesh:
 		m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 		copy.surface_set_material(s, m)
 	return copy
+
+
+## A copy of a model mesh on the hand-lit scenery shader (shaders/scenery.gdshader), one
+## material per surface colour from `cache`, so every chunk shares them. With `leaf`, the greener
+## surfaces take `leaf` and sway by `sway`, the rest `bark` (as `_recolor` picks them); without,
+## each surface keeps its colour and texture (the city kit's palette map). A mesh carrying vertex
+## colours marks its self-lit part in their alpha (`_glow_tip`). `_recolor` and `_cheap` stay as
+## they were for Tug of War, which builds its own look.
+static func _hand_lit(mesh: Mesh, cache: Dictionary, leaf: Variant = null, bark := BARK, sway := 0.0,
+		ao_height := 1.5) -> Mesh:
+	if mesh == null:
+		return null
+	var copy := mesh.duplicate() as Mesh
+	for s in copy.get_surface_count():
+		var src := copy.surface_get_material(s) as BaseMaterial3D
+		var c := src.albedo_color if src else Color.WHITE
+		var tex: Texture2D = src.albedo_texture if src else null
+		var is_leaf := leaf != null and c.g > c.r
+		var colour: Color = (leaf if is_leaf else bark) if leaf != null else c
+		var glow: bool = (copy.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
+		copy.surface_set_material(s, _scenery_material(cache, colour, tex, sway if is_leaf else 0.0,
+			ao_height, glow, false))
+	return copy
+
+
+## The shared scenery material for one look of surface, made once per `cache`.
+static func _scenery_material(cache: Dictionary, colour: Color, tex: Texture2D, sway: float,
+		ao_height: float, glow: bool, vertex_color: bool) -> ShaderMaterial:
+	var key := "%s|%s|%.4f|%.2f|%s|%s" % [colour.to_html(), tex.resource_path if tex else "",
+		sway, ao_height, glow, vertex_color]
+	if cache.has(key):
+		return cache[key]
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://games/dodge_ball/shaders/scenery.gdshader")
+	mat.set_shader_parameter("albedo", colour)
+	if tex:
+		mat.set_shader_parameter("albedo_tex", tex)
+	mat.set_shader_parameter("sway", sway)
+	mat.set_shader_parameter("ao_height", ao_height)
+	mat.set_shader_parameter("glow_mask", glow)
+	mat.set_shader_parameter("use_vertex_color", vertex_color)
+	cache[key] = mat
+	return mat
+
+
+## The street lamp with its head marked self-lit: vertex alpha 1 on the lamp at the arm's tip
+## (the top 7 cm of the model, its last 6 cm along the arm), 0 elsewhere.
+static func _glow_tip(mesh: Mesh) -> Mesh:
+	if mesh == null:
+		return null
+	var aabb := mesh.get_aabb()
+	var out := ArrayMesh.new()
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var colours := PackedColorArray()
+		colours.resize(verts.size())
+		for i in verts.size():
+			var v := verts[i]
+			var tip := v.y > aabb.end.y - 0.07 and v.z < aabb.position.z + 0.06
+			colours[i] = Color(1, 1, 1, 1.0 if tip else 0.0)
+		arrays[Mesh.ARRAY_COLOR] = colours
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out.surface_set_material(s, mesh.surface_get_material(s))
+	return out
 
 
 static func _multimesh(mesh: Mesh, transforms: Array[Transform3D], node_name: String) -> MultiMeshInstance3D:

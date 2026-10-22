@@ -51,6 +51,8 @@ class DefaultHeadTrackerTest {
     private val centreMs = config.centreSettleMs + config.centreCaptureMs
     private val extremeMs = config.extremeSettleMs + config.extremeCaptureMs
 
+    private var keepCameraOnNoFace = false
+
     private fun TestScope.tracker(scope: CoroutineScope = backgroundScope): DefaultHeadTracker =
         DefaultHeadTracker(
             faceSource = source,
@@ -61,6 +63,7 @@ class DefaultHeadTrackerTest {
             config = config,
             wallClockMs = { today },
             zone = { zone },
+            keepCameraOnNoFace = { keepCameraOnNoFace },
         ).also { runCurrent() }
 
     private fun fullCalibrationScript(start: Long = 0L) = FrameScript(start)
@@ -211,6 +214,27 @@ class DefaultHeadTrackerTest {
         tracker.calibrate(TrackerMode.LEAN_X)
         assertNull(tracker.state.value.unavailable)
         assertTrue(source.running)
+    }
+
+    @Test
+    fun `the load switch keeps the camera analysing after no face, with the state unchanged`() = runTest {
+        keepCameraOnNoFace = true
+        val tracker = tracker()
+        tracker.calibrate(TrackerMode.LEAN_X)
+        source.emit(FrameScript().hold(2 * centreMs + 200, null))
+        assertEquals(UnavailableReason.NO_FACE, tracker.state.value.unavailable)
+        assertEquals(TrackerState.OFF, tracker.state.value.trackerState)
+        assertTrue(source.running)
+
+        // Frames keep coming without changing what the game sees; a face doesn't resume steering.
+        source.emit(FrameScript(2 * centreMs + 200).hold(1_000, SEATED))
+        assertEquals(UnavailableReason.NO_FACE, tracker.state.value.unavailable)
+        assertEquals(TrackerState.OFF, tracker.state.value.trackerState)
+        assertEquals(1, source.starts)
+
+        // Mode off still stops the camera.
+        tracker.setMode(TrackerMode.OFF)
+        assertFalse(source.running)
     }
 
     @Test

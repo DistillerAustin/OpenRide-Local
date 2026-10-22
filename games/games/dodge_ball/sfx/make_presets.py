@@ -13,7 +13,7 @@ PRESETS = {
                          vibrato_depth=0.06, vibrato_rate=5.0, jump_ratio=1.3348, jump_time=0.09, repeats=2,
                          repeat_gap=0.09, volume=0.4),
     "hit_body": dict(wave=0, attack=0.001, sustain=0.03, decay=0.3, freq_start=140.0, freq_end=45.0, sweep_time=0.18,
-                     punch=0.7, noise_mix=0.15, lowpass_start=1800.0, lowpass_end=300.0, volume=0.7),
+                     punch=0.7, noise_mix=0.15, lowpass_start=1800.0, lowpass_end=300.0, volume=0.6),
     "shield_zap": dict(wave=3, attack=0.002, sustain=0.05, decay=0.45, freq_start=1600.0, freq_end=180.0,
                        sweep_time=0.4, noise_mix=0.25, lowpass_start=6000.0, lowpass_end=800.0, volume=0.35),
     "shield_ready": dict(wave=1, attack=0.01, sustain=0.1, decay=0.4, freq_start=523.3, freq_end=1046.5,

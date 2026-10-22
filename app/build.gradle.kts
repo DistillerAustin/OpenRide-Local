@@ -112,6 +112,14 @@ android {
         }
     }
 
+    // Mini-games: store games.pck uncompressed in the APK. Godot reads the pack through the
+    // Android asset manager with seeks; in a deflated asset over 1 MB every backward seek
+    // re-inflates from the start, which made the engine's first start take ~75 s on the bike
+    // (measured 2026-10-20). The pack barely compresses anyway (14.3 -> 13.5 MB).
+    androidResources {
+        noCompress += "pck"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

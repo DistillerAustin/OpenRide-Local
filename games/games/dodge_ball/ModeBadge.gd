@@ -1,10 +1,14 @@
 extends Control
 ## The intro card's picture of the chosen mode, as a little loop: a ball rolls down a lane at a
 ## bike, and the bike swerves out of its way (Dodge, a red ball) or into it (Catch, a gold ball
-## that bursts into a sparkle). Drawn with shapes, so no font glyph or image is needed.
+## that bursts into a sparkle). Shapes, and the word in the shared display face (leaning, with
+## the game's ink outline) to match the intro card's title. The lane sits on the word's baseline.
 
 const SIZE := Vector2(560, 120)
 const LOOP_SEC := 2.2
+const WORD_SIZE := 72
+const BASELINE := 104.0  ## the word's baseline, and the lane
+const INK := Color("0e1b3d")
 
 var catch_mode := false
 var _t := 0.0
@@ -24,12 +28,14 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	var word := "CATCH" if catch_mode else "DODGE"
 	var color := Color(1.0, 0.8, 0.18) if catch_mode else Color(0.98, 0.25, 0.18)
-	var font := get_theme_default_font()
-	draw_string(font, Vector2(0, 82), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 72, color)
+	var font := GameTheme.display_font(false)
+	var at := Vector2(6, BASELINE)
+	draw_string_outline(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, WORD_SIZE, 10, INK)
+	draw_string(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, WORD_SIZE, color)
 	# The lane: the ball rolls from the right towards the bike on the left.
 	var lane_x0 := 300.0
 	var lane_x1 := SIZE.x
-	draw_line(Vector2(lane_x0, 104), Vector2(lane_x1, 104), Color(1, 1, 1, 0.25), 3.0)
+	draw_line(Vector2(lane_x0, BASELINE), Vector2(lane_x1, BASELINE), Color(1, 1, 1, 0.25), 3.0)
 	var f := _t / LOOP_SEC
 	var ball_x := lerpf(lane_x1 - 20.0, lane_x0 + 20.0, minf(f / 0.7, 1.0))
 	var ball_y := 80.0

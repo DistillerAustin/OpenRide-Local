@@ -92,6 +92,7 @@ var _render_task := -1
 var _render_key := ""
 var _render_result := {}
 var _render_mutex := Mutex.new()
+var _render_started_msec := 0
 
 var _sfx_players: Array[AudioStreamPlayer] = []
 var _cue_players: Array[AudioStreamPlayer] = []
@@ -104,6 +105,7 @@ var _paused := false
 
 
 func _ready() -> void:
+	LoadClock.mark("boot", "audio_ready_begin")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for bus in [MUSIC_BUS, SFX_BUS, CUES_BUS]:
 		_ensure_bus(bus)
@@ -115,7 +117,9 @@ func _ready() -> void:
 		_cue_players.append(_player(CUES_BUS))
 	_apply_bus_volumes()
 	if ResourceLoader.exists(HOOK_SCRIPT):
-		var hook = load(HOOK_SCRIPT).new()
+		var hook_script: Script = load(HOOK_SCRIPT)
+		LoadClock.mark("boot", "audio_hook_loaded")
+		var hook = hook_script.new()
 		if hook.has_method("register"):
 			hook.register(self)
 			print("OPENRIDE_GAMES audio hook %s registered" % HOOK_SCRIPT)
@@ -260,6 +264,17 @@ func begin_segment(segment: Dictionary) -> void:
 		stop_music()
 
 
+## Applies the rider's audio settings outside a segment (the Games hub: `hub_state.audio`, and
+## a volume previewed in its settings), at once. Music off stops the music.
+func set_volumes(music_on: bool, music_vol: float, sfx_vol: float) -> void:
+	music_enabled = music_on
+	music_volume = clampf(music_vol, 0.0, 1.0)
+	sfx_volume = clampf(sfx_vol, 0.0, 1.0)
+	_apply_bus_volumes()
+	if not music_enabled:
+		stop_music()
+
+
 ## A game's own effects chain on the `Music`, `SFX` or `Master` bus (e.g. reverb and a glue
 ## compressor, or a limiter on the whole mix), replacing any earlier chain there. Native
 ## `AudioEffect`s cost little next to doing the same offline in GDScript. Every segment starts
@@ -300,6 +315,11 @@ func end_session() -> void:
 
 # --- Internals ---
 
+func _render_key_tempo() -> String:
+	var parsed = JSON.parse_string(_render_key)
+	return str(parsed.get("tempo_bpm", "?")) if parsed is Dictionary else "?"
+
+
 func _process(delta: float) -> void:
 	_collect_render()
 	if not _pending_key.is_empty() and not _paused and _decks[_deck].playing:
@@ -339,6 +359,7 @@ func _want(key: String) -> void:
 		return  # _collect_render picks up the newest request when this one is done
 	_render_key = key
 	var request := _requested.duplicate(true)
+	_render_started_msec = Time.get_ticks_msec()
 	_render_task = WorkerThreadPool.add_task(_render.bind(request), false, "AudioDirector music")
 
 
@@ -389,6 +410,7 @@ func _collect_render() -> void:
 	var stems: Dictionary = _render_result
 	_render_result = {}
 	_render_mutex.unlock()
+	print("OPENRIDE_GAMES music render tempo=%s ms=%d" % [_render_key_tempo(), Time.get_ticks_msec() - _render_started_msec])
 	if stems.is_empty():
 		push_warning("AudioDirector: the music generator returned no stems")
 	else:
@@ -406,8 +428,17 @@ func _cache_bytes() -> int:
 	for key in _music_cache:
 		for stream in _music_cache[key].values():
 			if stream is AudioStreamWAV:
-				total += (stream as AudioStreamWAV).data.size()
+				total += wav_bytes(stream)
 	return total
+
+
+## A WAV's PCM size, from its length: reading `data` copies it, and a tempo-following song's stems
+## are 6 MB each. Copying them all on every finished render froze the main thread ~300 ms and
+## dropped as much music (Cadence Karaoke on the bike, 2026-10-20).
+static func wav_bytes(wav: AudioStreamWAV) -> int:
+	var channels := 2 if wav.stereo else 1
+	var sample_bytes := 2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1
+	return roundi(wav.get_length() * wav.mix_rate) * channels * sample_bytes
 
 
 ## Starts `stems` on the other deck and crossfades to it over `fade_sec`, from `from_sec` into
@@ -500,6 +531,7 @@ func _check_phrase_swap(since: float) -> void:
 		var place := _phrase_index(since) if _requested.get("style", {}).get("swap_keeps_place", false) else 0
 		_drop_pending()
 		_start(key, stems, SWAP_FADE_SEC, place * phrase_seconds(stems, _requested) + since, true)
+		print("OPENRIDE_GAMES music swap since=%.3f place=%d" % [since, place])
 		tempo_swapped.emit(key, since)
 	else:
 		_phrase_last = since

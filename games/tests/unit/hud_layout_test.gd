@@ -192,3 +192,63 @@ func test_ride_metrics_are_uniform_columns() -> void:
 		assert_float(m.values[i].get_parent().size.x).is_equal_approx(width, 0.5)
 	assert_array(m.units.map(func(u): return u.text)).is_equal(["rpm", "W", "%"])
 
+
+
+func test_a_skin_is_opt_in_and_clears() -> void:
+	# Kart Race restyles the panels through Hud.set_skin; clearing puts every override back.
+	await _settle()
+	var label: Label = hud.metrics.values[0]
+	var before_font := label.get_theme_font("font")
+	var before_panel := hud.ride_panel.get_theme_stylebox("panel")
+	var before_button := hud.pause_button.get_theme_stylebox("normal")
+	var font := FontVariation.new()
+	font.base_font = ThemeDB.fallback_font
+	var panel := StyleBoxFlat.new()
+	hud.set_skin({"font": font, "panel": panel, "button": StyleBoxFlat.new(), "outline_size": 9})
+	assert_object(label.get_theme_font("font")).is_same(font)
+	assert_object(hud.ride_panel.get_theme_stylebox("panel")).is_same(panel)
+	await _settle()
+	_assert_no_overlaps("skinned", [hud])
+	hud.clear_widgets()  # what Session does when a game leaves
+	assert_object(label.get_theme_font("font")).is_same(before_font)
+	assert_object(hud.ride_panel.get_theme_stylebox("panel")).is_same(before_panel)
+	assert_object(hud.pause_button.get_theme_stylebox("normal")).is_same(before_button)
+
+
+func test_a_game_theme_skin_keeps_the_layout() -> void:
+	# GameTheme.hud_skin() (the shared kit's display face, panels and pills) with the longest
+	# texts: still no overlaps, still clear of the road, and the buttons keep their touch size.
+	hud.set_skin(GameTheme.new(Color(0.22, 0.71, 1.0), Color(0.05, 0.1, 0.24)).hud_skin())
+	hud.show_message("Game over! Next run in 5", HudTheme.WARN)
+	await _settle()
+	_assert_no_overlaps("game theme", [hud])
+	_assert_road_clear("game theme", [hud])
+	for b: Button in [hud.pause_button, hud.end_button]:
+		assert_float(b.size.y).is_greater_equal(HudTheme.BUTTON_HEIGHT * 0.8)
+	hud.clear_skin()
+
+
+func test_cadence_karaoke_status_fits_its_budget() -> void:
+	# Cadence Karaoke's widget (UI_STYLE.md §5): the hero target with the longest texts, in its
+	# skin, stays within 850 x 120 px and overlaps nothing.
+	hud.clear_widgets()
+	var look := GameTheme.new(CadenceWorld.THEMES.warmup, Color("12052a"), 0.25, true)
+	hud.set_skin(look.hud_skin())
+	var cadence := CadenceStatus.new(look)
+	hud.add_widget(cadence)
+	cadence.set_target(120)
+	cadence.set_next("125 in 12 s")
+	cadence.set_info(100, 1.75)
+	cadence.set_alert(CadenceStatus.ALERT_SLOW)
+	await _settle()
+	var rect := cadence.get_global_rect()
+	assert_float(rect.size.x).override_failure_message("cadence widget %s" % rect).is_less_equal(850.0)
+	assert_float(rect.size.y).override_failure_message("cadence widget %s" % rect).is_less_equal(120.0)
+	_assert_no_overlaps("cadence", [hud])
+	cadence.set_alert(CadenceStatus.ALERT_EASE)
+	cadence.set_alert(CadenceStatus.ALERT_FAST)
+	cadence.streak_up(2.0)
+	await _settle()
+	assert_float(cadence.get_global_rect().size.x).is_less_equal(850.0)
+	_assert_no_overlaps("cadence speed up", [hud])
+	hud.clear_skin()

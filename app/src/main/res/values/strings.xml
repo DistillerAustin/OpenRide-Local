@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">OpenRide</string>
-    <string name="games_loading">Loading game…</string>
+    <string name="games_loading">Loading games…</string>
+    <string name="games_starting">Starting your game…</string>
 </resources>

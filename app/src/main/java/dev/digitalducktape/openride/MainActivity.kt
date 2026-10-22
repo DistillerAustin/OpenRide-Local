@@ -63,6 +63,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The Games hub's invariant (spec §10): no games visit stays live while the rider is in the
+     * app. A rider who left games by Home or back without Exit gets the visit saved now, just
+     * as Exit would (the summary follows through `VisitNavigator`); the next Enter Games starts
+     * a new visit.
+     */
+    override fun onResume() {
+        super.onResume()
+        appContainer.gameVisitManager.endIfLive("app_resumed")
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         // Bars can be restored by the system (dialogs, app switches); re-hide whenever the

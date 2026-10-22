@@ -1,6 +1,9 @@
 package dev.digitalducktape.openride.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -9,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.BuildConfig
+import dev.digitalducktape.openride.games.session.VisitDestination
 import dev.digitalducktape.openride.viewModelFactory
 import dev.digitalducktape.openride.ui.creator.CreatorScreen
 import dev.digitalducktape.openride.ui.creator.CreatorViewModel
@@ -38,6 +42,17 @@ import dev.digitalducktape.openride.ui.ride.RideSummaryViewModel
 @Composable
 fun OpenRideNavHost(appContainer: AppContainer) {
     val navController = rememberNavController()
+
+    // After a games visit (consume once): its ride summary, or the profile editor for the FTP nudge.
+    val visitDestination by appContainer.visitNavigator.pending.collectAsState()
+    LaunchedEffect(visitDestination) {
+        val destination = visitDestination ?: return@LaunchedEffect
+        when (destination) {
+            is VisitDestination.RideSummary -> navController.navigate(Destinations.rideSummary(destination.rideId))
+            VisitDestination.EditProfile -> navController.navigate(Destinations.ProfileEdit)
+        }
+        appContainer.visitNavigator.consume(destination)
+    }
 
     NavHost(navController = navController, startDestination = Destinations.ProfileSelect) {
         composable(Destinations.ProfileSelect) {

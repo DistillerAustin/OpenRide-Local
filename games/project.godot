@@ -6,7 +6,7 @@ config_version=5
 [application]
 
 config/name="OpenRide Games"
-run/main_scene="res://Main.tscn"
+run/main_scene="res://hub/Hub.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 ; The Android back button must never quit: quitting the engine kills the app's whole process.
 ; Session handles the go-back request instead.

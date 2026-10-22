@@ -5,6 +5,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+/** A result row's plan in the queries below: its own (schema 8), else its ride's. */
+private const val PLAN = "COALESCE(g.planId, r.gamePlan)"
+
 /** One row of [GameResultDao.observePersonalBests]: a rider's best at one game, plan and difficulty. */
 data class GamePersonalBest(
     val gameId: String,
@@ -26,6 +29,16 @@ data class LeaderboardEntry(
     val bestStars: Int,
 )
 
+/** One row of [GameResultDao.planBests]: a rider's best run of one plan at one difficulty. */
+data class PlanBestRow(
+    val planId: String,
+    val difficulty: String,
+    val bestScore: Double,
+    val bestStars: Int,
+    /** The latest ride's `startEpochMs` with a run of this plan, for "the last 20 custom circuits". */
+    val lastPlayedMs: Long,
+)
+
 /** A rider's best whole session of one plan (all its segments summed), or nulls if none yet. */
 data class PlanBest(
     val bestScore: Double?,
@@ -35,6 +48,10 @@ data class PlanBest(
 /**
  * Mini-games results (#35). Skipped segments never count towards a best: they score 0 and
  * would only crowd the leaderboard with riders who never played.
+ *
+ * A row's plan is `COALESCE(g.planId, r.gamePlan)` ([PLAN]): its own since schema 8 (a hub
+ * visit's ride holds several plans), else its ride's. A plan's "session" is one run of it,
+ * `(rideId, planRun)`.
  */
 @Dao
 interface GameResultDao {
@@ -46,12 +63,12 @@ interface GameResultDao {
 
     /** The rider's personal bests: per game, per plan (mode and length) and per difficulty. */
     @Query(
-        "SELECT g.gameId AS gameId, g.variant AS variant, r.gamePlan AS gamePlan, g.difficulty AS difficulty, " +
+        "SELECT g.gameId AS gameId, g.variant AS variant, $PLAN AS gamePlan, g.difficulty AS difficulty, " +
             "MAX(g.score) AS bestScore, MAX(g.stars) AS bestStars, COUNT(*) AS plays " +
             "FROM game_results g JOIN rides r ON r.id = g.rideId " +
-            "WHERE r.profileId = :profileId AND g.skipped = 0 AND r.gamePlan IS NOT NULL " +
-            "GROUP BY g.gameId, g.variant, r.gamePlan, g.difficulty " +
-            "ORDER BY g.gameId, g.variant, r.gamePlan, g.difficulty",
+            "WHERE r.profileId = :profileId AND g.skipped = 0 AND $PLAN IS NOT NULL " +
+            "GROUP BY g.gameId, g.variant, $PLAN, g.difficulty " +
+            "ORDER BY g.gameId, g.variant, $PLAN, g.difficulty",
     )
     fun observePersonalBests(profileId: Long): Flow<List<GamePersonalBest>>
 
@@ -65,7 +82,7 @@ interface GameResultDao {
             "MAX(g.score) AS bestScore, MAX(g.stars) AS bestStars " +
             "FROM game_results g JOIN rides r ON r.id = g.rideId JOIN profiles p ON p.id = r.profileId " +
             "WHERE g.gameId = :gameId AND g.difficulty = :difficulty AND g.skipped = 0 " +
-            "AND (:gamePlan IS NULL OR r.gamePlan = :gamePlan) AND g.variant = :variant " +
+            "AND (:gamePlan IS NULL OR $PLAN = :gamePlan) AND g.variant = :variant " +
             "GROUP BY p.id ORDER BY bestScore DESC, p.name ASC LIMIT :limit",
     )
     suspend fun leaderboard(gameId: String, difficulty: String, gamePlan: String?, variant: String = "", limit: Int = 10): List<LeaderboardEntry>
@@ -79,11 +96,27 @@ interface GameResultDao {
         "SELECT MAX(totalScore) AS bestScore, MAX(totalStars) AS bestStars FROM (" +
             "SELECT SUM(g.score) AS totalScore, SUM(g.stars) AS totalStars " +
             "FROM game_results g JOIN rides r ON r.id = g.rideId " +
-            "WHERE r.profileId = :profileId AND r.gamePlan = :gamePlan AND g.difficulty = :difficulty " +
-            "AND r.id != :excludeRideId GROUP BY r.id " +
+            "WHERE r.profileId = :profileId AND $PLAN = :gamePlan AND g.difficulty = :difficulty " +
+            "AND r.id != :excludeRideId GROUP BY r.id, g.planRun " +
             "HAVING :variant IS NULL OR SUM(g.variant != :variant) = 0)",
     )
     suspend fun planBest(profileId: Long, gamePlan: String, difficulty: String, excludeRideId: Long, variant: String? = null): PlanBest
+
+    /**
+     * The rider's best run of every plan they've played, per difficulty (the Games hub's
+     * `bests.plans`), with the latest ride that played it. Variants aren't separated.
+     */
+    @Query(
+        "SELECT planId, difficulty, MAX(totalScore) AS bestScore, MAX(totalStars) AS bestStars, " +
+            "MAX(startEpochMs) AS lastPlayedMs FROM (" +
+            "SELECT $PLAN AS planId, g.difficulty AS difficulty, SUM(g.score) AS totalScore, " +
+            "SUM(g.stars) AS totalStars, r.startEpochMs AS startEpochMs " +
+            "FROM game_results g JOIN rides r ON r.id = g.rideId " +
+            "WHERE r.profileId = :profileId AND $PLAN IS NOT NULL " +
+            "GROUP BY r.id, g.planRun, $PLAN, g.difficulty) " +
+            "GROUP BY planId, difficulty ORDER BY planId, difficulty",
+    )
+    suspend fun planBests(profileId: Long): List<PlanBestRow>
 
     // --- Backup & restore (PRD P1-8) --------------------------------------------------------
 

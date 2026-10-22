@@ -24,7 +24,11 @@ const MUSIC_STYLE := {
 	"stem_gates": {"harmony": 0.55, "lead": 0.9},
 }
 const MUSIC_BPM := TugMusic.BPM
-const SCREEN_FX_LAYER := 5  ## under the HUD (10)
+## The lost-round flash: the 3D view's image is tinted toward the river (its modulate, free in
+## the draw that scales it up) instead of a full-screen blended overlay, a full-resolution pass
+## the tablet pays about 5 fps for.
+const FLASH_TINT := Color(0.25, 0.55, 0.8)
+const FLASH_FADE := 1.2  ## the flash's strength falls this much a second
 ## The 3D view renders into a SubViewport at this share of the screen's resolution, drawn
 ## scaled up under the HUD (see DodgeBall.gd: the tablet's GPU is fill-rate bound at 1080p).
 const RENDER_SCALE := 0.62
@@ -32,18 +36,26 @@ const MSAA := Viewport.MSAA_DISABLED
 const BRACE_LEAN := 0.5  ## lean_depth above this counts as leaning in
 const FALL_SPLASH_DELAY := 0.7  ## the splash sound lands this long after a round ends
 
+## The look (framework/ui/UI_STYLE.md): a rustic riverside fairground. Rope orange on bark
+## brown, badges leaning a little; the display face stays upright (solid, not swooshy).
+static var look := GameTheme.new(Color("ff9f1c"), Color("2a160b"), 0.12)
+
 var logic: TugLogic
 var world: TugWorld
 
 var _view: SubViewport
 var _status: TugStatus
-var _flash_rect: ColorRect
+var _shown: MeshInstance2D
+var _flash := 0.0  ## 0-1: the lost-round flash
 var _creak_left := 0.0
 var _message_left := 0.0
 var _mode_name := "match"
 var _endless := false
 var _tension := 0.5
 var _best_rung := 0
+var _results: Array[bool] = []  ## each round's result in order (true: won), for the pips
+## Steps the 3D view down to a lower render scale if the frame rate stays low in a round.
+var governor := RenderScaleStep.new()
 
 
 func info() -> GameInfo:
@@ -74,13 +86,14 @@ func info() -> GameInfo:
 	i.variant_star_thresholds = {"ladder": i.star_thresholds.duplicate(true)}
 	i.options = [
 		{"key": "mode", "label": "Mode", "choices": ["match", "ladder"],
-			"labels": ["Match", "Ladder"], "default": "match"},
+			"labels": ["Match", "Ladder"], "default": "match", "kind": "segmented"},
 		{"key": "length", "label": "Match length", "choices": ["3", "5"],
-			"labels": ["Best of 3", "Best of 5"], "default": "3"},
+			"labels": ["Best of 3", "Best of 5"], "default": "3", "kind": "segmented"},
 		{"key": "scene", "label": "Scene", "choices": ["auto", "dawn", "day", "dusk", "night"],
-			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto"},
+			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto",
+			"group": "More options"},
 		{"key": "brace", "label": "Brace lean", "choices": ["off", "on"],
-			"labels": ["Off", "On"], "default": "off"},
+			"labels": ["Off", "On"], "default": "off", "kind": "segmented", "group": "More options"},
 	]
 	return i
 
@@ -92,7 +105,7 @@ func tracker_mode_for_segment(_segment: Dictionary) -> String:
 
 func how_to_text(seg: Dictionary) -> String:
 	if _is_endless(seg):
-		return "Pull harder than the bot. Win round after round until time is up"
+		return "Out-pull the bot, round after round"
 	if option("mode") == "ladder":
 		return "Climb the ladder: every win faces a stronger bot"
 	return "Win the match: best of %s rounds" % option("length")
@@ -105,6 +118,15 @@ func target_text(seg: Dictionary) -> String:
 	return "Beat the bot's %d W" % roundi(bot)
 
 
+func ui_theme() -> GameTheme:
+	return look
+
+
+## The intro card's picture: the first bot's head, colour and name.
+func intro_visual() -> Control:
+	return TugBotPortrait.new(look, world.bot_name(), world.bot_color(), world.bot_has_horns())
+
+
 func _is_endless(seg: Dictionary) -> bool:
 	return str(seg.get("end_mode", "timer")) == "timer" and float(seg.get("duration_sec", -1)) > 0.0
 
@@ -115,30 +137,21 @@ func _ready() -> void:
 	world.name = "World"
 	_view = SubViewport.new()
 	_view.name = "View3D"
-	_view.size = Vector2i(roundi(HudTheme.W * RENDER_SCALE), roundi(HudTheme.H * RENDER_SCALE))
+	_set_render_scale(RENDER_SCALE)
 	_view.msaa_3d = MSAA
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
 	add_child(_view)
 	_view.add_child(world)
-	var shown := TextureRect.new()
+	# The view scaled up to the screen: a grid with the vignette in its vertex colours
+	# (TugMeshes.view_image), one draw like a TextureRect, and no vignette left per pixel.
+	var shown := MeshInstance2D.new()
 	shown.name = "View3DImage"
+	shown.mesh = TugMeshes.view_image(Vector2(HudTheme.W, HudTheme.H))
 	shown.texture = _view.get_texture()
-	shown.size = Vector2(HudTheme.W, HudTheme.H)
-	shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
-	var fx_layer := CanvasLayer.new()
-	fx_layer.layer = SCREEN_FX_LAYER
-	add_child(fx_layer)
-	_flash_rect = ColorRect.new()
-	_flash_rect.size = Vector2(HudTheme.W, HudTheme.H)
-	_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flash_rect.color = Color(0.1, 0.35, 0.55, 0.0)
-	_flash_rect.visible = false
-	fx_layer.add_child(_flash_rect)
+	_shown = shown
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -149,11 +162,16 @@ func _on_prepare(seg: Dictionary) -> void:
 		best_of = maxi(int(params.rounds), 1)
 		best_of += 1 - best_of % 2  # best-of needs an odd count
 	logic = TugLogic.new(rng.seed, params, _mode_name, best_of)
+	governor = RenderScaleStep.new()
+	_set_render_scale(RENDER_SCALE)
 	_best_rung = 0
+	_results = []
 	_apply_options()
-	_status = TugStatus.new()
+	hud.set_skin(look.hud_skin())
+	_status = TugStatus.new(look)
 	hud.add_widget(_status)
-	world.set_bot(0)
+	_set_bot(0)
+	_update_rounds()
 	AudioDirector.play_music(MUSIC_STYLE, MUSIC_BPM)
 	AudioDirector.set_intensity(0.5)
 	AudioDirector.set_bus_effects(AudioDirector.MUSIC_BUS, TugAudioScript.music_effects())
@@ -177,6 +195,10 @@ func _apply_options() -> void:
 
 
 func _on_frame(delta: float) -> void:
+	if governor.sample(delta, logic.phase == TugLogic.Phase.ROUND):
+		_set_render_scale(governor.render_scale(RENDER_SCALE))
+		print("OPENRIDE_GAMES tug_of_war quality tier=%d fps=%.1f scale=%.2f" % [
+			governor.tier, governor.last_fps, governor.render_scale(RENDER_SCALE)])
 	var power := InputBus.power
 	var cadence := InputBus.cadence
 	var brace := option("brace") == "on" and InputBus.lean_depth > BRACE_LEAN
@@ -208,11 +230,17 @@ func _on_frame(delta: float) -> void:
 		_message_left -= delta
 		if _message_left <= 0.0:
 			hud.hide_message()
-	if _flash_rect.visible:
-		_flash_rect.color.a = move_toward(_flash_rect.color.a, 0.0, delta * 1.2)
-		_flash_rect.visible = _flash_rect.color.a > 0.0
+	if _flash > 0.0:
+		_flash = move_toward(_flash, 0.0, delta * FLASH_FADE)
+		_shown.modulate = Color.WHITE.lerp(FLASH_TINT, _flash)
 	won = logic.rider_won()
 	variant = "ladder" if _mode_name == "ladder" else ""
+
+
+## The result's stats, built once at the end rather than a new Dictionary every frame.
+func finish() -> Dictionary:
+	if logic == null:
+		return super.finish()
 	stats = {
 		"mode": _mode_name,
 		"rounds_won": logic.wins,
@@ -225,6 +253,7 @@ func _on_frame(delta: float) -> void:
 		"surges": logic.surges,
 		"surges_answered": logic.surges_answered,
 	}
+	return super.finish()
 
 
 func _handle(event: Dictionary) -> void:
@@ -232,15 +261,17 @@ func _handle(event: Dictionary) -> void:
 		"telegraph":
 			AudioDirector.play_sfx("surge_drumroll", -2.0)
 			GameMix.duck_for_moment(1.2)
-			_show_message("Surge coming!", 1.0, HudTheme.WARN)
+			_show_message("Surge coming!", 1.0, GameTheme.WARN)
 		"surge_start":
 			AudioDirector.play_sfx("rope_creak", -2.0, 0.7)
 		"surge_end":
 			if event.answered:
-				_show_message("Held it!", 1.2, HudTheme.GOOD)
+				_show_message("Held it!", 1.2, GameTheme.GOOD)
 				AudioDirector.play_sfx("crowd_swell", -8.0)
 		"round_end":
 			world.excitement = 1.0
+			_results.append(bool(event.won))
+			_update_rounds()
 			if event.won:
 				award(event.points)
 				_best_rung = maxi(_best_rung, logic.rung + 1)
@@ -248,43 +279,60 @@ func _handle(event: Dictionary) -> void:
 				AudioDirector.play_sfx("win_sting")
 				AudioDirector.play_sfx("crowd_swell", -4.0)
 				GameMix.duck_for_sting(2.0)
-				_show_message("Round won!", TugLogic.ROUND_END_SEC, HudTheme.GOOD)
+				_show_message("Round won! +%d" % roundi(event.points), TugLogic.ROUND_END_SEC, GameTheme.GOOD)
+				GameTheme.pop(hud.score, 1.2)
 			else:
 				world.fall(false)
 				AudioDirector.play_sfx("lose_sting")
 				GameMix.duck_for_sting(2.0)
-				_flash_rect.color = Color(0.1, 0.35, 0.55, 0.9)
-				_flash_rect.visible = true
-				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, HudTheme.BAD)
+				_flash = 0.9
+				_shown.modulate = Color.WHITE.lerp(FLASH_TINT, _flash)
+				_show_message("Pulled in!", TugLogic.ROUND_END_SEC, GameTheme.BAD)
 			get_tree().create_timer(FALL_SPLASH_DELAY).timeout.connect(func(): AudioDirector.play_sfx("splash"))
 		"recovery_start":
 			world.reset_round()
-			world.set_bot(logic.rung + (1 if _mode_name == "ladder" and logic.round_won else 0))
-			_show_message("Recover. Next: %s, %d W" % [world.bot_name(), roundi(event.next_bot_watts)], 4.0)
+			_set_bot(logic.rung + (1 if _mode_name == "ladder" and logic.round_won else 0))
+			_show_message("NEXT: %s %d W" % [world.bot_name(), roundi(event.next_bot_watts)], 4.0, _status.bot_color)
 		"round_start":
 			world.reset_round()
-			world.set_bot(logic.rung)
-			_show_message("Round %d: %s, %d W" % [event.round, world.bot_name(), roundi(event.bot_watts)], 2.5)
+			_set_bot(logic.rung)
+			_update_rounds()
+			_show_message("Round %d: %s %d W" % [event.round, world.bot_name(), roundi(event.bot_watts)], 2.5, _status.bot_color)
 		"match_end":
 			_show_message("Match won!" if event.won else "Match over", 2.5,
-				HudTheme.GOOD if event.won else HudTheme.WARN)
+				GameTheme.GOOD if event.won else GameTheme.WARN)
 			get_tree().create_timer(2.5).timeout.connect(end_segment)
 
 
 
 func _update_status() -> void:
-	var round_info := "Round %d · %d-%d · %s" % [logic.round_index, logic.wins, logic.losses, world.bot_name()]
 	var alert := ""
 	if logic.keep_pedaling:
-		alert = "Keep pedaling"
-	elif logic.surge_state == "telegraph":
-		alert = "SURGE!"
+		alert = "pedal"
 	elif logic.phase == TugLogic.Phase.RECOVERY:
-		alert = "Recover %ds" % ceili(logic.phase_left)
+		alert = "rest"
 	_status.set_state(logic.rider_power, logic.bot_power_now(), logic.p if logic.phase != TugLogic.Phase.RECOVERY else 0.0,
-		logic.surge_state, round_info, alert)
+		logic.surge_state, alert, ceili(logic.phase_left) if alert == "rest" else 0)
 
 
-func _show_message(text: String, seconds: float, color := HudTheme.INK) -> void:
+## The status widget's round line: pips in a match, the rung on the ladder, wins when endless.
+func _update_rounds() -> void:
+	_status.set_rounds(_mode_name, logic.best_of, _results, logic.rung + 1)
+
+
+## A new bot in the world and on the status widget.
+func _set_bot(rung: int) -> void:
+	world.set_bot(rung)
+	_status.set_bot(world.bot_name(), world.bot_color())
+
+
+## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
+func _set_render_scale(scale: float) -> void:
+	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	if _view.size != size:
+		_view.size = size
+
+
+func _show_message(text: String, seconds: float, color := GameTheme.INK) -> void:
 	hud.show_message(text, color)
 	_message_left = seconds

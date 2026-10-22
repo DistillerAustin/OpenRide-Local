@@ -84,3 +84,15 @@ func test_result_has_the_issue_stats() -> void:
 	for key in ["dodges", "hits", "pct_time_above_floor", "avg_power", "longest_streak", "runs", "effort_avg"]:
 		assert_bool(result.stats.has(key)).override_failure_message("missing stats.%s" % key).is_true()
 	assert_that(result.won).is_null()
+
+
+## Play that stays under the target steps the 3D view down to the low render scale, once.
+func test_slow_play_steps_the_view_down() -> void:
+	var game := _game()
+	var view: SubViewport = game.get_node("View3D")
+	var full := view.size
+	for i in 60 * 5:
+		game._on_frame(1.0 / 40.0)
+	assert_int(game.governor.tier).is_equal(1)
+	assert_int(view.size.x).is_less(full.x)
+	assert_int(view.size.x).is_equal(roundi(HudTheme.W * RenderScaleStep.LOW_SCALE))

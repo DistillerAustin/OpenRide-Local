@@ -12,16 +12,22 @@ back to stock if you ever need to.
 ## 0. Prerequisites
 
 - The bike's tablet, with USB debugging accessible per OpenPelo's own setup instructions.
-- A computer with `adb` installed (part of the Android SDK platform-tools).
+- A computer with OpenPelo. Section 1 needs nothing else; the later sections use `adb`
+  (part of the Android SDK platform-tools).
 - OpenPelo itself set up per [its own docs](https://github.com/doudar/Openpelo) — this guide
   picks up *after* OpenPelo has ADB access working, it doesn't replace OpenPelo's setup.
 - This repo built to a debug APK (`./gradlew assembleDebug`), or a release APK if you've set
   up signing — the output lands at `app/build/outputs/apk/debug/app-debug.apk` (or
   `.../release/app-release.apk`).
 
-## 1. Sideload the APK
+## 1. Install the app
 
-With the tablet connected (USB or wireless ADB per OpenPelo's instructions) and reachable as
+**The easy way:** OpenRide is in [OpenPelo](https://github.com/doudar/Openpelo)'s app catalog.
+In OpenPelo, select the bike under **Target Device**, tick **OpenRide** under **Compatible
+applications** (the **Fitness** category), and click **Install selected**. It installs the
+latest release's `openride-real-*.apk`; skip to the launch check at the end of this section.
+
+**By hand,** with a downloaded or self-built APK: with the tablet connected (USB or wireless ADB per OpenPelo's instructions) and reachable as
 an `adb devices` target:
 
 ```sh

@@ -7,6 +7,11 @@ const SUPPORTS := ["rounds", "minutes", "open"]
 const ROLES := ["warmup", "work", "recovery", "cooldown"]
 const TRACKER_MODES := ["off", "lean_x", "lean_2d", "lean_stand"]
 const DIFFICULTIES := ["easy", "standard", "hard"]
+## An option's screens (`where`), control (`kind`) and the hub's card grid (spec §7.1).
+const OPTION_WHERE := ["hub", "pause", "both"]
+const OPTION_KINDS := ["cycle", "segmented", "cards"]
+const SEGMENTED_MAX := 4
+const COLUMNS_MAX := 6
 
 var id := ""  ## the game_id: its folder under res://games/ and its registry key
 var title := ""  ## shown on the intro card and the summary, e.g. "Tug of War"
@@ -24,6 +29,13 @@ var roles: Array[String] = []
 var tracker_mode := "off"
 ## Whether the effort multiplier applies in a Just Ride (it always does in work segments).
 var effort_in_just_ride := false
+## `end_mode` of a timed ("minutes") Just Ride: "timer" (Kotlin ends it at its length) unless the
+## game ends on its own terms, like a race finishing on a lap line ("game"; Kotlin still
+## hard-stops at 1.5 × the length). Kotlin's `GameDeclaration.timedEndMode` must match.
+var timed_end_mode := "timer"
+## The game counts its own start down (Kart Race's grid 3-2-1-GO), so the intro card shows
+## "Get ready" instead of a 3-2-1 and plays no countdown cues: one countdown, not two.
+var own_countdown := false
 ## Score → stars, per difficulty: {"easy": [one, two, three], "standard": […], "hard": […]}.
 ## Each list holds the minimum score for 1, 2 and 3 stars.
 var star_thresholds := {}
@@ -33,9 +45,19 @@ var stars_per_minute := false
 ## Star thresholds for a game's variants, by variant: {"catch": {"easy": […], …}}. A variant not
 ## listed uses `star_thresholds`.
 var variant_star_thresholds := {}
-## The game's own options, shown in the shared pause screen's "Game options" card and
-## remembered per rider (`GameOptions`). Each is
+## The game's own options, shown on the hub's game screen and in the shared pause screen's
+## "Game options" card, and remembered per rider (`GameOptions`). Each is
 ## {key, label, choices: [values], labels: [shown text], default}. Values are strings.
+## Optional keys (docs/GAMES.md "Game options"):
+##   where    "hub" | "pause" | "both" (default): the screens that show it
+##   kind     "cycle" (default: one button that steps) | "segmented" (2-4 short choices side by
+##            side) | "cards" (a picture card per choice, hub only; the pause screen cycles)
+##   cards    for "cards": [{value, title, subtitle, image (res:// path), accent (Color)}];
+##            a choice without one falls back to its label
+##   columns  for "cards": the grid's columns (default 4)
+##   group    a heading: "" (default) shows on the game screen, anything else folds under
+##            the hub's "More options"
+##   rider_badge  for "cards": the chosen card wears the rider's name (Kart Race's kart)
 var options: Array[Dictionary] = []
 
 
@@ -63,6 +85,8 @@ func validate() -> PackedStringArray:
 			problems.append("unknown role '%s'" % role)
 	if tracker_mode not in TRACKER_MODES:
 		problems.append("unknown tracker_mode '%s'" % tracker_mode)
+	if timed_end_mode not in ["timer", "game"]:
+		problems.append("unknown timed_end_mode '%s'" % timed_end_mode)
 	var tables := {"star_thresholds": star_thresholds}
 	for v in variant_star_thresholds:
 		tables["variant_star_thresholds.%s" % v] = variant_star_thresholds[v]
@@ -83,7 +107,88 @@ func validate() -> PackedStringArray:
 			problems.append("option '%s' needs two or more choices, each with a label" % option.key)
 		elif not choices.has(option.get("default")):
 			problems.append("option '%s' default isn't one of its choices" % option.key)
+		else:
+			problems.append_array(_validate_presentation(option))
 	return problems
+
+
+## The hub keys of one option (spec §7.1).
+static func _validate_presentation(option: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var key := str(option.key)
+	var choices: Array = option.choices
+	if str(option.get("where", "both")) not in OPTION_WHERE:
+		problems.append("option '%s': unknown where '%s'" % [key, option.where])
+	var kind := str(option.get("kind", "cycle"))
+	if kind not in OPTION_KINDS:
+		problems.append("option '%s': unknown kind '%s'" % [key, kind])
+	if kind == "segmented" and choices.size() > SEGMENTED_MAX:
+		problems.append("option '%s': segmented takes at most %d choices" % [key, SEGMENTED_MAX])
+	if not (option.get("group", "") is String):
+		problems.append("option '%s': group must be a string" % key)
+	if option.has("rider_badge") and not (option.rider_badge is bool):
+		problems.append("option '%s': rider_badge must be true or false" % key)
+	if kind != "cards":
+		for card_key in ["cards", "columns", "rider_badge"]:
+			if option.has(card_key):
+				problems.append("option '%s': %s is for kind cards" % [key, card_key])
+		return problems
+	var columns = option.get("columns", 4)
+	if not (columns is int) or columns < 1 or columns > COLUMNS_MAX:
+		problems.append("option '%s': columns must be 1-%d" % [key, COLUMNS_MAX])
+	if not (option.get("cards", []) is Array):
+		problems.append("option '%s': cards must be a list" % key)
+		return problems
+	var seen := {}
+	for card in option.get("cards", []):
+		if not (card is Dictionary) or not choices.has(card.get("value")):
+			problems.append("option '%s': a card's value isn't one of its choices" % key)
+			continue
+		if seen.has(card.value):
+			problems.append("option '%s': two cards for '%s'" % [key, card.value])
+		seen[card.value] = true
+		var image := str(card.get("image", ""))
+		if not image.is_empty() and not ResourceLoader.exists(image):
+			problems.append("option '%s': card '%s' image %s is missing" % [key, card.value, image])
+		if card.has("accent") and not (card.accent is Color):
+			problems.append("option '%s': card '%s' accent must be a Color" % [key, card.value])
+	return problems
+
+
+## An option's screens: "hub", "pause" or "both".
+static func option_where(option: Dictionary) -> String:
+	return str(option.get("where", "both"))
+
+
+## An option's control: "cycle", "segmented" or "cards".
+static func option_kind(option: Dictionary) -> String:
+	return str(option.get("kind", "cycle"))
+
+
+## The options the hub's game screen shows (where hub or both), in declaration order.
+func hub_options() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	out.assign(options.filter(func(o): return option_where(o) != "pause"))
+	return out
+
+
+## The options the pause screen shows (where pause or both), in declaration order.
+func pause_options() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	out.assign(options.filter(func(o): return option_where(o) != "hub"))
+	return out
+
+
+## The card for `value` of a `cards` option: {value, title, subtitle, image, accent}, the
+## declared card filled in from the option's label (no image, no accent) where it's missing.
+static func card_for(option: Dictionary, value: String) -> Dictionary:
+	var out := {"value": value, "title": GameOptions.label_for(option, value), "subtitle": "", "image": "", "accent": null}
+	for card in option.get("cards", []):
+		if card is Dictionary and str(card.get("value")) == value:
+			for k in ["title", "subtitle", "image", "accent"]:
+				if card.has(k):
+					out[k] = card[k]
+	return out
 
 
 ## The star thresholds for `variant` (its own, or the game's).

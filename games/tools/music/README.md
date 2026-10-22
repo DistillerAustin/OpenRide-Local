@@ -22,6 +22,9 @@ import afterwards. A theme takes 4-8 s to render.
   - `PREFIX`: the index is `games/games/<game>/<PREFIX>Music.gd`.
   - Cadence Karaoke has `SEQ` (a score for the sequencer) instead of `SONG`; `cues.py` has only
     effects, written to `audio/cues/` with the index `audio/CueSounds.gd`.
+  - `hub.py` is the Games hub's theme, not a game's: its `DIR`, `INDEX` and `CLASS_NAME` put the
+    stems in `hub/music/` and the index in `hub/HubMusicIndex.gd`
+    (`render_music.py hub`).
 - `render_music.py`: renders a song module.
 - `compose.py`: theory helpers and `Song`, which schedules notes onto buses and mixes them into
   stems (`bed`, `harmony`, `lead`) that sum to the mastered mix.

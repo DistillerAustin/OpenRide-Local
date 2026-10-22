@@ -17,6 +17,9 @@ extends Node2D
 ## The game has finished its segment: it won the race, or it wrapped up after
 ## `request_finish`. Session then reports `finish()`.
 signal ended
+## The game's look changed mid-segment (Cadence Karaoke's follows its tunnel colour): Session
+## styles the intro card, the pause screen and the calibration with `ui_theme()` again.
+signal ui_theme_changed
 
 var segment: Dictionary = {}  ## the segment_started payload
 var params: Dictionary = {}  ## the segment's game-specific params, already FTP-scaled
@@ -25,6 +28,7 @@ var rng := RandomNumberGenerator.new()  ## seeded from the segment's `seed`
 var hud: Hud  ## set by Session before prepare()
 var playing := false  ## between start() and the end of the segment
 var paused := false
+var _frozen_views: Array[SubViewport] = []
 var finishing := false  ## after request_finish()
 var played_sec := 0.0  ## gameplay seconds, pauses excluded
 ## The result's `won` (true / false) for games with a winner; null otherwise.
@@ -61,6 +65,14 @@ func how_to_text(_segment: Dictionary) -> String:
 ## A small picture or animation for the intro card (a Control, freed with the card's next
 ## segment), or null. Called after `_on_prepare`.
 func intro_visual() -> Control:
+	return null
+
+
+## The game's look (framework/ui/UI_STYLE.md), or null for the kit's plain one. Session styles
+## the intro card and the pause screen with it; the game skins the HUD itself in `_on_prepare`
+## (`hud.set_skin(theme.hud_skin())`). Called after `_on_prepare`, and again whenever the game
+## emits `ui_theme_changed`. The summary uses the last look a game had.
+func ui_theme() -> GameTheme:
 	return null
 
 
@@ -171,7 +183,35 @@ func has_ended() -> bool:
 	return _ended
 
 
+## Every shader under a game's folder, loaded on its first start and kept for the engine's life.
+## A Shader freed when its game ends is compiled again on the next start (the Compatibility
+## renderer compiles per Shader): on the tablet that cost 2-4 s of the first frames of every
+## start, not just the first. Keyed by folder.
+static var _kept_shaders := {}
+
+
+static func keep_shaders(dir: String) -> int:
+	if not _kept_shaders.has(dir):
+		var found: Array[Shader] = []
+		_collect_shaders(dir, found)
+		_kept_shaders[dir] = found
+	return _kept_shaders[dir].size()
+
+
+static func _collect_shaders(dir: String, out: Array[Shader]) -> void:
+	for f in ResourceLoader.list_directory(dir):
+		if f.ends_with("/"):
+			_collect_shaders(dir.path_join(f.trim_suffix("/")), out)
+			continue
+		f = f.trim_suffix(".remap")
+		if f.ends_with(".gdshader"):
+			var sh := load(dir.path_join(f)) as Shader
+			if sh:
+				out.append(sh)
+
+
 func prepare(new_segment: Dictionary) -> void:
+	keep_shaders(get_script().resource_path.get_base_dir())
 	_prepared = true
 	_ended = false
 	segment = new_segment
@@ -199,6 +239,19 @@ func set_paused(value: bool) -> void:
 	paused = value
 	# Freezes this scene's nodes (tweens, particles, timers) along with _on_frame.
 	process_mode = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
+	# The game's always-rendering 3D views hold their last frame while paused: no GPU work
+	# behind the pause screen (review of PR #58).
+	if paused:
+		_frozen_views = []
+		for v: SubViewport in find_children("*", "SubViewport", true, false):
+			if v.render_target_update_mode == SubViewport.UPDATE_ALWAYS:
+				v.render_target_update_mode = SubViewport.UPDATE_DISABLED
+				_frozen_views.append(v)
+	else:
+		for v: SubViewport in _frozen_views:
+			if is_instance_valid(v):
+				v.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		_frozen_views = []
 	if paused:
 		_on_pause()
 	else:

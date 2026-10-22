@@ -52,6 +52,9 @@ var _run_awarded := 0.0
 var _best_awarded := 0.0
 var _round_limit := -1.0  ## seconds, for a rounds Just Ride (end_mode game)
 var _view: SubViewport
+## The tablet's one quality step: the 3D view from _full_scale to 0.55 if play stays under 54 fps.
+var governor := RenderScaleStep.new()
+var _full_scale := RENDER_SCALE
 var _mode_sec := {"dodge": 0.0, "catch": 0.0}
 var _message_left := 0.0
 var _perf_usec := 0
@@ -86,11 +89,12 @@ func info() -> GameInfo:
 	i.variant_star_thresholds = {"catch": i.star_thresholds.duplicate(true)}
 	i.options = [
 		{"key": "mode", "label": "Mode", "choices": ["dodge", "catch"],
-			"labels": ["Dodge the balls", "Catch the balls"], "default": "dodge"},
+			"labels": ["Dodge the balls", "Catch the balls"], "default": "dodge", "kind": "segmented"},
 		{"key": "scene", "label": "Scene", "choices": ["auto", "dawn", "day", "dusk", "night"],
-			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto"},
+			"labels": ["Time of day", "Dawn", "Day", "Dusk", "Night"], "default": "auto",
+			"group": "More options"},
 		{"key": "camera_roll", "label": "Camera tilt", "choices": ["on", "off"],
-			"labels": ["On", "Off"], "default": "on"},
+			"labels": ["On", "Off"], "default": "on", "kind": "segmented", "group": "More options"},
 	]
 	return i
 
@@ -99,6 +103,12 @@ func how_to_text(_seg: Dictionary) -> String:
 	if option("mode") == "catch":
 		return "CATCH the balls! Lean into the gold balls to score"
 	return "DODGE the balls! Lean away from the red balls"
+
+
+## Dodge Ball's look (`DodgeStatus.look`): the session styles the intro card and the pause
+## screen with it, and `_on_prepare` skins the HUD.
+func ui_theme() -> GameTheme:
+	return DodgeStatus.look
 
 
 func intro_visual() -> Control:
@@ -125,6 +135,7 @@ func _ready() -> void:
 			world.tuning[key] = bool(tuning.get_value("world", key))
 	world.name = "World"
 	var scale := clampf(float(tuning.get_value("render", "scale", RENDER_SCALE)) if tuned else RENDER_SCALE, 0.4, 1.0)
+	_full_scale = scale
 	_view = SubViewport.new()
 	_view.name = "View3D"
 	_view.size = Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
@@ -176,7 +187,10 @@ func _on_prepare(seg: Dictionary) -> void:
 	if str(seg.get("end_mode", "timer")) == "game" and float(seg.get("duration_sec", -1)) > 0.0:
 		_round_limit = maxf(1.0, float(params.get("rounds", 1))) * DodgeBallLogic.ROUND_SEC
 	_apply_options()
+	governor = RenderScaleStep.new()
+	_set_render_scale(_full_scale)
 
+	hud.set_skin(DodgeStatus.look.hud_skin())
 	_status = DodgeStatus.new(logic.cadence_floor, logic.has_lives, logic.is_catch())
 	hud.add_widget(_status)
 	hud.metrics.set_cadence_band(logic.cadence_floor)
@@ -215,6 +229,13 @@ func _on_option_changed(key: String, _value: String) -> void:
 		_show_message("Catch the balls!" if logic.is_catch() else "Dodge the balls!", 2.0)
 
 
+## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
+func _set_render_scale(scale: float) -> void:
+	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	if _view.size != size:
+		_view.size = size
+
+
 func _apply_options() -> void:
 	world.set_time_of_day(DodgeTimeOfDay.load_preset(DodgeTimeOfDay.resolve(option("scene"))))
 	world.roll_enabled = option("camera_roll") == "on"
@@ -241,6 +262,10 @@ func _on_frame(delta: float) -> void:
 
 
 func _frame(delta: float) -> void:
+	if governor.sample(delta, true):
+		_set_render_scale(governor.render_scale(_full_scale))
+		print("OPENRIDE_GAMES dodge_ball quality tier=%d fps=%.1f scale=%.2f" % [
+			governor.tier, governor.last_fps, governor.render_scale(_full_scale)])
 	var cadence := InputBus.cadence
 	var power := InputBus.power
 	_mode_sec[logic.mode] += delta
@@ -259,7 +284,8 @@ func _frame(delta: float) -> void:
 		_fx_mat.set_shader_parameter("flash", _flash)
 	_status.set_state(logic.shield, cadence < logic.cadence_floor, bonus_on, logic.streak, maxi(logic.lives, 0), logic.wave)
 	if logic.game_over_left > 0.0:
-		hud.show_message("Game over! Next run in %d" % ceili(logic.game_over_left), HudTheme.WARN)
+		hud.show_message("Game over! Best run: %d\nNext run in %d" % [roundi(_best_awarded), ceili(logic.game_over_left)],
+			GameTheme.BAD)
 	elif _message_left > 0.0:
 		_message_left -= delta
 		if _message_left <= 0.0:
@@ -299,24 +325,27 @@ func _handle(event: Dictionary) -> void:
 		"dodge":
 			var got := _score(event.points)
 			world.dodge_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
+			_pop_score(got)
 			AudioDirector.play_sfx("dodge_tick", 1.0, 1.0 + 0.04 * mini(logic.streak, 10))
 		"catch":
 			var got := _score(event.points)
 			world.catch_fx(event.ball, got, event.points > DodgeBallLogic.DODGE_POINTS)
+			_pop_score(got)
 			AudioDirector.play_sfx("catch_chime", 1.0, 1.0 + 0.05 * mini(logic.streak, 10))
 		"miss":
 			world.miss_fx(event.ball)
 			AudioDirector.play_sfx("miss_whiff", -3.0)
-			_pop(_status)
+			_streak_lost()
 		"fumble":
 			world.fumble_fx(event.ball)
 			AudioDirector.play_sfx("fumble_thud")
 			AudioDirector.play_sfx("ball_bounce", -4.0, 0.8)
 			_show_message("Pedal up to hold on!", 1.2)
+			_streak_lost()
 		"streak":
 			world.streak_fx()
 			AudioDirector.play_sfx("streak_chime", 0.0, [1.0, 1.122, 1.335][DodgeBallLogic.STREAK_CHIMES.find(event.count)])
-			_pop(_status)
+			GameTheme.pop(_status.streak_label, 1.35)
 		"shield_break":
 			world.shield_fx(event.ball.x1, event.ball.kind)
 			_flash = 0.45
@@ -334,7 +363,11 @@ func _handle(event: Dictionary) -> void:
 			GameMix.duck_for_moment(0.6)
 			if event.penalty > 0.0:
 				penalize(event.penalty)
-			_pop(_status)
+			# The loss on what was lost: a life (Just Ride) or the shield bar (circuit).
+			var lost: Control = _status.lives_box if _status.lives_box.visible else _status.bar
+			GameTheme.pop(lost, 0.8)
+			GameTheme.flash(lost)
+			_streak_lost()
 		"wave":
 			_show_message("Wave %d" % event.wave, 1.6)
 			AudioDirector.play_sfx("streak_chime", -3.0, 0.75)
@@ -364,8 +397,14 @@ func _show_message(text: String, seconds: float) -> void:
 	_message_left = seconds
 
 
-## A brief brightening, not a scale-up, so the widget never grows over its neighbours.
-func _pop(widget: Control) -> void:
-	var tween := widget.create_tween()
-	tween.tween_property(widget, "modulate", Color(1.6, 1.6, 1.6), 0.06)
-	tween.tween_property(widget, "modulate", Color.WHITE, 0.25)
+## Juice on the element that changed (UI_STYLE.md, "Motion"): a new score pops the HUD's score.
+## It's a compact BigNumber with no panel of its own, so scaling it never moves its neighbours.
+func _pop_score(got: float) -> void:
+	if got > 0.0 and hud and hud.score:
+		GameTheme.pop(hud.score, 1.12)
+
+
+## A broken streak (a miss, a fumble, a hit) pops the streak down.
+func _streak_lost() -> void:
+	if _status and _status.streak_label.text != "STREAK 0":
+		GameTheme.pop(_status.streak_label, 0.8)

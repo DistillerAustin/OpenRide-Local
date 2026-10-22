@@ -18,10 +18,16 @@ class GameLabelsTest {
         assertEquals("Tug of War · 10 min", GameLabels.planBadge("just-ride:tug_of_war:minutes:10"))
         assertEquals("Safe Cracker · 10 min", GameLabels.planBadge("just-ride:safe_cracker:minutes:10"))
         assertEquals("Cadence Karaoke · 10 min", GameLabels.planBadge("just-ride:cadence_karaoke:minutes:10"))
-        // A game that isn't in the catalog yet gets a title made from its id.
         assertEquals("Kart Race · open", GameLabels.planBadge("just-ride:kart_race:open"))
+        // A game that isn't in the catalog yet gets a title made from its id.
+        assertEquals("Tandem Sprint · open", GameLabels.planBadge("just-ride:tandem_sprint:open"))
         assertEquals("Circuit · 45 min", GameLabels.planBadge("circuit-45"))
         assertEquals("Game", GameLabels.planBadge("something-new"))
+        // The Games hub: a custom circuit (its total play time), and a visit of several plans.
+        assertEquals("Custom circuit · 15 min", GameLabels.planBadge("custom:cadence_karaoke.180,kart_race.600,safe_cracker.120"))
+        assertEquals("Custom circuit · 2 min", GameLabels.planBadge("custom:tug_of_war.90"))
+        assertEquals("Custom circuit", GameLabels.planBadge("custom:garbled"))
+        assertEquals("Games", GameLabels.planBadge("visit"))
         assertNull(GameLabels.planBadge(null))
     }
 

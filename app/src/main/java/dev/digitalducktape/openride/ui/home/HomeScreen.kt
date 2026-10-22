@@ -186,13 +186,13 @@ fun HomeScreen(
                         modifier = Modifier.padding(top = 4.dp),
                     )
                     Text(
-                        text = "Circuits and games for every ride, from warm-up to cool-down. New, and still being tuned.",
+                        text = "Games, circuits and your own builds, in one ride. New, and still being tuned.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                OutlinedButton(onClick = onOpenGames) { Text("Open Games") }
+                Button(onClick = onOpenGames) { Text("Enter Games") }
             }
         }
     }

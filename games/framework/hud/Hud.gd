@@ -48,10 +48,15 @@ var ride_panel: PanelContainer
 var clock_panel: PanelContainer
 
 var frame: MarginContainer
+var top_bar: HBoxContainer
+var bottom_bar: HBoxContainer
 var circuit_strip: CircuitStrip
 var _widgets: HBoxContainer
 var _message: Label
 var _score_text := ""
+var _message_pop := false  ## a skin's `message_font`: the message pops in
+## What `set_skin` overrode, to put back: [Control, kind, name, had_override, old value].
+var _skin_saved: Array = []
 
 
 func _init() -> void:
@@ -71,6 +76,7 @@ func _init() -> void:
 	rows.add_child(sensor_banner)
 
 	var top := _box(HBoxContainer.new(), rows, "TopBar")
+	top_bar = top
 	var left := _box(VBoxContainer.new(), top, "Left")
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ride_panel = _panel(left, "RidePanel")
@@ -124,6 +130,7 @@ func _init() -> void:
 	status_slot.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var bottom := _box(HBoxContainer.new(), rows, "BottomBar")
+	bottom_bar = bottom
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	recalibrate_button = HudTheme.button("Recalibrate", func(): recalibrate_pressed.emit())
 	recalibrate_button.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -153,13 +160,180 @@ func clear_widgets() -> void:
 		child.queue_free()
 	metrics.clear_bands()
 	hide_message()
+	clear_skin()
+
+
+## Opt-in restyling of the persistent panels for a game with its own look (Kart Race). Every key
+## is optional: `font` (Font) for every label and button, `outline_color` (Color) and
+## `outline_size` (int) for the labels, `panel` (StyleBox) for the ride and clock panels,
+## `button` (StyleBox, with `button_pressed`) for Pause, End and Recalibrate, `end_button` for End.
+## Layout, sizes, colours that carry meaning (the rpm band, the effort glow) and every number
+## stay the framework's. Games that never call it look exactly as before; `clear_skin` (and
+## `clear_widgets`, when a game leaves) puts everything back.
+##
+## Three layout keys let a game with its own ride readout slim the HUD down (Kart Race draws a
+## ride-metrics strip at the bottom centre and a big item button in the top-right corner):
+## `ride_panel: false` hides the ride panel (the game then shows rpm, watts, resistance and the
+## effort multiplier itself); `clock_value_size` (int) shrinks the time left and the score (never
+## below `HudTheme.MEDIUM`); `reserve_right` (px) keeps that much of the top bar's right end free,
+## so the clock and Pause | End sit just left of it. Every button keeps its full touch size.
+##
+## Four more keys move the touch targets and the camera strip for a game that needs the bottom
+## right (Kart Race's item button): `recalibrate_top: true` puts Recalibrate in the top bar, left
+## of Pause | End (End keeps the corner), styled by `recalibrate_button` (StyleBox) if given;
+## `status_width` (px) narrows the camera strip's row to that width, centred (its text wraps);
+## `reserve_bottom` (px) keeps that much free under it (the game's own bottom widgets; without
+## it, the emptied bottom bar folds away and the strip sits on the bottom margin). A game can move
+## the strip later with `set_status_area` (Kart Race's boards).
+##
+## Two keys style the centre message (`show_message`): `message_font` (Font; the message then
+## pops in, `GameTheme.pop`, whenever it appears or its text changes) and
+## `message_outline_color` (Color). `GameTheme.hud_skin()` sets both.
+func set_skin(skin: Dictionary) -> void:
+	clear_skin()
+	if skin.has("message_font"):
+		_skin_set(_message, "font", "font", skin.message_font)
+		_message_pop = true
+	if skin.has("message_outline_color"):
+		_skin_set(_message, "color", "font_outline_color", skin.message_outline_color)
+	if bool(skin.get("recalibrate_top", false)):
+		var buttons := pause_button.get_parent()
+		_skin_saved.append([recalibrate_button, "parent", &"", true, [recalibrate_button.get_parent(), recalibrate_button.get_index()]])
+		recalibrate_button.reparent(buttons, false)
+		buttons.move_child(recalibrate_button, 0)
+		_skin_set(recalibrate_button, "property", "size_flags_vertical", Control.SIZE_FILL)
+		_skin_set(recalibrate_button, "property", "custom_minimum_size", Vector2(0, HudTheme.BUTTON_HEIGHT * 0.8))
+	if float(skin.get("status_width", 0.0)) > 0.0 or float(skin.get("reserve_bottom", 0.0)) > 0.0:
+		set_status_area(float(skin.get("status_width", 0.0)), float(skin.get("reserve_bottom", 0.0)))
+	elif bool(skin.get("recalibrate_top", false)):
+		_skin_set(bottom_bar, "property", "visible", false)  # empty: the strip takes the bottom edge
+	if skin.has("ride_panel") and not bool(skin.ride_panel):
+		_skin_set(ride_panel, "property", "visible", false)
+	if skin.has("clock_value_size"):
+		var size := maxi(int(skin.clock_value_size), HudTheme.MEDIUM)
+		for node in clock_panel.find_children("*", "Label", true, false):
+			var value := node as Label
+			if value.get_theme_font_size("font_size") > HudTheme.MEDIUM:
+				_skin_set(value, "font_size", "font_size", size)
+	if float(skin.get("reserve_right", 0.0)) > 0.0:
+		var spacer := Control.new()
+		spacer.name = "ReservedRight"
+		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spacer.custom_minimum_size = Vector2(float(skin.reserve_right), 0)
+		top_bar.add_child(spacer)
+		_skin_saved.append([spacer, "node", &"", false, null])
+	var labels: Array[Node] = []
+	for root in [ride_panel, clock_panel]:
+		labels.append_array(root.find_children("*", "Label", true, false))
+	for node in labels:
+		var l := node as Label
+		if skin.has("font"):
+			_skin_set(l, "font", "font", skin.font)
+		if skin.has("outline_color"):
+			_skin_set(l, "color", "font_outline_color", skin.outline_color)
+		if skin.has("outline_size"):
+			_skin_set(l, "constant", "outline_size", maxi(int(skin.outline_size), l.get_theme_font_size("font_size") / 10))
+	if skin.has("panel"):
+		for panel in [ride_panel, clock_panel]:
+			_skin_set(panel, "stylebox", "panel", skin.panel)
+	for b: Button in [pause_button, end_button, recalibrate_button]:
+		if skin.has("font"):
+			_skin_set(b, "font", "font", skin.font)
+		var style: StyleBox = skin.get("button")
+		if b == end_button and skin.has("end_button"):
+			style = skin.end_button
+		elif b == recalibrate_button and skin.has("recalibrate_button"):
+			style = skin.recalibrate_button
+		if style:
+			for state in ["normal", "hover", "disabled"]:
+				_skin_set(b, "stylebox", state, style)
+			_skin_set(b, "stylebox", "pressed", skin.get("button_pressed", style))
+
+
+## Moves the camera strip's row while a skin is on, without re-skinning (a re-skin re-lays out
+## every label): `width` (px, 0 = full) centred, `reserve_bottom` (px) kept free under it; with
+## none and Recalibrate moved up, the emptied bottom bar folds away. `clear_skin` undoes it.
+func set_status_area(width: float, reserve_bottom: float) -> void:
+	_skin_set(status_slot, "property", "size_flags_horizontal", Control.SIZE_SHRINK_CENTER if width > 0.0 else Control.SIZE_FILL)
+	_skin_set(status_slot, "property", "custom_minimum_size", Vector2(maxf(width, 0.0), 0))
+	_skin_set(bottom_bar, "property", "custom_minimum_size", Vector2(0, maxf(reserve_bottom, 0.0)))
+	_skin_set(bottom_bar, "property", "visible", reserve_bottom > 0.0 or recalibrate_button.get_parent() == bottom_bar)
+
+
+func clear_skin() -> void:
+	_message_pop = false
+	for i in range(_skin_saved.size() - 1, -1, -1):
+		var entry: Array = _skin_saved[i]
+		var c: Control = entry[0]
+		if not is_instance_valid(c):
+			continue
+		var kind: String = entry[1]
+		var key: StringName = entry[2]
+		var had: bool = entry[3]
+		match kind:
+			"node":
+				c.get_parent().remove_child(c)
+				c.queue_free()
+			"property":
+				c.set(key, entry[4])
+			"parent":
+				var home: Node = entry[4][0]
+				if is_instance_valid(home):
+					c.reparent(home, false)
+					home.move_child(c, mini(int(entry[4][1]), home.get_child_count() - 1))
+			"font_size":
+				c.remove_theme_font_size_override(key)
+				if had:
+					c.add_theme_font_size_override(key, entry[4])
+			"font":
+				c.remove_theme_font_override(key)
+				if had:
+					c.add_theme_font_override(key, entry[4])
+			"color":
+				c.remove_theme_color_override(key)
+				if had:
+					c.add_theme_color_override(key, entry[4])
+			"constant":
+				c.remove_theme_constant_override(key)
+				if had:
+					c.add_theme_constant_override(key, entry[4])
+			"stylebox":
+				c.remove_theme_stylebox_override(key)
+				if had:
+					c.add_theme_stylebox_override(key, entry[4])
+	_skin_saved.clear()
+
+
+func _skin_set(c: Control, kind: String, key: StringName, value: Variant) -> void:
+	match kind:
+		"property":
+			_skin_saved.append([c, kind, key, true, c.get(key)])
+			c.set(key, value)
+		"font_size":
+			_skin_saved.append([c, kind, key, c.has_theme_font_size_override(key), c.get_theme_font_size(key)])
+			c.add_theme_font_size_override(key, value)
+		"font":
+			_skin_saved.append([c, kind, key, c.has_theme_font_override(key), c.get_theme_font(key) if c.has_theme_font_override(key) else null])
+			c.add_theme_font_override(key, value)
+		"color":
+			_skin_saved.append([c, kind, key, c.has_theme_color_override(key), c.get_theme_color(key)])
+			c.add_theme_color_override(key, value)
+		"constant":
+			_skin_saved.append([c, kind, key, c.has_theme_constant_override(key), c.get_theme_constant(key)])
+			c.add_theme_constant_override(key, value)
+		"stylebox":
+			_skin_saved.append([c, kind, key, c.has_theme_stylebox_override(key), c.get_theme_stylebox(key) if c.has_theme_stylebox_override(key) else null])
+			c.add_theme_stylebox_override(key, value)
 
 
 ## A short centred message over the middle of the screen ("Game over! Next run in 5").
 func show_message(text: String, color := HudTheme.INK) -> void:
+	var fresh := text != _message.text or not _message.visible
 	_message.text = text
 	_message.add_theme_color_override("font_color", color)
 	_message.visible = true
+	if fresh and _message_pop:
+		GameTheme.pop(_message, 1.15)
 
 
 func hide_message() -> void:

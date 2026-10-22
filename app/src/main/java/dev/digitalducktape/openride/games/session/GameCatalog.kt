@@ -197,7 +197,57 @@ class GameCatalog(games: List<GameDeclaration>) {
             },
         )
 
+        /**
+         * Kart Race (#43), `games/games/kart_race/`: a Grand Prix against seven bots, driven by
+         * pedalling and steered by leaning. A timed Just Ride ends on the final race's finish
+         * line ([EndMode.GAME]), with Kotlin's usual hard stop at 1.5 ×. No circuit roles.
+         * `bot_pcts` are the bots' shares of the rider's FTP, weakest first. The kart is driven
+         * by watts plus a cadence term (rider feedback 2026-10-19), the bots' too, so these are
+         * tuned for an ordinary ride (80-90 rpm at 30-40%) to sit mid-pack at a 150 W FTP;
+         * `drift_resistance` is the resistance at which
+         * the knob speeds up a drift's charge.
+         */
+        val KART_RACE = GameDeclaration(
+            id = "kart_race",
+            title = "Kart Race",
+            supports = setOf(JustRideSupport.MINUTES, JustRideSupport.OPEN),
+            minSec = 300,
+            maxSec = 3600,
+            usesCamera = true,
+            effortInJustRide = true,
+            timedEndMode = EndMode.GAME,
+            params = { _, difficulty, _ ->
+                val (weakest, strongest, knob) = when (difficulty) {
+                    Difficulty.EASY -> Triple(0.40, 0.85, 35)
+                    Difficulty.STANDARD -> Triple(0.50, 1.00, 40)
+                    Difficulty.HARD -> Triple(0.60, 1.15, 45)
+                }
+                val shares = (0 until KART_BOTS).map { i ->
+                    val share = weakest + (strongest - weakest) * i / (KART_BOTS - 1)
+                    JsonPrimitive(Math.round(share * 1000) / 1000.0)
+                }
+                mapOf(
+                    "bot_pcts" to JsonArray(shares),
+                    "drift_resistance" to JsonPrimitive(knob),
+                )
+            },
+        )
+
+        /**
+         * The role a custom-circuit slot of [game] plays (the Games hub, spec §3.4): `work` if
+         * the game can work, else its main role (recovery before warm-up and cool-down), else
+         * `free` (Kart Race). [SessionPlans.custom] still plays warm-up in the first slot and
+         * cool-down in the last for a game that has those roles.
+         */
+        fun circuitRole(game: GameDeclaration): SegmentRole =
+            CIRCUIT_ROLE_ORDER.firstOrNull { it in game.roles } ?: SegmentRole.FREE
+
+        private val CIRCUIT_ROLE_ORDER = listOf(SegmentRole.WORK, SegmentRole.RECOVERY, SegmentRole.WARMUP, SegmentRole.COOLDOWN)
+
+        /** Kart Race's bots (eight racers, the rider included). */
+        private const val KART_BOTS = 7
+
         /** Every registered game. Each game issue adds its declaration here. */
-        val DEFAULT = GameCatalog(listOf(DEMO, DODGE_BALL, TUG_OF_WAR, SAFE_CRACKER, CADENCE_KARAOKE))
+        val DEFAULT = GameCatalog(listOf(DEMO, DODGE_BALL, TUG_OF_WAR, SAFE_CRACKER, CADENCE_KARAOKE, KART_RACE))
     }
 }

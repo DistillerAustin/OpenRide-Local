@@ -46,6 +46,43 @@ func test_validate_reports_problems() -> void:
 		assert_str(problems).contains(expected)
 
 
+func test_validate_reports_option_presentation_problems() -> void:
+	var info := GameInfo.new()
+	var base := {"label": "L", "choices": ["a", "b", "c", "d", "e"], "default": "a"}
+	var bad := [
+		{"key": "w", "where": "lobby"},
+		{"key": "k", "kind": "dial"},
+		{"key": "s", "kind": "segmented"},
+		{"key": "c", "kind": "cycle", "columns": 3},
+		{"key": "n", "kind": "cards", "columns": 9},
+		{"key": "v", "kind": "cards", "cards": [{"value": "z"}]},
+		{"key": "i", "kind": "cards", "cards": [{"value": "a", "image": "res://nope.png"}]},
+		{"key": "x", "kind": "cards", "cards": [{"value": "a", "accent": "red"}]},
+		{"key": "r", "kind": "cards", "rider_badge": "yes"},
+	]
+	for o in bad:
+		var spec: Dictionary = base.duplicate()
+		spec.merge(o, true)
+		info.options.append(spec)
+	var problems := "\n".join(info.validate())
+	for expected in ["option 'w': unknown where 'lobby'", "option 'k': unknown kind 'dial'",
+			"option 's': segmented takes at most 4 choices", "option 'c': columns is for kind cards",
+			"option 'n': columns must be 1-6", "option 'v': a card's value isn't one of its choices",
+			"option 'i': card 'a' image res://nope.png is missing", "option 'x': card 'a' accent must be a Color",
+			"option 'r': rider_badge must be true or false"]:
+		assert_str(problems).contains(expected)
+
+
+func test_every_games_options_say_where_they_show() -> void:
+	for game_id in GameRegistry.ids():
+		var info := GameRegistry.info(game_id)
+		for o in info.options:
+			assert_array(GameInfo.OPTION_WHERE).contains([GameInfo.option_where(o)])
+			assert_array(GameInfo.OPTION_KINDS).contains([GameInfo.option_kind(o)])
+			if GameInfo.option_kind(o) == "cards":  # the pause screen can't show cards: hub only
+				assert_str(GameInfo.option_where(o)).override_failure_message("%s.%s" % [game_id, o.key]).is_equal("hub")
+
+
 func test_calibration_mode_follows_tracker_mode() -> void:
 	var info := GameInfo.new()
 	for pair in [["off", "lean_x"], ["lean_x", "lean_x"], ["lean_stand", "lean_x"], ["lean_2d", "lean_2d"]]:

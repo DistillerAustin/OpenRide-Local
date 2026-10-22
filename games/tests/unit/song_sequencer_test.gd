@@ -63,6 +63,36 @@ func test_a_note_plays_to_its_gate_and_fades() -> void:
 	assert_int(absi(pcm.decode_s16(1499 * 4))).is_less(300)
 
 
+## The stems come from an offline AudioStreamPolyphonic (no whole-loop WAV per track, whose data
+## copy held the AudioServer lock and made the live music skip, 2026-10-20). They must sound like
+## the tracks laid out by track_pcm and summed at their gains.
+func test_a_stem_is_its_tracks_laid_out_and_summed() -> void:
+	var song := _song()
+	var bank := SongSequencer.bank_pcm(song)
+	var bpm := 130.0
+	var total := SongSequencer.loop_frames(song, bpm)
+	var tracks: Array = song.tracks.filter(func(t): return t.stem == "bed")
+	var got := SongSequencer.stem_frames(tracks, song, bpm, total)
+	assert_int(got.size()).is_equal(total)
+	# The reference: each track's PCM, padded, summed through AudioStreamSynchronized.
+	var sync := AudioStreamSynchronized.new()
+	sync.stream_count = tracks.size()
+	for i in tracks.size():
+		var pcm := SongSequencer.track_pcm(tracks[i], song, bank, bpm, total)
+		pcm.resize(pcm.size() + 1024 * 4)
+		sync.set_sync_stream(i, SongSequencer._wav(pcm, int(song.sr), false))
+		sync.set_sync_stream_volume(i, float(tracks[i].gain_db))
+	var playback := sync.instantiate_playback()
+	playback.start(0.0)
+	var want := playback.mix_audio(AudioServer.get_mix_rate() / float(song.sr), total)
+	var err := 0.0
+	var power := 0.0
+	for i in range(0, total - 256, 5):
+		err += (got[i] - want[i]).length_squared()
+		power += want[i].length_squared()
+	assert_float(sqrt(err / power)).is_less(0.02)
+
+
 func test_the_generator_answers_a_song_style() -> void:
 	var stems := SongSequencer.generate({"style": {"song": CADENCE_MUSIC}, "tempo_bpm": 60.0, "seed": 0})
 	assert_int((stems.bed as AudioStreamWAV).data.size() / 4).is_equal(SongSequencer.loop_frames(_song(), 120.0))

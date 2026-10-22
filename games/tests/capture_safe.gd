@@ -4,6 +4,11 @@ extends SceneTree
 ## Plays a local Just Ride and sets the game's state by hand for each shot. With --play=SECONDS
 ## it instead cracks safes with a scripted rider (for Movie Maker: add --write-movie FILE.avi
 ## --fixed-fps 30).
+##
+## --nohud hides the HUD (the game's banner stays), for art reviews. --measure=SECONDS (default
+## off) turns vsync off and, in the office with the needle sweeping, prints the average frame
+## time, the viewport's CPU and GPU render time and the draw calls (min/avg/max) over that many
+## seconds, then goes on to the shots. Every CAPTURE line carries the frame's draw calls.
 
 var _session: Node
 var _director: Node
@@ -16,11 +21,17 @@ func _initialize() -> void:
 func _run() -> void:
 	var out := "user://captures"
 	var play_sec := 0.0
+	var measure_sec := 0.0
+	var nohud := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			out = arg.get_slice("=", 1)
 		elif arg.begins_with("--play="):
 			play_sec = float(arg.get_slice("=", 1))
+		elif arg.begins_with("--measure="):
+			measure_sec = float(arg.get_slice("=", 1))
+		elif arg == "--nohud":
+			nohud = true
 	DirAccess.make_dir_recursive_absolute(out)
 	_session = root.get_node("Session")
 	_director = _session.director
@@ -37,6 +48,10 @@ func _run() -> void:
 		quit(1)
 		return
 	var game: Node = _director.game
+	if nohud and game.hud:
+		game.hud.visible = false
+	if measure_sec > 0.0:
+		await _measure(game, measure_sec)
 	if play_sec > 0.0:
 		game.change_option("scene", "random")
 		await _ride(game, play_sec)
@@ -72,12 +87,61 @@ func _run() -> void:
 	game._dial.refresh()
 	await process_frame
 	_shot(out, "safe_door_half")
+	# On the target (the reading turns green), a tumbler's light popping, then a crack's banner.
+	game._dial.door_open = 0.0
+	game.logic.reading = float(game.logic.target())
+	for i in 3:
+		await process_frame
+	_shot(out, "safe_on_target")
+	game.logic.tumbler = 1
+	game._handle({"type": "tumbler", "index": 0})
+	for i in 4:
+		await process_frame
+	_shot(out, "safe_tumbler_pop")
+	game._handle({"type": "vault_open", "points": 1150.0})
+	await create_timer(0.5).timeout
+	_shot(out, "safe_cracked")
+	await create_timer(1.1).timeout
+	_shot(out, "safe_open")  # the door all the way open, sparkles rising
 	quit()
 
 
 func _shot(out: String, name: String) -> void:
 	root.get_viewport().get_texture().get_image().save_png("%s/%s.png" % [out, name])
-	print("CAPTURE %s/%s.png" % [out, name])
+	print("CAPTURE %s/%s.png draw_calls=%d" % [out, name, _draw_calls()])
+
+
+func _draw_calls() -> int:
+	return RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+
+
+## Desktop frame cost in the office with the needle sweeping (so the dial redraws every frame):
+## vsync off, the average wall-clock frame, the viewport's CPU and GPU render time, draw calls.
+func _measure(game: Node, seconds: float) -> void:
+	game.change_option("scene", "office")
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var vp := root.get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(vp, true)
+	for i in 30:
+		await process_frame
+	var frames := 0
+	var cpu := 0.0
+	var gpu := 0.0
+	var calls := [1 << 30, 0, 0]
+	var start := Time.get_ticks_usec()
+	var end := start + int(seconds * 1e6)
+	while Time.get_ticks_usec() < end:
+		game.logic.reading = 50.0 + 45.0 * sin(frames * 0.05)
+		await process_frame
+		frames += 1
+		cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp)
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+		var dc := _draw_calls()
+		calls = [mini(calls[0], dc), calls[1] + dc, maxi(calls[2], dc)]
+	var ms := (Time.get_ticks_usec() - start) / 1000.0 / frames
+	print("MEASURE frames=%d frame_ms=%.3f render_cpu_ms=%.3f render_gpu_ms=%.3f draw_calls=%d/%.1f/%d" % [
+		frames, ms, cpu / frames, gpu / frames, calls[0], float(calls[1]) / frames, calls[2]])
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
 
 
 ## A scripted rider: nudges the simulated resistance toward the current target with the bracket

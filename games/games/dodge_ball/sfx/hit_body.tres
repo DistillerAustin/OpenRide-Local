@@ -15,4 +15,4 @@ punch = 0.7
 noise_mix = 0.15
 lowpass_start = 1800.0
 lowpass_end = 300.0
-volume = 0.7
+volume = 0.6

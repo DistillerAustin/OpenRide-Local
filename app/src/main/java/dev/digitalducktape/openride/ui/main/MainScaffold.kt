@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,8 +39,8 @@ import kotlinx.coroutines.flow.map
 import dev.digitalducktape.openride.viewModelFactory
 import dev.digitalducktape.openride.ui.classes.ClassesScreen
 import dev.digitalducktape.openride.ui.classes.ClassesViewModel
-import dev.digitalducktape.openride.ui.games.GamesScreen
-import dev.digitalducktape.openride.ui.games.GamesViewModel
+import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
+import dev.digitalducktape.openride.ui.games.launchGames
 import dev.digitalducktape.openride.ui.history.HistoryScreen
 import dev.digitalducktape.openride.ui.history.HistoryViewModel
 import dev.digitalducktape.openride.ui.home.HomeScreen
@@ -96,6 +97,7 @@ fun MainScaffold(
             modifier = Modifier.weight(1f),
         ) {
             composable(MainTabs.Home) {
+                val context = LocalContext.current
                 val viewModel: HomeViewModel = viewModel(
                     factory = viewModelFactory {
                         HomeViewModel(
@@ -111,7 +113,7 @@ fun MainScaffold(
                     viewModel = viewModel,
                     onQuickStart = { outerNavController.navigate(Destinations.InRide) },
                     onOpenProfile = { navigateToTab(MainTabs.Profile) },
-                    onOpenGames = { navigateToTab(MainTabs.Games) },
+                    onOpenGames = { launchGames(context) },
                     updateVersionName = availableUpdate?.versionName?.takeUnless { bannerDismissed },
                     onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
                     onDismissUpdate = { appContainer.dismissUpdateBanner() },
@@ -139,26 +141,10 @@ fun MainScaffold(
                 )
             }
             composable(MainTabs.Games) {
-                val viewModel: GamesViewModel = viewModel(
-                    factory = viewModelFactory {
-                        GamesViewModel(
-                            catalog = dev.digitalducktape.openride.games.session.GameCatalog.DEFAULT,
-                            settingsStore = appContainer.gamesSettings,
-                            activeProfileId = appContainer.activeProfileHolder.activeProfileId,
-                            profileFtp = { id ->
-                                appContainer.profileRepository.observeProfiles().map { list -> list.firstOrNull { it.id == id }?.ftp }
-                            },
-                            personalBests = { id -> appContainer.gameResultDao.observePersonalBests(id) },
-                            circuitBest = { id, planId, difficulty ->
-                                appContainer.gameResultDao.planBest(id, planId, difficulty.name.lowercase(), -1L)
-                            },
-                        )
-                    },
-                )
-                GamesScreen(
-                    viewModel = viewModel,
-                    onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
-                )
+                // A launcher: the Games hub inside Godot holds the picker, circuits and settings.
+                val context = LocalContext.current
+                val saving by appContainer.gameVisitManager.saving.collectAsState()
+                GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
             }
             composable(MainTabs.History) {
                 val viewModel: HistoryViewModel = viewModel(

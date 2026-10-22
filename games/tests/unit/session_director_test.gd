@@ -33,6 +33,10 @@ func after_test() -> void:
 	director.process_mode = Node.PROCESS_MODE_ALWAYS
 	local.process_mode = Node.PROCESS_MODE_ALWAYS
 	director.summary_screen.visible = false
+	Session.visit_id = ""
+	Session.hub = {}
+	local.hub.phase = ""
+	Engine.max_fps = 0
 
 
 ## Advances both clocks by `seconds`, in small steps.
@@ -171,6 +175,19 @@ func test_ending_on_the_intro_card_records_the_game_as_skipped() -> void:
 	assert_bool(Session.summary.results[0].skipped).is_true()
 
 
+func test_the_summary_wears_the_look_of_the_game_it_follows() -> void:
+	_start(_plan([_seg("safe_cracker", "free", 60)], "just_ride"))
+	assert_object(director.looks.get("safe_cracker")).is_same(director.game.ui_theme())
+	_step(LocalSession.INTRO_SEC + 0.1)
+	director.pause_overlay.end_confirmed.emit()
+	assert_bool(director.summary_screen.visible).is_true()
+	assert_str(director.summary_screen.shape).is_equal("single")
+	assert_object(director.summary_screen.theme).is_same(director.looks.safe_cracker)
+	# The game has left: the calibration and the cards are back to the house look / plain.
+	assert_object(director.calibration.theme).is_same(GameTheme.house())
+	assert_object(director.intro_card.theme).is_null()
+
+
 func test_summary_done_exits_and_the_desktop_starts_again() -> void:
 	_start(_plan([_seg("demo", "free", -1)], "just_ride"))
 	Session.request_end()
@@ -286,7 +303,7 @@ func test_the_overlay_draws_every_calibration_field() -> void:
 	assert_str(overlay._prompt.text).is_equal("Lean comfortably left")
 	assert_str(overlay._detail.text).is_equal("CALIBRATING  ·  STEP 2 OF 3  ·  TRY 2")
 	assert_str(overlay._retry.text).is_equal("Hold still for a moment")
-	assert_float(overlay._bar.size.x).is_equal(450.0)
+	assert_float(overlay.figure().fraction).is_equal(0.5)  # the progress ring
 	Session._on_calibration_progress("centre", 0.4, 0, 1, 1, "")
 	overlay._process(0.0)
 	assert_str(overlay._detail.text).is_equal("CALIBRATING")  # centre only: no step count
@@ -373,3 +390,139 @@ func test_a_riders_pause_outlasts_the_calibration_under_it() -> void:
 	_step(0.1)
 	assert_bool(Session.paused).is_false()
 	assert_bool(director.pause_overlay.visible).is_false()
+
+
+
+
+func test_the_calibration_starts_only_after_the_game_has_loaded() -> void:
+	# Loading, then calibration, then the game: a game that builds for seconds in prepare()
+	# (Kart Race) must not have the calibration run unseen behind its frozen loading screen.
+	# The demo's prepare adds its cadence band to the HUD, so that node marks "loading".
+	var at_prepare: Array = []
+	var on_added := func(node: Node) -> void:
+		if node is TargetBand and at_prepare.is_empty():
+			at_prepare.append(local.calibrations_started)
+	get_tree().node_added.connect(on_added)
+	var before: int = local.calibrations_started
+	_start(_plan([_seg("demo", "work")]))
+	get_tree().node_added.disconnect(on_added)
+	assert_array(at_prepare).is_equal([before])  # no calibration while the game loads
+	assert_int(local.calibrations_started - before).is_equal(1)  # it starts once loaded
+
+
+# --- The Games hub (v1.1) ---
+
+## A visit's plan, as LocalHub sends it.
+func _visit_plan(segments: Array, calibrated := "") -> Dictionary:
+	var plan := _plan(segments, "just_ride")
+	plan["visit_id"] = "v-test"
+	plan["plan_index"] = 0
+	plan["calibrated"] = calibrated
+	return plan
+
+
+func test_a_visit_result_card_goes_back_to_the_hub_without_exiting() -> void:
+	_start(_visit_plan([_seg("demo", "free", -1)]))
+	var plans_started: int = local.hub.plan_index
+	Session.request_end()
+	assert_bool(director.summary_screen.visible).is_true()
+	assert_str(director.summary_screen.done_button.text).is_equal("Back to games")
+	director.summary_screen.done_pressed.emit()
+	assert_bool(Session.active).is_false()  # no request_exit: nothing restarted
+	assert_int(local.hub.plan_index).is_equal(plans_started)
+	assert_bool(director.summary_screen.visible).is_false()
+	assert_int(director.phase).is_equal(SessionDirector.Phase.HUB)
+	assert_str(get_tree().current_scene.scene_file_path).is_equal(SessionDirector.IDLE_SCENE)
+	assert_int(Engine.max_fps).is_equal(SessionDirector.HUB_MAX_FPS)
+	assert_str(Session.tracker_mode).is_equal("off")
+
+
+func test_the_hub_waits_hidden_behind_a_visit_result_card() -> void:
+	# Review of PR #58: the hub was built and drawn under the opaque result card, uncapped.
+	_start(_visit_plan([_seg("demo", "free", -1)]))
+	Session.request_end()
+	var hub := get_tree().current_scene as CanvasItem
+	assert_str(hub.scene_file_path).is_equal(SessionDirector.IDLE_SCENE)
+	assert_bool(hub.visible).is_false()
+	assert_int(Engine.max_fps).is_equal(SessionDirector.HUB_MAX_FPS)
+	director.summary_screen.done_pressed.emit()
+	assert_bool((get_tree().current_scene as CanvasItem).visible).is_true()
+
+
+func test_a_v1_summary_still_reads_done() -> void:
+	_start(_plan([_seg("demo", "free", -1)], "just_ride"))
+	Session.request_end()
+	assert_str(director.summary_screen.done_button.text).is_equal("Done")
+	director.summary_screen.visible = false
+
+
+func test_android_back_on_a_visit_result_card_goes_to_the_hub() -> void:
+	_start(_visit_plan([_seg("demo", "free", -1)]))
+	Session.request_end()
+	Session.back()
+	assert_int(director.phase).is_equal(SessionDirector.Phase.HUB)
+	assert_bool(Session.active).is_false()
+
+
+func test_a_segment_lifts_the_hub_frame_cap() -> void:
+	Engine.max_fps = SessionDirector.HUB_MAX_FPS
+	_start(_visit_plan([_seg("demo", "free", 60)]))
+	assert_int(Engine.max_fps).is_equal(SessionDirector.PLAY_MAX_FPS)
+
+
+func test_a_later_plan_keeps_the_visit_calibration() -> void:
+	_start(_visit_plan([_seg("demo", "free", 60)], "lean_x"))
+	assert_str(director.calibrated_mode).is_equal("lean_x")
+	assert_int(local.tracker_state()).is_equal(InputBus.TRACKER_TRACKING)  # no calibration ran
+	assert_bool(local.is_calibrating()).is_false()
+
+
+func test_a_v1_session_starts_uncalibrated() -> void:
+	director.calibrated_mode = "lean_x"
+	_start(_plan([_seg("demo", "free", 60)], "just_ride"))
+	assert_bool(local.is_calibrating()).is_true()
+
+
+func test_a_new_visit_forgets_the_calibration() -> void:
+	director.calibrated_mode = "lean_2d"
+	Session._set_visit_id("v-new-%d" % Time.get_ticks_usec())
+	assert_str(director.calibrated_mode).is_equal("")
+
+
+func test_return_to_hub_logs_memory() -> void:
+	var line := director.memory_line()
+	assert_str(line).starts_with("OPENRIDE_GAMES memory static=")
+	assert_str(line).contains(" viewports=")
+
+
+func test_the_first_hub_state_shows_the_hub_only_from_idle() -> void:
+	director.phase = SessionDirector.Phase.SUMMARY
+	Session._on_hub_state({"visit_id": "v-x", "phase": "hub"})
+	assert_int(director.phase).is_equal(SessionDirector.Phase.SUMMARY)
+	director.phase = SessionDirector.Phase.IDLE
+	Session._on_hub_state({"visit_id": "v-x", "phase": "hub"})
+	assert_int(director.phase).is_equal(SessionDirector.Phase.HUB)
+
+
+func test_the_loading_screen_covers_a_starting_game_until_its_first_frames_draw() -> void:
+	_start(_plan([_seg()]))
+	assert_bool(Session.loading).is_true()
+	director._process(0.016)
+	director._process(0.016)
+	assert_bool(Session.loading).is_true()
+	director._process(0.016)
+	director._process(0.016)
+	assert_bool(Session.loading).is_false()
+
+
+func test_a_long_first_frame_does_not_eat_the_intro_countdown() -> void:
+	_start(_plan([_seg()]))
+	var left: float = director._intro_left
+	director._process(5.0)  # the bike's shader compile
+	assert_float(left - director._intro_left).is_less_equal(SessionDirector.START_FRAME_MAX_SEC)
+
+
+func test_an_unknown_game_leaves_no_loading_screen_up() -> void:
+	_start(_plan([_seg("no_such_game"), _seg()]))
+	_step(1.0)
+	assert_bool(Session.loading).is_false()

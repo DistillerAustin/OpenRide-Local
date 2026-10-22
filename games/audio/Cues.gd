@@ -29,12 +29,15 @@ const BENCH_TEMPO := 90.0
 func register(director: Node) -> void:
 	# Build the tables and load the styles on the main thread, so renders only read them.
 	Dsp.warm()
+	LoadClock.mark("boot", "audio_dsp_warm")
 	MusicGen.preload_styles()
+	LoadClock.mark("boot", "audio_styles")
 	director.register_sound_factory(sound)
 	for cue in CueSounds.SOUNDS:
 		var stream := load(CueSounds.SOUNDS[cue]) as AudioStream
 		if stream:
 			director.register_sound(cue, stream)
+	LoadClock.mark("boot", "audio_cues")
 	director.register_music_generator(generate)
 	if FileAccess.file_exists(BENCH_FLAG):
 		DirAccess.remove_absolute(BENCH_FLAG)

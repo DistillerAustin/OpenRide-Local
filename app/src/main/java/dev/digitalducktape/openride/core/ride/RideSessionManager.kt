@@ -144,6 +144,17 @@ class RideSessionManager(
     }
 
     /**
+     * Changes the mini-games plan the ride will be saved with ([Ride.gamePlan]): a Games hub
+     * visit starts its ride with its first plan's id and switches to `visit` once it plays a
+     * second plan. No-op unless [RideSessionState.Active] or [RideSessionState.Paused].
+     */
+    fun setGamePlan(gamePlan: String?) {
+        val current = _state.value
+        if (current !is RideSessionState.Active && current !is RideSessionState.Paused) return
+        this.gamePlan = gamePlan
+    }
+
+    /**
      * Sets the rider's pre-ride goal (PRD P1-3). Only takes effect while
      * [RideSessionState.Idle] — a goal is a pre-ride decision, not something that changes
      * mid-ride — so this is a no-op once [start] has moved past Idle.

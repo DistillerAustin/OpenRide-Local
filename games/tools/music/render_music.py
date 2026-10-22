@@ -11,6 +11,9 @@ Each game is a module in songs/ with:
 - SFX: {name: function(rng) -> mono audio}, the game's effects (and stings), each written as
   its own OGG.
 - PREFIX: the index script's name (`<Prefix>Music.gd`, next to the game's scene).
+- Optional, for music that isn't a game's (the Games hub): DIR, the folder under games/ the
+  music and index go in (default `games/<game>`); INDEX, the index's file name (default
+  `<Prefix>Music.gd`); CLASS_NAME, a `class_name` for the index.
 
 Deterministic (seeded). Everything is synthesised by this code; no samples, no third-party
 material. See README.md here.
@@ -105,7 +108,9 @@ def main():
     ap.add_argument("--only", default="")
     a = ap.parse_args()
     mod = importlib.import_module("songs." + a.game)
-    game_dir = os.path.join(ROOT, "games", a.game)
+    rel_dir = getattr(mod, "DIR", f"games/{a.game}")
+    game_dir = os.path.join(ROOT, rel_dir)
+    index_path = os.path.join(game_dir, getattr(mod, "INDEX", mod.PREFIX + "Music.gd"))
     music_dir = os.path.join(game_dir, "music")
     spec = mod.SONG
     index = {"stems": {}, "sounds": {}, "loop_from": 0.0}
@@ -119,7 +124,7 @@ def main():
         for stem, audio in stems.items():
             x = audio.mean(axis=0) if stem == "lead" else audio
             total += write_ogg(os.path.join(music_dir, f"{name}_{stem}.ogg"), x, OGG_LEVEL[stem], a.wav)
-            index["stems"][stem] = f"res://games/{a.game}/music/{name}_{stem}.ogg"
+            index["stems"][stem] = f"res://{rel_dir}/music/{name}_{stem}.ogg"
         if a.wav:
             sf.write(os.path.join(a.wav, f"{name}_full.wav"), full.T.astype(np.float32), dsp.SR, subtype="FLOAT")
         print(f"  {name}: {full.shape[1] / dsp.SR:.1f} s (loop from {loop_from:.2f}), {dsp.lufs(full):.1f} LUFS, "
@@ -156,7 +161,7 @@ def main():
     if not a.only and spec is None and hasattr(mod, "INDEX"):
         write_cue_index(os.path.join(ROOT, mod.INDEX), a.game, index)
     elif not a.only and spec is not None:
-        write_index(os.path.join(game_dir, mod.PREFIX + "Music.gd"), a.game, spec, index)
+        write_index(index_path, a.game, spec, index, getattr(mod, "CLASS_NAME", ""))
     top = os.path.join(ROOT, mod.OUT) if hasattr(mod, "OUT") else music_dir
     size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(top) for f in fs if f.endswith(".ogg"))
     print(f"{a.game}: music and effects {size / 1024:.0f} KB")
@@ -182,8 +187,8 @@ def write_cue_index(path, game, index):
         f.write("\n".join(lines))
 
 
-def write_index(path, game, spec, index):
-    lines = ["extends RefCounted",
+def write_index(path, game, spec, index, class_name=""):
+    lines = ([f"class_name {class_name}"] if class_name else []) + ["extends RefCounted",
              f"## {spec['title']}: the game's rendered music and effects (#55). Written by",
              f"## games/tools/music/render_music.py from songs/{game}.py; don't edit by hand.",
              "",

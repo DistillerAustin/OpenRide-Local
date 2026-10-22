@@ -27,4 +27,7 @@ class RecordingSignals : GameSignals {
         events += "calibration_progress" to "${progress.step}:${progress.fraction}"
     }
     override fun sessionFinished(summaryJson: String) { events += "session_finished" to summaryJson }
+    override fun hubState(stateJson: String) { events += "hub_state" to stateJson }
+    override fun planRejected(reasonJson: String) { events += "plan_rejected" to reasonJson }
+    override fun visitEnded(resultJson: String) { events += "visit_ended" to resultJson }
 }

@@ -1,0 +1,97 @@
+[gd_resource type="Resource" script_class="MusicStyle" format=3]
+
+[ext_resource type="Script" path="res://audio/MusicStyle.gd" id="1_kcirc"]
+
+[resource]
+script = ExtResource("1_kcirc")
+name = "kart_circuit"
+description = "Racing electronica for Kart Race's Grand Prix: bright Dorian, sampled four-on-the-floor kit with a tight hat, a pumping eighth-note sub bass, a rolling sixteenth arpeggio and a wide detuned saw lead, at one and a half beats per pedal stroke. Stems enter with intensity (drums and bass on the grid, the arpeggio in the race, the lead near the front or boosting); ask for {\"transpose\": 2, \"energy\": 1.0, \"lead_density\": 0.75} for the final lap."
+root = 45
+mode = "dorian"
+progressions = [[0, 3, 6, 4], [0, 6, 3, 4], [0, 4, 5, 3]]
+b_progressions = [[5, 3, 6, 4], [3, 4, 5, 6]]
+drums = "four_floor"
+bass = "pulse8"
+harmony = "arp"
+energy = 0.85
+lead_low = 69
+lead_high = 88
+lead_density = 0.55
+bass_voice = {
+"attack": 0.002,
+"cutoff": 420.0,
+"cutoff_env": 1400.0,
+"decay": 0.09,
+"filter_decay": 0.05,
+"gain": 0.5,
+"release": 0.03,
+"sustain": 0.6,
+"wave": "saw",
+"wave2": "square",
+"detune": 5.0
+}
+harmony_voice = {
+"attack": 0.002,
+"cutoff": 2200.0,
+"cutoff_env": 2600.0,
+"decay": 0.09,
+"detune": 7.0,
+"filter_decay": 0.05,
+"gain": 0.12,
+"release": 0.05,
+"sustain": 0.3,
+"wave": "saw",
+"wave2": "saw"
+}
+lead_voice = {
+"attack": 0.008,
+"cutoff": 3400.0,
+"cutoff_env": 1800.0,
+"decay": 0.16,
+"detune": 14.0,
+"filter_decay": 0.1,
+"gain": 0.15,
+"release": 0.09,
+"sustain": 0.65,
+"vibrato": 0.18,
+"vibrato_rate": 5.8,
+"wave": "saw",
+"wave2": "saw"
+}
+drum_samples = {
+"gain": 0.9,
+"hat": "res://audio/samples/hat_closed.wav",
+"kick": "res://audio/samples/kick_punchy.wav",
+"open_hat": "res://audio/samples/hat_open.wav",
+"snare": "res://audio/samples/snare_crack.wav"
+}
+stem_fx = {
+"bass": {
+"comp_ratio": 3.0,
+"comp_threshold": 0.5,
+"drive": 0.3,
+"highpass": 32.0
+},
+"drums": {
+"comp_ratio": 4.0,
+"comp_release": 0.05,
+"comp_threshold": 0.42,
+"drive": 0.18
+},
+"harmony": {
+"highpass": 220.0,
+"lowpass": 6000.0
+},
+"lead": {
+"comp_ratio": 2.5,
+"comp_threshold": 0.6,
+"highpass": 260.0
+}
+}
+tempo_scale = 1.5
+tempo_min = 70.0
+tempo_max = 100.0
+suggested_gates = {
+"harmony": 0.45,
+"lead": 0.7
+}
