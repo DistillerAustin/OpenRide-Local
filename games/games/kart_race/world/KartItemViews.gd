@@ -31,8 +31,8 @@ const POD_POP_SEC := 0.45
 ## Pods farther than this from the camera (metres), or behind it, keep their last pose: a bob
 ## and a spin nobody can see aren't worth the main thread (the tablet's limit).
 const POD_ANIM_RANGE := 80.0
-const PUCKS := 4
-const DRONES := 3
+const PUCKS := KartItemLogic.PUCK_MAX
+const DRONES := KartItemLogic.DRONE_MAX
 const SHIELD_RADIUS := 1.6
 const TRAIL_POINTS := 16
 const TRAIL_EVERY := 0.025  ## s between trail samples
@@ -237,17 +237,8 @@ func _on_pod_broken(index: int, _kart_id: int) -> void:
 # --- Pucks and drones ---
 
 func _sync_shots(dt: float) -> void:
-	# Release the slots of shots that ended (with a puff where they went).
-	for slot in _pucks + _drones:
-		var shot: KartItemLogic.Shot = slot.shot
-		if shot != null and not shot.alive:
-			_end_burst(slot)
-			_slot_of.erase(shot)
-			slot.shot = null
-			slot.root.visible = false
-			slot.trail.visible = false
-			if slot.has("lock"):
-				slot.lock.visible = false
+	_release_ended(_pucks)
+	_release_ended(_drones)
 	for shot: KartItemLogic.Shot in items.shots:
 		if not shot.alive:
 			continue
@@ -269,6 +260,21 @@ func _sync_shots(dt: float) -> void:
 			_pose_puck(slot, shot, dt)
 		else:
 			_pose_drone(slot, shot, dt)
+
+
+## Releases the slots of shots that ended (with a puff where they went). Per pool, every frame:
+## no concatenated array.
+func _release_ended(pool: Array[Dictionary]) -> void:
+	for slot in pool:
+		var shot: KartItemLogic.Shot = slot.shot
+		if shot != null and not shot.alive:
+			_end_burst(slot)
+			_slot_of.erase(shot)
+			slot.shot = null
+			slot.root.visible = false
+			slot.trail.visible = false
+			if slot.has("lock"):
+				slot.lock.visible = false
 
 
 func _pose_puck(slot: Dictionary, shot: KartItemLogic.Shot, dt: float) -> void:
@@ -374,23 +380,31 @@ func _sync_goos(dt: float) -> void:
 				slot = s
 				break
 		if slot.is_empty():
+			# A free slot, else one still fading out: the logic keeps at most GOO_MAX live, so
+			# one of the pool is always free or fading, and a live puddle is never undrawn.
+			var take: Dictionary = {}
 			for s in _goos:
 				if s.goo == null:
-					slot = s
-					s.goo = goo
-					s.gone = 0.0
-					s.node.visible = true
-					s.mat.set_shader_parameter("fade", 1.0)
-					s.mat.set_shader_parameter("seed", _rng.randf() * 10.0)
-					var n: KartTrackPoint = race.track.sample(goo.s)
-					var up := n.normal if n.normal.length_squared() > 0.5 else Vector3.UP
-					var fwd := Vector3(-sin(goo.heading), 0.0, -cos(goo.heading))
-					fwd = (fwd - up * fwd.dot(up)).normalized()
-					s.node.global_transform = Transform3D(Basis.looking_at(fwd, up), goo.pos + up * 0.03)
-					for i in 10:
-						var dir := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.4, 1.0), _rng.randf_range(-1, 1)).normalized()
-						_spark(goo.pos + Vector3.UP * 0.2, dir * _rng.randf_range(1.5, 3.5), _rng.randf_range(0.3, 0.5), _rng.randf_range(0.15, 0.3), GOO_SPLAT)
+					take = s
 					break
+				if not s.goo.alive and (take.is_empty() or s.gone > take.gone):
+					take = s
+			if not take.is_empty():
+				var s: Dictionary = take
+				slot = s
+				s.goo = goo
+				s.gone = 0.0
+				s.node.visible = true
+				s.mat.set_shader_parameter("fade", 1.0)
+				s.mat.set_shader_parameter("seed", _rng.randf() * 10.0)
+				var n: KartTrackPoint = race.track.sample(goo.s)
+				var up := n.normal if n.normal.length_squared() > 0.5 else Vector3.UP
+				var fwd := Vector3(-sin(goo.heading), 0.0, -cos(goo.heading))
+				fwd = (fwd - up * fwd.dot(up)).normalized()
+				s.node.global_transform = Transform3D(Basis.looking_at(fwd, up), goo.pos + up * 0.03)
+				for i in 10:
+					var dir := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.4, 1.0), _rng.randf_range(-1, 1)).normalized()
+					_spark(goo.pos + Vector3.UP * 0.2, dir * _rng.randf_range(1.5, 3.5), _rng.randf_range(0.3, 0.5), _rng.randf_range(0.15, 0.3), GOO_SPLAT)
 		if slot.is_empty():
 			continue
 		var g := 1.0

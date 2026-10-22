@@ -98,6 +98,7 @@ var _time := 0.0
 var _pics: Array[WeakRef] = []  ## every portrait made, to re-dress once the atlas is baked
 var _atlas_mats: Array[ShaderMaterial] = []
 var _atlas_ids := {}
+var _order := []  ## the race order, refilled every frame (race.order_into)
 
 
 func _init() -> void:
@@ -220,7 +221,8 @@ func update(race: KartRaceLogic, delta := 0.0) -> void:
 		_shown_clock = "0:00"
 		_clock.text = _shown_clock
 	_set_place(k.place)
-	racer_list.set_order(race.order())
+	race.order_into(_order)  # every frame: refilled, not reallocated
+	racer_list.set_order(_order)
 	minimap.set_karts(race.karts)
 	item_button.set_item(k.item, k.roulette_time, delta)
 	item_button.set_drift(k.drift_dir, k.drift_charge, k.drift_tier, k.knob_boosting, delta)

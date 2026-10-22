@@ -251,10 +251,13 @@ func _drift_sparks(v: KartView, back: Vector3, dir: float, tier: int, dt: float)
 	if tier > 0:
 		var c: Color = TIER_COLORS[clampi(tier - 1, 0, 2)]
 		var rate := 50.0 + 30.0 * tier
-		for a in [outer, inner]:
+		# Both rear wheels, every frame of a drift: two passes over `side`, no [outer, inner] arrays.
+		for side in 2:
+			var a := outer if side == 0 else inner
 			var w := v.anchor(a).global_position - Vector3.UP * 0.18
 			_spark(w, Vector3.ZERO, 0.05, Vector2(0.42 + 0.12 * tier + 0.2 * _rng.randf(), 0.4), Color(c.r, c.g, c.b, 0.9))
-		for a in [outer, inner]:
+		for side in 2:
+			var a := outer if side == 0 else inner
 			if _rng.randf() < dt * rate:
 				var p := v.anchor(a).global_position - Vector3.UP * 0.22
 				_spark(p, back * 3.0 + Vector3.UP * _rng.randf_range(1.0, 3.0) + _jitter(2.0), 0.3, Vector2(0.16, 0.04), c)

@@ -113,6 +113,9 @@ func _ready() -> void:
 	var list_top := TILES_TOP + tiles.get_combined_minimum_size().y + HubTheme.GAP
 	scroll.position.y = list_top
 	scroll.size.y = BODY_BOTTOM - HubTheme.TARGET - HubTheme.GAP - list_top
+	if builder.dropped > 0:
+		notice.emit("%d game%s in this circuit %s no longer offered" % [
+			builder.dropped, "" if builder.dropped == 1 else "s", "is" if builder.dropped == 1 else "are"])
 
 
 ## "Build a circuit", or the saved one's name.
@@ -326,7 +329,12 @@ func dirty() -> bool:
 	if index < 0:
 		return true
 	var saved = HubPrefs.custom_circuit(rider_id, index)
-	return saved == null or _comparable(saved) != _comparable(builder.to_saved())
+	if saved == null:
+		return true
+	# Against the saved circuit as this catalog reads it: a game that's no longer offered is left
+	# out of both, so opening a circuit is never an edit by itself (Save would rewrite it).
+	var as_loaded := CircuitBuilder.new(state.catalog, saved.get("slots", []), str(saved.get("difficulty", "standard")))
+	return _comparable(as_loaded.to_saved()) != _comparable(builder.to_saved())
 
 
 static func _comparable(c: Dictionary) -> String:

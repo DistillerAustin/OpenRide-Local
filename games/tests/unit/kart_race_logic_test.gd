@@ -259,3 +259,19 @@ func test_progress_is_monotonic_driving_forward() -> void:
 			# (A bump from behind may nudge a kart back a little.)
 			assert_float(race.progress(k.id)).is_greater_equal(last[k.id] - 0.5)
 			last[k.id] = race.progress(k.id)
+
+
+func test_order_into_refills_the_callers_array_with_the_race_order() -> void:
+	# Review of PR #58: the HUD asked for order() every frame, a new Array each time.
+	var race := _race(Fixtures.oval(400.0, 40.0, 6.0))
+	race.start_countdown(0.0)
+	var inputs := _inputs(8, 200.0)
+	for i in 120:
+		race.step(DT, inputs)
+	var buffer := [99, 98]
+	race.order_into(buffer)
+	assert_array(buffer).is_equal(race.order())
+	race.step(DT, inputs)
+	race.order_into(buffer)
+	assert_array(buffer).is_equal(race.order())
+	assert_int(buffer.size()).is_equal(8)

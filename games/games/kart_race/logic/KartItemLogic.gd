@@ -74,6 +74,10 @@ const GOO_RADIUS := 1.35
 const GOO_ARM_SEC := 1.0
 const GOO_LIFE_SEC := 40.0
 const GOO_MAX := 8
+## Live pucks and drones at once (the views draw this many): firing another retires the oldest,
+## as GOO_MAX does for goo, so a hazard is never live without being drawn.
+const PUCK_MAX := 4
+const DRONE_MAX := 3
 
 const HIT_REACH := KartPhysics.KART_RADIUS + PUCK_RADIUS
 ## Hits and pickups are swept over a tick's movement; a kart that moved further than this in one
@@ -358,7 +362,7 @@ func _fire_puck(k: KartState) -> void:
 	shot.s = p.s
 	shot.d = p.d
 	shot.prev_pos = shot.pos
-	shots.append(shot)
+	_add_shot(shot, PUCK_MAX)
 
 
 func _step_puck(shot: Shot, dt: float) -> void:
@@ -409,7 +413,22 @@ func _fire_drone(k: KartState) -> void:
 	shot.pos = race.track.position_at(shot.s, shot.d)
 	shot.heading = race.track.yaw_at(shot.s)
 	shot.prev_pos = shot.pos
+	_add_shot(shot, DRONE_MAX)
+
+
+## Adds `shot`, retiring the oldest live one of its kind past `limit`.
+func _add_shot(shot: Shot, limit: int) -> void:
 	shots.append(shot)
+	var live := 0
+	for other in shots:
+		if other.alive and other.kind == shot.kind:
+			live += 1
+	if live <= limit:
+		return
+	for other in shots:
+		if other.alive and other.kind == shot.kind:
+			other.alive = false
+			return
 
 
 func _step_drone(shot: Shot, dt: float) -> void:

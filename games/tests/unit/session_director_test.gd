@@ -437,6 +437,18 @@ func test_a_visit_result_card_goes_back_to_the_hub_without_exiting() -> void:
 	assert_str(Session.tracker_mode).is_equal("off")
 
 
+func test_the_hub_waits_hidden_behind_a_visit_result_card() -> void:
+	# Review of PR #58: the hub was built and drawn under the opaque result card, uncapped.
+	_start(_visit_plan([_seg("demo", "free", -1)]))
+	Session.request_end()
+	var hub := get_tree().current_scene as CanvasItem
+	assert_str(hub.scene_file_path).is_equal(SessionDirector.IDLE_SCENE)
+	assert_bool(hub.visible).is_false()
+	assert_int(Engine.max_fps).is_equal(SessionDirector.HUB_MAX_FPS)
+	director.summary_screen.done_pressed.emit()
+	assert_bool((get_tree().current_scene as CanvasItem).visible).is_true()
+
+
 func test_a_v1_summary_still_reads_done() -> void:
 	_start(_plan([_seg("demo", "free", -1)], "just_ride"))
 	Session.request_end()

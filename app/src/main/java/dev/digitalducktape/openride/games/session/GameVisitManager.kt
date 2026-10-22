@@ -522,7 +522,10 @@ class GameVisitManager(
             )
             log("visit_ended $id: ride $rideId (${ending.reason})")
             signals.visitEnded(BridgeMessages.encode(message))
-            if (gen == generation) phase = Phase.ENDED
+            // The rider re-entered games while the ride was written: a new visit is live, so
+            // stay in it (no leaving, no summary over it). The ride is saved all the same.
+            if (gen != generation) return@launch
+            phase = Phase.ENDED
             lastRideId = rideId
             if (rideId != null) _finishedRideId.value = rideId
             navigator.visitEnded(rideId, ending.next)

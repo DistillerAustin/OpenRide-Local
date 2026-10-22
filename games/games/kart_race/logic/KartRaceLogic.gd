@@ -38,6 +38,7 @@ var _lap_start: Array[float] = []  ## race time each kart's current lap began
 var _finish_order: Array[int] = []
 var _idle := KartInput.new()
 var _progress_scratch := PackedFloat64Array()  ## order(): the running karts' progress
+var _places_scratch := []  ## _update_places(): the order, refilled every tick
 
 
 func _init() -> void:
@@ -128,9 +129,17 @@ func _input_of(k: KartState, inputs: Array) -> KartInput:
 
 ## Kart ids by race position: finishers in finishing order, then the rest by progress.
 func order() -> Array:
-	# Running karts by progress (ties by id): an insertion sort over at most eight, on progress
-	# read once each (the HUD asks every frame, the places every tick; no comparator calls).
 	var ids := []
+	order_into(ids)
+	return ids
+
+
+## [method order] into `ids` (cleared first), for callers that ask every frame or tick and keep
+## their own array: the HUD, and the places here.
+func order_into(ids: Array) -> void:
+	# Running karts by progress (ties by id): an insertion sort over at most eight, on progress
+	# read once each (no comparator calls).
+	ids.clear()
 	ids.append_array(_finish_order)
 	var first := ids.size()
 	var length := track.length
@@ -147,7 +156,6 @@ func order() -> Array:
 			at -= 1
 		ids.insert(at, k.id)
 		_progress_scratch.insert(at - first, p)
-	return ids
 
 
 ## 1-based race position.
@@ -226,7 +234,8 @@ func _end_race() -> void:
 
 
 func _update_places() -> void:
-	var now := order()
+	var now := _places_scratch
+	order_into(now)
 	for i in now.size():
 		var k: KartState = karts[now[i]]
 		var place := i + 1

@@ -392,7 +392,11 @@ func _update_progress(progress: Dictionary) -> void:
 			GameTheme.pop(_retry, 1.15)
 
 
+## Called every frame of a calibration: the override is set only when the colour changes (each
+## one re-shapes the label).
 func _set_retry_colour(c: Color) -> void:
+	if _retry.has_theme_color_override("font_color") and _retry.get_theme_color("font_color") == c:
+		return
 	_retry.add_theme_color_override("font_color", c)
 
 

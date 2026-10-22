@@ -145,18 +145,20 @@ func listen(race: KartRaceLogic) -> void:
 	var final_path := music_path(theme, true)
 	if ResourceLoader.exists(final_path):
 		ResourceLoader.load_threaded_request(final_path)  # cached for the final lap's swap
+	# The lambdas below read `_race`, never `race`: capturing the race would keep every race alive
+	# (race → events → lambda → race).
 	var e := race.events
 	var rider := KartRaceLogic.RIDER
 	e.race_started.connect(func():
 		_sfx("kart_go")
 		AudioDirector.duck_music(DUCK_DB, DUCK_SEC.go))
 	e.lap_completed.connect(func(id: int, lap: int, _t: float):
-		if id == rider and lap + 1 < race.laps:
+		if id == rider and lap + 1 < _race.laps:
 			_sfx("kart_lap")  # with the "LAP n/m" banner
 			AudioDirector.duck_music(DUCK_DB, DUCK_SEC.lap))
 	e.final_lap.connect(func(id: int):
 		if id == rider:
-			if race.laps > 1:  # with the "FINAL LAP!" banner, in the new key
+			if _race.laps > 1:  # with the "FINAL LAP!" banner, in the new key
 				AudioDirector.play_sfx("kart_fanfare", SFX_DB.kart_fanfare, fanfare_pitch(theme))
 				_engine_duck = ENGINE_DUCK_SEC
 				AudioDirector.duck_music(DUCK_DB, DUCK_SEC.final)
@@ -166,7 +168,7 @@ func listen(race: KartRaceLogic) -> void:
 		if id == rider:
 			_sfx("kart_cheer")
 			_sfx("kart_lap", 1.5)
-			AudioDirector.play_sfx(KartSfx.horn(race.karts[rider].racer_id), -3.0))
+			AudioDirector.play_sfx(KartSfx.horn(_race.karts[rider].racer_id), -3.0))
 	e.drift_tier.connect(func(id: int, tier: int):
 		if id == rider and tier >= 1:
 			_sfx("kart_tier%d" % clampi(tier, 1, 3)))

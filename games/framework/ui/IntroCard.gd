@@ -15,6 +15,9 @@ const SHADE := Color(0, 0, 0, 0.55)
 const SHADE_CORNER := 32.0  ## the card's corner radius
 
 var can_skip := false
+## `_shown_count` while "Get ready" shows (the game counts its own start down).
+const OWN_COUNTDOWN_SHOWN := -2
+
 var own_countdown := false  ## the game counts its own start down: no 3-2-1 here
 
 var _title: Label
@@ -141,13 +144,19 @@ func show_segment(info: GameInfo, segment: Dictionary, target: String, previous:
 			_previous_stars.stars = int(previous.get("stars", 0))
 	can_skip = skippable
 	skip_button.visible = skippable
+	_shown_count = -1
 	set_time_left(float(segment.get("intro_sec", 0)))
 	visible = true
 
 
 ## The countdown: whole seconds, then a big 3-2-1 ("Get ready" when the game counts down itself).
 func set_time_left(seconds: float) -> void:
+	# Called every frame of the intro: the label is touched only when what it shows changes
+	# (each theme override re-shapes the text and re-sorts the card).
 	if own_countdown:
+		if _shown_count == OWN_COUNTDOWN_SHOWN:
+			return
+		_shown_count = OWN_COUNTDOWN_SHOWN
 		_count.text = "Get ready"
 		_count.add_theme_font_size_override("font_size", HudTheme.BIG)
 		_count.add_theme_color_override("font_color", HudTheme.MUTED)
@@ -158,6 +167,9 @@ func set_time_left(seconds: float) -> void:
 	if theme:
 		_themed_count(whole)
 		return
+	if whole == _shown_count:
+		return
+	_shown_count = whole
 	_count.text = str(whole) if whole > 0 else "Go!"
 	_count.add_theme_font_size_override("font_size", HudTheme.HUGE if whole <= 3 else HudTheme.BIG)
 	_count.add_theme_color_override("font_color", HudTheme.WARN if whole <= 3 else HudTheme.MUTED)

@@ -332,3 +332,24 @@ func test_a_finished_custom_circuit_shows_its_best_on_its_card() -> void:
 	assert_str(hub.screen.best_text(0)).is_equal("Best 4321")
 	assert_str(hub.screen.best_text(1)).is_equal("")
 	local.hub.plan_bests.erase(b.plan_id() + "|standard")
+
+
+func test_opening_a_circuit_with_a_retired_game_doesnt_offer_to_overwrite_it() -> void:
+	# Review of PR #58: the unknown game was dropped on load, which read as an edit, and one
+	# Save rewrote the circuit (its plan id and bests) without it.
+	await _open_hub()
+	var rider := HubPrefs.rider(hub.state)
+	var saved := {"v": 1, "difficulty": "standard", "slots": [
+		{"game_id": "dodge_ball", "duration_sec": 120}, {"game_id": "retired_game", "duration_sec": 120},
+		{"game_id": "cadence_karaoke", "duration_sec": 120}]}
+	HubPrefs.save_custom(rider, 0, saved)
+	hub.nav.push(HubNav.BUILDER, {"index": 0})
+	await _settle()
+	var s: BuilderScreen = hub.screen
+	assert_int(s.builder.slots.size()).is_equal(2)
+	assert_int(s.builder.dropped).is_equal(1)
+	assert_bool(s.dirty()).is_false()
+	assert_bool(s.save_button.disabled).is_true()
+	s.save()
+	assert_array(HubPrefs.custom_circuit(rider, 0).slots).has_size(3)
+	HubPrefs.delete_custom(rider, 0)

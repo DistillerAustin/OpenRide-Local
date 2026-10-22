@@ -1,12 +1,14 @@
 class_name AvatarView
 extends Control
 ## The rider's avatar in a circle (spec §4.3): Kotlin's 256x256 PNG (`rider.avatar_png`, loaded
-## once per path), or the rider's initial on their avatar colour. Drawn inside the header's
+## again when the file changes), or the rider's initial on their avatar colour. Drawn inside the header's
 ## bake, so its shapes cost nothing per frame.
 
 const SEGMENTS := 48
 
-static var _textures := {}  ## path → ImageTexture (the PNG is rendered once per visit)
+## path → [modified time, ImageTexture]: Kotlin re-renders the PNG at the same path every visit,
+## so a newer file (a changed photo or emoji) replaces the cached texture.
+static var _textures := {}
 
 var texture: Texture2D
 var color := Color("7a7cff")
@@ -33,11 +35,17 @@ static func load_png(path) -> Texture2D:
 	if path == null or str(path).is_empty():
 		return null
 	var key := str(path)
-	if _textures.has(key):
-		return _textures[key]
-	var image := Image.load_from_file(key) if FileAccess.file_exists(key) else null
-	var tex: Texture2D = ImageTexture.create_from_image(image) if image else null
-	_textures[key] = tex
+	if not FileAccess.file_exists(key):
+		return null
+	var stamp := FileAccess.get_modified_time(key)
+	var cached: Array = _textures.get(key, [])
+	if not cached.is_empty() and cached[0] == stamp:
+		return cached[1]
+	var image := Image.load_from_file(key)
+	if image == null:
+		return null  # not cached: the next visit's render is tried again
+	var tex := ImageTexture.create_from_image(image)
+	_textures[key] = [stamp, tex]
 	return tex
 
 
