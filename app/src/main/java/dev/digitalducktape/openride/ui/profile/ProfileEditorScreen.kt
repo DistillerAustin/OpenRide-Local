@@ -6,28 +6,18 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,36 +25,49 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.digitalducktape.openride.core.files.OpenRideFileProvider
 import dev.digitalducktape.openride.core.profile.AvatarPhotoStore
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.LocalOrAccent
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSwatch
+import dev.digitalducktape.openride.ui.designsystem.component.OrTextField
+import dev.digitalducktape.openride.ui.designsystem.component.OrTile
+import dev.digitalducktape.openride.ui.designsystem.component.OrTopBar
+import dev.digitalducktape.openride.ui.designsystem.riderAccent
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The profile form (PRD P0-3), shared by "Add rider" and "Edit profile" (via
- * [ProfileEditorViewModel]'s two modes). Laid out as a single non-scrolling page for the
- * bike's landscape screen: avatar (photo/color/emoji) on the left, the text fields and
- * actions on the right.
+ * The profile form connected to its [ProfileEditorViewModel] (the Route half of the Route/Screen
+ * split), shared by "Add rider" and "Edit profile" via the view model's two modes. It owns what
+ * the stateless [ProfileEditorScreen] can't: the camera and its permission, and saving.
  *
- * The avatar photo comes from the tablet's built-in camera (TakePicture into a
- * FileProvider'd cache file), which [AvatarPhotoStore.importCapture] then center-crops for
- * the circular avatar. The app declares CAMERA for the mini-games head tracker, and Android
- * refuses ACTION_IMAGE_CAPTURE from an app that declares CAMERA without holding it, so the photo
- * button asks for the permission first when needed.
+ * The avatar photo comes from the tablet's built-in camera (TakePicture into a FileProvider'd
+ * cache file), which [AvatarPhotoStore.importCapture] then center-crops for the circular avatar.
+ * The app declares CAMERA for the mini-games head tracker, and Android refuses
+ * ACTION_IMAGE_CAPTURE from an app that declares CAMERA without holding it, so the photo button
+ * asks for the permission first when needed.
  */
 @Composable
-fun ProfileEditorScreen(
+fun ProfileEditorRoute(
     viewModel: ProfileEditorViewModel,
     avatarPhotoStore: AvatarPhotoStore,
     title: String,
@@ -72,7 +75,7 @@ fun ProfileEditorScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var cameraError by remember { mutableStateOf<String?>(null) }
@@ -114,82 +117,109 @@ fun ProfileEditorScreen(
         if (granted) launchCamera() else cameraError = "OpenRide needs camera access to take a photo"
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp)) {
-            // Save/Cancel live in the header, not under the fields: the tablet's on-screen
-            // keyboard covers the lower half of the screen, and this page deliberately
-            // doesn't scroll, so actions below the inputs are hidden while typing. The
-            // keyboard's Done key brings them back, so this is about keeping the primary
-            // action in view rather than about rescuing an unreachable one.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onCancel) {
-                        Text("Cancel")
-                    }
-                    Button(onClick = { scope.launch { viewModel.save() } }) {
-                        Text("Save")
-                    }
-                }
-            }
+    ProfileEditorScreen(
+        uiState = uiState,
+        title = title,
+        cameraError = cameraError,
+        onNameChange = viewModel::onNameChange,
+        onWeightChange = viewModel::onWeightChange,
+        onFtpChange = viewModel::onFtpChange,
+        onTakePhoto = {
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+            if (granted) launchCamera() else requestCameraPermission.launch(Manifest.permission.CAMERA)
+        },
+        onRemovePhoto = viewModel::onPhotoRemoved,
+        onColorSelected = viewModel::onAvatarColorChange,
+        onEmojiSelected = viewModel::onAvatarEmojiChange,
+        onSave = { scope.launch { viewModel.save() } },
+        onCancel = onCancel,
+        modifier = modifier,
+    )
+}
 
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-                AvatarColumn(
+/**
+ * The profile form (PRD P0-3), stateless: one page that never scrolls, for the bike's 1280 × 672
+ * dp window. The avatar (photo, colour, icon) in a tile on the left, name, weight and FTP in a
+ * tile on the right.
+ *
+ * Save and Cancel live in the top bar, not under the fields: the tablet's on-screen keyboard
+ * covers the lower half of the screen, so actions below the inputs would be hidden while typing.
+ *
+ * The page previews the rider's own colour: the accent (Save, the focused field) follows the
+ * avatar colour being picked, as it will across the app once this rider is active.
+ */
+@Composable
+fun ProfileEditorScreen(
+    uiState: ProfileEditorUiState,
+    title: String,
+    cameraError: String?,
+    onNameChange: (String) -> Unit,
+    onWeightChange: (String) -> Unit,
+    onFtpChange: (String) -> Unit,
+    onTakePhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
+    onColorSelected: (Int) -> Unit,
+    onEmojiSelected: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CompositionLocalProvider(LocalOrAccent provides riderAccent(uiState.avatarColor)) {
+        Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
+            OrTopBar(
+                title = title,
+                actions = {
+                    OrSecondaryButton(text = "Cancel", onClick = onCancel)
+                    OrPrimaryButton(text = "Save", onClick = onSave)
+                },
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+            ) {
+                AvatarTile(
                     uiState = uiState,
                     cameraError = cameraError,
-                    onTakePhoto = {
-                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                            PackageManager.PERMISSION_GRANTED
-                        if (granted) launchCamera() else requestCameraPermission.launch(Manifest.permission.CAMERA)
-                    },
-                    onRemovePhoto = viewModel::onPhotoRemoved,
-                    onColorSelected = viewModel::onAvatarColorChange,
-                    onEmojiSelected = viewModel::onAvatarEmojiChange,
+                    onTakePhoto = onTakePhoto,
+                    onRemovePhoto = onRemovePhoto,
+                    onColorSelected = onColorSelected,
+                    onEmojiSelected = onEmojiSelected,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
-
-                Column(modifier = Modifier.padding(start = 64.dp)) {
-                    OutlinedTextField(
+                OrTile(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    OrEyebrow(text = "Rider", modifier = Modifier.padding(bottom = OrSpacing.md))
+                    OrTextField(
                         value = uiState.name,
-                        onValueChange = viewModel::onNameChange,
-                        label = { Text("Name") },
-                        isError = uiState.nameError != null,
-                        supportingText = { uiState.nameError?.let { Text(it) } },
-                        singleLine = true,
-                        modifier = Modifier.width(360.dp),
+                        onValueChange = onNameChange,
+                        label = "Name",
+                        error = uiState.nameError,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-
-                    OutlinedTextField(
+                    OrTextField(
                         value = uiState.weightLbsInput,
-                        onValueChange = viewModel::onWeightChange,
-                        label = { Text("Weight (lbs) — optional") },
-                        isError = uiState.weightError != null,
-                        supportingText = { uiState.weightError?.let { Text(it) } },
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.width(360.dp).padding(top = 8.dp),
+                        onValueChange = onWeightChange,
+                        label = "Weight (lbs) — optional",
+                        error = uiState.weightError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.sm),
                     )
-
-                    OutlinedTextField(
+                    OrTextField(
                         value = uiState.ftpInput,
-                        onValueChange = viewModel::onFtpChange,
-                        label = { Text("FTP (watts) — optional") },
-                        isError = uiState.ftpError != null,
-                        supportingText = { uiState.ftpError?.let { Text(it) } },
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(360.dp).padding(top = 8.dp),
+                        onValueChange = onFtpChange,
+                        label = "FTP (watts) — optional",
+                        error = uiState.ftpError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.sm),
+                    )
+                    Text(
+                        text = "Weight sharpens calorie estimates; FTP sets your power zones.",
+                        style = OrType.Caption,
+                        color = OrColors.OnSurfaceMuted,
+                        modifier = Modifier.padding(top = OrSpacing.sm),
                     )
                 }
             }
@@ -198,7 +228,7 @@ fun ProfileEditorScreen(
 }
 
 @Composable
-private fun AvatarColumn(
+private fun AvatarTile(
     uiState: ProfileEditorUiState,
     cameraError: String?,
     onTakePhoto: () -> Unit,
@@ -207,111 +237,95 @@ private fun AvatarColumn(
     onEmojiSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        ProfileAvatar(
-            photoPath = uiState.avatarPhotoPath,
-            color = Color(uiState.avatarColor),
-            emoji = uiState.avatarEmoji,
-            size = 120.dp,
-            emojiSize = 48.sp,
-        )
-
+    OrTile(modifier = modifier) {
+        OrEyebrow(text = "Avatar")
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(top = 12.dp),
+            modifier = Modifier.padding(top = OrSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
         ) {
-            OutlinedButton(onClick = onTakePhoto) {
-                Text(if (uiState.avatarPhotoPath == null) "Take photo" else "Retake photo")
-            }
-            if (uiState.avatarPhotoPath != null) {
-                TextButton(onClick = onRemovePhoto) {
-                    Text("Remove")
+            ProfileAvatar(
+                photoPath = uiState.avatarPhotoPath,
+                color = Color(uiState.avatarColor),
+                emoji = uiState.avatarEmoji,
+                size = 120.dp,
+                emojiSize = 48.sp,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+                OrSecondaryButton(
+                    text = ProfileEditorLabels.photoAction(hasPhoto = uiState.avatarPhotoPath != null),
+                    onClick = onTakePhoto,
+                )
+                if (uiState.avatarPhotoPath != null) {
+                    OrSecondaryButton(text = "Remove photo", onClick = onRemovePhoto)
                 }
             }
         }
-        cameraError?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-
+        // Always reserves its line, so an error appearing doesn't push the pickers down.
         Text(
-            text = "Avatar color",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 20.dp),
+            text = cameraError ?: "",
+            style = OrType.Caption,
+            color = OrColors.Warning,
+            modifier = Modifier.padding(top = OrSpacing.sm),
         )
+
+        OrEyebrow(text = "Colour", modifier = Modifier.padding(top = OrSpacing.md))
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm + OrSpacing.xs),
+            modifier = Modifier.padding(top = OrSpacing.sm),
         ) {
-            AvatarOptions.colors.forEach { colorInt ->
-                PickerCircle(
+            AvatarOptions.colors.forEachIndexed { index, colorInt ->
+                OrSwatch(
                     selected = uiState.avatarColor == colorInt,
-                    background = Color(colorInt),
+                    color = Color(colorInt),
                     onClick = { onColorSelected(colorInt) },
+                    contentDescription = ProfileEditorLabels.colorDescription(index, AvatarOptions.colors.size),
                 )
             }
         }
 
-        Text(
-            text = "Avatar icon",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 20.dp),
-        )
+        OrEyebrow(text = "Icon", modifier = Modifier.padding(top = OrSpacing.lg))
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm + OrSpacing.xs),
+            modifier = Modifier.padding(top = OrSpacing.sm),
         ) {
             AvatarOptions.emojis.forEach { emoji ->
-                PickerCircle(
+                OrSwatch(
                     selected = uiState.avatarEmoji == emoji,
-                    background = MaterialTheme.colorScheme.surfaceVariant,
+                    color = OrColors.SurfaceRaised,
                     onClick = { onEmojiSelected(emoji) },
+                    contentDescription = ProfileEditorLabels.emojiDescription(emoji),
                 ) {
-                    Text(text = emoji, fontSize = 16.sp)
+                    Text(text = emoji, fontSize = 22.sp)
                 }
             }
         }
     }
 }
 
-/**
- * One swatch in the color/emoji pickers. `requiredSize` (not `size`) so every circle stays
- * exactly [PICKER_CIRCLE_SIZE] even if a tight parent constraint would otherwise squeeze the
- * trailing ones out of round, and the selection ring is a border drawn *inside* the circle —
- * selection never changes the element's footprint.
- */
+@BikePreview
 @Composable
-private fun PickerCircle(
-    selected: Boolean,
-    background: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit = {},
-) {
-    val ring = if (selected) {
-        Modifier.border(width = 3.dp, color = MaterialTheme.colorScheme.onBackground, shape = CircleShape)
-    } else {
-        Modifier
-    }
-    Box(
-        modifier = modifier
-            .requiredSize(PICKER_CIRCLE_SIZE)
-            .background(color = background, shape = CircleShape)
-            .then(ring)
-            // Clip first: unclipped, the press ripple drew a square behind the round swatch
-            // (rider bike test, 2026-10-21).
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
+private fun ProfileEditorScreenPreview() {
+    OpenRideTheme {
+        ProfileEditorScreen(
+            uiState = ProfileEditorUiState(
+                name = "Sam",
+                avatarColor = AvatarOptions.colors[1],
+                weightLbsInput = "185",
+                ftpInput = "0",
+                ftpError = "Enter an FTP in watts greater than 0",
+            ),
+            title = "Edit profile",
+            cameraError = null,
+            onNameChange = {},
+            onWeightChange = {},
+            onFtpChange = {},
+            onTakePhoto = {},
+            onRemovePhoto = {},
+            onColorSelected = {},
+            onEmojiSelected = {},
+            onSave = {},
+            onCancel = {},
+        )
     }
 }
-
-private val PICKER_CIRCLE_SIZE = 36.dp
