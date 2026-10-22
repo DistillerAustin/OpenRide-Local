@@ -1,6 +1,7 @@
 package dev.digitalducktape.openride.ui.designsystem
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.Composable
@@ -102,6 +103,14 @@ val OrColorPairs: List<OrColorPair> = listOf(
     OrColorPair("text on success", OrColors.OnAccent, OrColors.Success, TEXT),
     OrColorPair("secondary button border on background", OrColors.Outline, OrColors.Background, 1.5),
     OrColorPair("danger fill on background", OrColors.Danger, OrColors.Background, LARGE),
+    OrColorPair("secondary button and switch border on surface", OrColors.Outline, OrColors.Surface, 1.5),
+    // OrTextField's selection highlight: the accent at 30 % over the raised field.
+    OrColorPair(
+        "text on selection highlight",
+        OrColors.OnBackground,
+        OrColors.DefaultAccent.copy(alpha = 0.3f).compositeOver(OrColors.SurfaceRaised),
+        TEXT,
+    ),
 )
 
 /** The accent in force: `OpenRideTheme` provides the active rider's ([riderAccent]). */
