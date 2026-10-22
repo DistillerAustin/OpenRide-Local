@@ -162,7 +162,7 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
 | 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | **done** (5a Profile tab; 5b the other four, branch `ui-settings-screens`) |
 | 6 | History, Classes, Creator, Ride summary; the goal dialog, `GameBadge`, `ProfileAvatar`; shared browse components in `OrBrowse.kt` | medium | **done** (branch `ui-browse-screens`) |
-| 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | **follow-up after 1.0**: needs a ride on the bike, and bike tests ended for 1.0. Until then these three screens (and the `OpenRideColors` facade and Material type scale they use) stay as they are |
+| 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | **follow-up after 1.0** (issue #60): needs a ride on the bike, and bike tests ended for 1.0. Until then these three screens (and the `OpenRideColors` facade and Material type scale they use) stay as they are |
 | 8 | Type-safe navigation routes; optionally `:core:designsystem` as a module; Roborazzi screenshots | medium | |
 
 **Parity checklist per screen** (from section 1): every action, dialog, banner, empty / loading /
