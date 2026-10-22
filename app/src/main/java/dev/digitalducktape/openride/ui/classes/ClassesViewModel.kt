@@ -132,6 +132,12 @@ class ClassesViewModel(
         ).filter { it.startable }.randomOrNull(random)
 
     /**
+     * The Random ride button: a [randomVideo] started through [startRideForVideo]. Returns the
+     * started video's id to navigate to, or `null` when nothing matched or it didn't start.
+     */
+    fun startRandomRide(): String? = randomVideo()?.takeIf { startRideForVideo(it) }?.id
+
+    /**
      * Fetches (or re-fetches) all configured channels. Safe to call repeatedly — in particular,
      * every time the rider returns to the Classes tab, since `ClassesScreen`'s
      * `LaunchedEffect(Unit) { refresh() }` re-fires on every recomposition of that effect scope

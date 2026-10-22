@@ -112,149 +112,144 @@ fun MainScaffold(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // null until offlineFor() first answers: the dot stays neutral rather than claiming "connected".
     val sensorsOffline by remember { appContainer.bikeDataSource.connectionState.offlineFor() }
-        .collectAsState(initial = false)
+        .collectAsState(initial = null as Boolean?)
     val heartRateState by appContainer.heartRateManager.connectionState.collectAsState()
     val heartRateBpm by appContainer.heartRateManager.bpm.collectAsState()
     val availableUpdate by appContainer.updateAvailability.collectAsState()
     val updateBannerDismissed by appContainer.updateBannerDismissed.collectAsState()
-    val currentTab = TopLevelDestination.entries.firstOrNull { it.route == currentRoute } ?: TopLevelDestination.Start
+    val currentTab = TopLevelDestination.fromRoute(currentRoute) ?: TopLevelDestination.Start
 
-    run {
-        Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
-            OrTopBar(
-                title = currentTab.label,
-                // Each tab's own buttons, drawn with the bar in the same frame as the tab.
-                actions = {
-                    when (currentTab) {
-                        TopLevelDestination.Classes -> OrAccentButton(
-                            text = "Random ride",
-                            enabled = classGrid?.isNotEmpty() ?: classRows.any { it.videos.isNotEmpty() },
-                            onClick = {
-                                classesViewModel.randomVideo()?.let { video ->
-                                    if (classesViewModel.startRideForVideo(video)) {
-                                        outerNavController.navigate(Destinations.videoRide(video.id))
-                                    }
-                                }
-                            },
-                        )
-                        TopLevelDestination.History -> if (history?.rows?.isNotEmpty() == true) {
-                            OrSecondaryButton(text = "Export CSV", onClick = {
-                                scope.launch {
-                                    val csv = historyViewModel.historyCsvContent()
-                                    ExportShare.share(context, "ride_history.csv", csv, "text/csv")
-                                }
-                            })
-                        }
-                        else -> {}
-                    }
-                },
-                trailing = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SensorStatus(offline = sensorsOffline)
-                        HeartRateStatus(
-                            paired = activeProfile?.pairedHrDeviceAddress != null,
-                            state = heartRateState,
-                            bpm = heartRateBpm,
-                        )
-                        // The rider's own name switches rider (rider's ask, 2026-10-21): straight to the
-                        // picker, which leaves the tabs; picking anyone, them included, comes back.
-                        RiderChip(profile = activeProfile, onClick = {
-                            profileViewModel.switchRider()
-                            outerNavController.navigate(Destinations.ProfileSelect) {
-                                popUpTo(Destinations.Main) { inclusive = true }
+    Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
+        OrTopBar(
+            title = currentTab.label,
+            // Each tab's own buttons, drawn with the bar in the same frame as the tab.
+            actions = {
+                when (currentTab) {
+                    TopLevelDestination.Classes -> OrAccentButton(
+                        text = "Random ride",
+                        enabled = classGrid?.isNotEmpty() ?: classRows.any { it.videos.isNotEmpty() },
+                        onClick = {
+                            classesViewModel.startRandomRide()?.let { outerNavController.navigate(Destinations.videoRide(it)) }
+                        },
+                    )
+                    TopLevelDestination.History -> if (history?.rows?.isNotEmpty() == true) {
+                        OrSecondaryButton(text = "Export CSV", onClick = {
+                            scope.launch {
+                                val csv = historyViewModel.historyCsvContent()
+                                ExportShare.share(context, "ride_history.csv", csv, "text/csv")
                             }
                         })
                     }
-                },
-            )
-            AppNotices(
-                sensorsOffline = sensorsOffline,
-                updateVersionName = availableUpdate?.versionName?.takeUnless { updateBannerDismissed },
-                onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
-                onDismissUpdate = { appContainer.dismissUpdateBanner() },
-            )
-            NavHost(
-                navController = innerNavController,
-                startDestination = TopLevelDestination.Start.route,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                // No transitions (rider, 2026-10-21): the default cross-fade left the old tab's
-                // top-bar actions showing mid-fade and felt inconsistent.
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None },
-                popEnterTransition = { EnterTransition.None },
-                popExitTransition = { ExitTransition.None },
-            ) {
-                composable(MainTabs.Home) {
-                    HomeRoute(
-                        viewModel = homeViewModel,
-                        onQuickStart = { outerNavController.navigate(Destinations.InRide) },
-                        onOpenGames = { launchGames(context) },
+                    else -> {}
+                }
+            },
+            trailing = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SensorStatus(offline = sensorsOffline)
+                    HeartRateStatus(
+                        paired = activeProfile?.pairedHrDeviceAddress != null,
+                        state = heartRateState,
+                        bpm = heartRateBpm,
                     )
+                    // The rider's own name switches rider (rider's ask, 2026-10-21): straight to the
+                    // picker, which leaves the tabs; picking anyone, them included, comes back.
+                    RiderChip(profile = activeProfile, onClick = {
+                        profileViewModel.switchRider()
+                        outerNavController.navigate(Destinations.ProfileSelect) {
+                            popUpTo(Destinations.Main) { inclusive = true }
+                        }
+                    })
                 }
-                composable(MainTabs.Classes) {
-                    ClassesScreen(
-                        viewModel = classesViewModel,
-                        onStartVideoRide = { videoId ->
-                            outerNavController.navigate(Destinations.videoRide(videoId))
-                        },
-                        onOpenCreator = { sourceId ->
-                            outerNavController.navigate(Destinations.creator(sourceId))
-                        },
-                    )
-                }
-                composable(MainTabs.Games) {
-                    // A launcher: the Games hub inside Godot holds the picker, circuits and settings.
-                    val saving by appContainer.gameVisitManager.saving.collectAsState()
-                    GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
-                }
-                composable(MainTabs.History) {
-                    HistoryScreen(
-                        viewModel = historyViewModel,
-                        onRideSelected = { rideId ->
-                            outerNavController.navigate(Destinations.rideSummary(rideId))
-                        },
-                    )
-                }
-                composable(MainTabs.Profile) {
-                    ProfileTabScreen(
-                        viewModel = profileViewModel,
-                        activeProfile = activeProfile,
-                        onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
-                        onRestoreComplete = {
-                            // The active profile (and possibly its id entirely) may no longer be
-                            // meaningful after a restore, so route back to profile select the same
-                            // way "Switch rider" does rather than staying on a now-stale screen.
-                            outerNavController.navigate(Destinations.ProfileSelect) {
-                                popUpTo(Destinations.Main) { inclusive = true }
-                            }
-                        },
-                        onManageHeartRateStrap = {
-                            // Lives in the outer nav graph (see OpenRideNavHost), same reasoning as
-                            // "switch rider": pairing is a full-screen flow, not a fifth tab.
-                            outerNavController.navigate(Destinations.HrPairing)
-                        },
-                        onManageAppUpdates = { outerNavController.navigate(Destinations.AppUpdate) },
-                        onManageContentSources = {
-                            outerNavController.navigate(Destinations.ContentSources)
-                        },
-                        routeHolder = appContainer.routeHolder,
-                    )
-                }
+            },
+        )
+        AppNotices(
+            sensorsOffline = sensorsOffline == true,
+            updateVersionName = availableUpdate?.versionName?.takeUnless { updateBannerDismissed },
+            onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
+            onDismissUpdate = { appContainer.dismissUpdateBanner() },
+        )
+        NavHost(
+            navController = innerNavController,
+            startDestination = TopLevelDestination.Start.route,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            // No transitions (rider, 2026-10-21): the default cross-fade left the old tab's
+            // top-bar actions showing mid-fade and felt inconsistent.
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
+        ) {
+            composable(MainTabs.Home) {
+                HomeRoute(
+                    viewModel = homeViewModel,
+                    onQuickStart = { outerNavController.navigate(Destinations.InRide) },
+                    onOpenGames = { launchGames(context) },
+                )
             }
-            OrNavBar {
-                TopLevelDestination.entries.forEach { destination ->
-                    OrNavBarItem(
-                        label = destination.label,
-                        icon = destination.icon,
-                        emoji = destination.emoji,
-                        selected = currentRoute == destination.route,
-                        onClick = { navigateToTab(destination.route) },
-                    )
-                }
+            composable(MainTabs.Classes) {
+                ClassesScreen(
+                    viewModel = classesViewModel,
+                    onStartVideoRide = { videoId ->
+                        outerNavController.navigate(Destinations.videoRide(videoId))
+                    },
+                    onOpenCreator = { sourceId ->
+                        outerNavController.navigate(Destinations.creator(sourceId))
+                    },
+                )
+            }
+            composable(MainTabs.Games) {
+                // A launcher: the Games hub inside Godot holds the picker, circuits and settings.
+                val saving by appContainer.gameVisitManager.saving.collectAsState()
+                GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
+            }
+            composable(MainTabs.History) {
+                HistoryScreen(
+                    viewModel = historyViewModel,
+                    onRideSelected = { rideId ->
+                        outerNavController.navigate(Destinations.rideSummary(rideId))
+                    },
+                )
+            }
+            composable(MainTabs.Profile) {
+                ProfileTabScreen(
+                    viewModel = profileViewModel,
+                    activeProfile = activeProfile,
+                    onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
+                    onRestoreComplete = {
+                        // The active profile (and possibly its id entirely) may no longer be
+                        // meaningful after a restore, so route back to profile select the same
+                        // way "Switch rider" does rather than staying on a now-stale screen.
+                        outerNavController.navigate(Destinations.ProfileSelect) {
+                            popUpTo(Destinations.Main) { inclusive = true }
+                        }
+                    },
+                    onManageHeartRateStrap = {
+                        // Lives in the outer nav graph (see OpenRideNavHost), same reasoning as
+                        // "switch rider": pairing is a full-screen flow, not a fifth tab.
+                        outerNavController.navigate(Destinations.HrPairing)
+                    },
+                    onManageAppUpdates = { outerNavController.navigate(Destinations.AppUpdate) },
+                    onManageContentSources = {
+                        outerNavController.navigate(Destinations.ContentSources)
+                    },
+                    routeHolder = appContainer.routeHolder,
+                )
+            }
+        }
+        OrNavBar {
+            TopLevelDestination.entries.forEach { destination ->
+                OrNavBarItem(
+                    label = destination.label,
+                    icon = destination.icon,
+                    emoji = destination.emoji,
+                    selected = currentRoute == destination.route,
+                    onClick = { navigateToTab(destination.route) },
+                )
             }
         }
     }

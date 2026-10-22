@@ -34,4 +34,35 @@ class OrColorsTest {
     fun `the background is not pure black`() {
         assertNotEquals(Color.Black, OrColors.Background)
     }
+
+    @Test
+    fun `no avatar colour gives an accent that reads as a status colour`() {
+        dev.digitalducktape.openride.ui.profile.AvatarOptions.colors.forEach { avatar ->
+            val (h, s, _) = hsv(riderAccent(avatar))
+            if (s < 0.2f) return@forEach
+            StatusHues.forEach { status ->
+                assertTrue(
+                    "avatar ${Integer.toHexString(avatar)}: hue $h within $ACCENT_HUE_CLEARANCE of $status",
+                    hueDistance(h, status) >= ACCENT_HUE_CLEARANCE - 0.5f,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a status-coloured avatar turns to the nearest clear hue`() {
+        // Danger's own red would read as Danger: it moves, but no further than the clearance.
+        val (dangerHue) = hsv(OrColors.Danger)
+        val (h) = hsv(clearOfStatusHues(OrColors.Danger))
+        assertTrue(hueDistance(h, dangerHue) >= ACCENT_HUE_CLEARANCE - 0.5f)
+        StatusHues.forEach { assertTrue(hueDistance(h, it) >= ACCENT_HUE_CLEARANCE - 0.5f) }
+    }
+
+    @Test
+    fun `colours clear of the status hues, and greys, are left alone`() {
+        val blue = Color(0xFF2D9CE8)
+        assertTrue(clearOfStatusHues(blue) == blue)
+        val grey = Color(0xFFB0BEC5)
+        assertTrue(clearOfStatusHues(grey) == grey)
+    }
 }

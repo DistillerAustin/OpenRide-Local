@@ -106,7 +106,7 @@ text, checked by a unit test.
 | `OnAccent` | `#0F1216` | text on accent |
 | `Info` | `#6CC6FF` | links, informational banners |
 | `Warning` | `#FFB648` | BETA badge, auto-pause, saving |
-| `Danger` | `#FF6A5C` | End ride, destructive confirms |
+| `Danger` | `#CC3A2D` | destructive confirms only (Restore), as a fill with white text; End ride uses the accent |
 | `Success` | `#4CD68E` | done, paired |
 
 Power-zone colours stay as they are: a standard training-zone ramp, not a brand palette.

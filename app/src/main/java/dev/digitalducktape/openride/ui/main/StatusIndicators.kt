@@ -22,20 +22,44 @@ import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
 import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
 
+/** What the top bar's sensor dot shows. */
+enum class SensorDot(val description: String) {
+    /** Not known yet: the offline check hasn't had its first answer (it waits `SensorOfflineAfter`). */
+    Checking("Checking the bike sensors"),
+    Connected("Bike sensors connected"),
+    Offline("Bike sensors offline"),
+    ;
+
+    companion object {
+        /** `null` (no answer yet) is [Checking], never a green "connected" it can't vouch for. */
+        fun of(offline: Boolean?): SensorDot = when (offline) {
+            null -> Checking
+            true -> Offline
+            false -> Connected
+        }
+    }
+}
+
 /**
- * The bike's sensors in the top bar: a green dot while they report, amber once they have been
- * silent for `SensorOfflineAfter` (the notice under the bar says what to do).
+ * The bike's sensors in the top bar: a neutral dot until the first answer, green while they
+ * report, amber once they have been silent for `SensorOfflineAfter` (the notice under the bar
+ * says what to do).
  */
 @Composable
-fun SensorStatus(offline: Boolean, modifier: Modifier = Modifier) {
-    val color = if (offline) OrColors.Warning else OrColors.Success
+fun SensorStatus(offline: Boolean?, modifier: Modifier = Modifier) {
+    val dot = SensorDot.of(offline)
+    val color = when (dot) {
+        SensorDot.Checking -> OrColors.OnSurfaceMuted
+        SensorDot.Connected -> OrColors.Success
+        SensorDot.Offline -> OrColors.Warning
+    }
     Row(
-        modifier = modifier.semantics { contentDescription = if (offline) "Bike sensors offline" else "Bike sensors connected" },
+        modifier = modifier.semantics { contentDescription = dot.description },
         horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(12.dp).background(color, CircleShape))
-        OrLabel(text = "Sensors", style = OrType.Caption, color = if (offline) OrColors.Warning else OrColors.OnSurfaceMuted)
+        OrLabel(text = "Sensors", style = OrType.Caption, color = if (dot == SensorDot.Offline) OrColors.Warning else OrColors.OnSurfaceMuted)
     }
 }
 
@@ -47,7 +71,8 @@ fun SensorStatus(offline: Boolean, modifier: Modifier = Modifier) {
 fun HeartRateStatus(paired: Boolean, state: ConnectionState, bpm: Int?, modifier: Modifier = Modifier) {
     if (!paired) return
     val live = state == ConnectionState.Connected && bpm != null
-    val color = if (live) OrColors.Danger else OrColors.OnSurfaceMuted
+    // Not Danger: a live heart is good news, and red reads as a fault (or as End) on this bar.
+    val color = if (live) OrColors.OnBackground else OrColors.OnSurfaceMuted
     Row(
         modifier = modifier.semantics { contentDescription = if (live) "Heart rate $bpm" else "Heart-rate strap not connected" },
         horizontalArrangement = Arrangement.spacedBy(OrSpacing.xs + OrSpacing.xs / 2),

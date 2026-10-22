@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,6 +35,7 @@ import dev.digitalducktape.openride.ui.common.ProfileAvatar
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
 import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsDivider
 import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsGroup
@@ -202,31 +201,24 @@ fun ProfileTabScreen(
     // Destructive confirmation (tap-to-confirm, matching the End Ride pattern elsewhere in the
     // app) — restoring wipes every profile and ride currently on the device.
     pendingRestoreContent?.let { content ->
-        AlertDialog(
-            onDismissRequest = { pendingRestoreContent = null },
-            title = { Text("Restore backup?") },
-            text = { Text("This replaces ALL profiles and ride history on this device with the backup file's contents. This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingRestoreContent = null
-                    scope.launch {
-                        viewModel.restoreFromContent(content).fold(
-                            onSuccess = {
-                                restoreError = null
-                                onRestoreComplete()
-                            },
-                            onFailure = { error ->
-                                restoreError = "Restore failed: ${error.message ?: "invalid backup file"}"
-                            },
-                        )
-                    }
-                }) {
-                    Text("Restore")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRestoreContent = null }) {
-                    Text("Cancel")
+        OrConfirmDialog(
+            title = "Restore backup?",
+            text = "This replaces ALL profiles and ride history on this device with the backup file's contents. This can't be undone.",
+            confirmText = "Restore",
+            destructive = true,
+            onDismiss = { pendingRestoreContent = null },
+            onConfirm = {
+                pendingRestoreContent = null
+                scope.launch {
+                    viewModel.restoreFromContent(content).fold(
+                        onSuccess = {
+                            restoreError = null
+                            onRestoreComplete()
+                        },
+                        onFailure = { error ->
+                            restoreError = "Restore failed: ${error.message ?: "invalid backup file"}"
+                        },
+                    )
                 }
             },
         )

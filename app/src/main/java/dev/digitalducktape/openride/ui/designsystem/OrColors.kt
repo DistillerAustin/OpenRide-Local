@@ -1,7 +1,6 @@
 package dev.digitalducktape.openride.ui.designsystem
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.Composable
@@ -54,7 +53,11 @@ object OrColors {
     /** BETA badge, auto-pause, "saving", soft errors in text. */
     val Warning = Color(0xFFFFB648)
 
-    /** Stop and destructive actions (End ride, Restore). A fill only, with [OnDanger] text. */
+    /**
+     * Destructive confirmations only: actions that wipe data (Restore a backup). A fill only,
+     * with [OnDanger] text; never text or an icon on the dark ground (it fails contrast). End
+     * ride is not destructive and uses [Accent]; status indicators don't use it either.
+     */
     val Danger = Color(0xFFCC3A2D)
 
     /** Text on [Danger]. */
@@ -106,16 +109,18 @@ val LocalOrAccent = staticCompositionLocalOf { OrColors.DefaultAccent }
 
 /**
  * A rider's UI colour from their avatar colour (rider's ask, 2026-10-21: one colour per rider).
- * Lightened toward white just enough that [OrColors.OnAccent] text on it and it as text on every
+ * First turned at least [ACCENT_HUE_CLEARANCE] away from the status colours' hues
+ * ([clearOfStatusHues]), so a red, amber or green avatar never makes a button read as Danger,
+ * Warning or Success. Then lightened toward white just enough that [OrColors.OnAccent] text on it and it as text on every
  * dark surface stay at WCAG AA (4.5 : 1), so any avatar colour works; already-light ones are
  * used as they are. `null` (no rider) gives [OrColors.DefaultAccent].
  */
 fun riderAccent(avatarColor: Int?): Color {
     if (avatarColor == null) return OrColors.DefaultAccent
-    val base = Color(avatarColor).copy(alpha = 1f)
+    val base = clearOfStatusHues(Color(avatarColor).copy(alpha = 1f))
     var step = 0
     while (step <= 20) {
-        val c = lerp(base, Color.White, step / 20f)
+        val c = towardWhite(base, step / 20f)
         if (accentReadable(c)) return c
         step++
     }
@@ -126,3 +131,58 @@ fun riderAccent(avatarColor: Int?): Color {
 fun accentReadable(accent: Color): Boolean =
     contrastRatio(OrColors.OnAccent, accent) >= TEXT &&
         listOf(OrColors.Background, OrColors.Surface, OrColors.SurfaceRaised).all { contrastRatio(accent, it) >= TEXT }
+
+
+/**
+ * [color] blended toward white by [t] in plain sRGB, which keeps its hue exactly (Compose's
+ * `lerp` blends in Oklab and drifts the hue, which could carry an accent back toward a status hue).
+ */
+private fun towardWhite(color: Color, t: Float): Color =
+    Color(color.red + (1f - color.red) * t, color.green + (1f - color.green) * t, color.blue + (1f - color.blue) * t)
+
+/** Degrees of hue a rider's accent keeps from [OrColors.Danger], [OrColors.Warning] and [OrColors.Success]. */
+const val ACCENT_HUE_CLEARANCE = 25f
+
+/** Below this saturation a colour reads as grey, whatever its hue: it can't be mistaken for a status. */
+private const val GREY_SATURATION = 0.2f
+
+/** The status colours' hues, which an accent keeps clear of. */
+val StatusHues: List<Float> = listOf(OrColors.Danger, OrColors.Warning, OrColors.Success).map { hsv(it)[0] }
+
+/**
+ * [color] with its hue moved, if needed, to the nearest hue at least [ACCENT_HUE_CLEARANCE] from
+ * every [StatusHues] (saturation and value kept). A near-grey colour is returned as it is.
+ */
+fun clearOfStatusHues(color: Color): Color {
+    val (h, s, v) = hsv(color)
+    if (s < GREY_SATURATION || StatusHues.all { hueDistance(h, it) >= ACCENT_HUE_CLEARANCE }) return color
+    // Candidates: each forbidden band's edges; the nearest one clear of every band wins.
+    val clear = StatusHues.flatMap { listOf(it - ACCENT_HUE_CLEARANCE, it + ACCENT_HUE_CLEARANCE) }
+        .map { (it + 360f) % 360f }
+        .filter { c -> StatusHues.all { hueDistance(c, it) >= ACCENT_HUE_CLEARANCE - 0.01f } }
+        .minByOrNull { hueDistance(h, it) } ?: return color
+    return Color.hsv(clear, s, v)
+}
+
+/** Degrees between two hues, 0 to 180. */
+fun hueDistance(a: Float, b: Float): Float {
+    val d = kotlin.math.abs(a - b) % 360f
+    return if (d > 180f) 360f - d else d
+}
+
+/** Hue (0-360), saturation and value (0-1) of an sRGB colour. */
+fun hsv(color: Color): FloatArray {
+    val r = color.red
+    val g = color.green
+    val b = color.blue
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val delta = max - min
+    val h = when {
+        delta == 0f -> 0f
+        max == r -> 60f * (((g - b) / delta) % 6f)
+        max == g -> 60f * ((b - r) / delta + 2f)
+        else -> 60f * ((r - g) / delta + 4f)
+    }
+    return floatArrayOf((h + 360f) % 360f, if (max == 0f) 0f else delta / max, max)
+}

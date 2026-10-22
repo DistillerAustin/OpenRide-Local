@@ -38,6 +38,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -385,6 +386,30 @@ class ClassesViewModelTest {
         viewModel.setCategory(CategoryFilter.Workout)
 
         assertNull(viewModel.randomVideo())
+    }
+
+    @Test
+    fun `startRandomRide starts a ride for the active profile and returns its video`() = runTest {
+        val profileId = profileRepository.createProfile(
+            Profile(name = "Ed", avatarEmoji = "🚴", avatarColor = 0xFF00AAFF.toInt(), weightKg = null, ftp = null),
+        )
+        activeProfileHolder.setActiveProfile(profileId)
+        val (viewModel, manager) = viewModel(backgroundScope)
+        viewModel.refresh()
+
+        val id = viewModel.startRandomRide()
+
+        assertTrue(viewModel.rows.value.single().videos.any { it.id == id })
+        assertEquals(RideSessionState.Active, manager.state.value)
+    }
+
+    @Test
+    fun `startRandomRide returns null and starts nothing without a rider or a match`() = runTest {
+        val (viewModel, manager) = viewModel(backgroundScope)
+        assertNull(viewModel.startRandomRide())
+        viewModel.refresh()
+        assertNull(viewModel.startRandomRide())
+        assertNotEquals(RideSessionState.Active, manager.state.value)
     }
 
     @Test
