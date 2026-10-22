@@ -1,21 +1,19 @@
 package dev.digitalducktape.openride.ui.profile
 
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,28 +24,40 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
-import dev.digitalducktape.openride.core.profile.WeightUnits
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
+import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.ui.common.ProfileAvatar
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsDivider
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsGroup
+import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsRow
 import kotlinx.coroutines.launch
+
+/** Width of the Profile tab's rider column. */
 
 /**
  * Profile nav tab: shows the active rider, offers "Switch rider" (PRD P0-3/P1-6 — tap-to-
  * confirm before clearing the active profile and returning to profile select, so a stray tap
  * mid-session can't silently log the next ride under the wrong rider), quick shortcuts to
  * stock Android Wi-Fi/device settings (PRD P1-5, T12), and whole-database backup/restore
- * (PRD P1-8, T15).
+ * (PRD P1-8, T15). Laid out as the rider on the left and grouped settings rows on the right
+ * (Ride, Classes, Device, Backup & restore), every row a 72 dp touch target.
  */
 @Composable
 fun ProfileTabScreen(
     viewModel: ProfileTabViewModel,
+    /** The app's always-loaded rider (`AppContainer.activeProfile`), so the first frame has it. */
+    activeProfile: Profile?,
     onEditProfile: () -> Unit,
-    onSwitchRider: () -> Unit,
     onRestoreComplete: () -> Unit,
     onManageHeartRateStrap: () -> Unit,
     onManageAppUpdates: () -> Unit,
@@ -55,14 +65,12 @@ fun ProfileTabScreen(
     routeHolder: RouteHolder,
     modifier: Modifier = Modifier,
 ) {
-    val activeProfile by viewModel.activeProfile.collectAsState(initial = null)
     val activeRoute by routeHolder.activeRoute.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var pendingRestoreContent by remember { mutableStateOf<String?>(null) }
     var restoreError by remember { mutableStateOf<String?>(null) }
-    var showSwitchConfirmation by remember { mutableStateOf(false) }
 
     var routeError by remember { mutableStateOf<String?>(null) }
 
@@ -82,215 +90,135 @@ fun ProfileTabScreen(
         if (text != null) pendingRestoreContent = text
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            // Scrollable: with Edit profile added, the stack can exceed the screen.
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(48.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            ProfileAvatar(profile = activeProfile, size = 96.dp, emojiSize = 40.sp)
-            Text(
-                text = activeProfile?.name ?: "No rider selected",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            activeProfile?.let { profile ->
-                val details = buildList {
-                    profile.weightKg?.let { add("${WeightUnits.formatLbs(it)} lb") }
-                    profile.ftp?.let { add("FTP ${it}W") }
-                }
-                if (details.isNotEmpty()) {
-                    Text(
-                        text = details.joinToString("  •  "),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
+    // One page, no scrolling (the rider's ask, 2026-10-21): three columns of groups under the
+    // shared top bar, which carries the rider and Switch rider; Edit profile is a setting like
+    // the rest. The tallest column is about 360 dp of the 528 between the bars, leaving room for
+    // a notice.
+    Row(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+            OrSettingsGroup(title = "Rider") {
+                OrSettingsRow(
+                    title = "Edit profile",
+                    value = activeProfile?.let(ProfileTabLabels::riderDetails) ?: "Name, weight, FTP, avatar",
+                    onClick = onEditProfile,
+                )
+            }
+
+            OrSettingsGroup(title = "Ride") {
+                val paired = activeProfile?.pairedHrDeviceAddress != null
+                OrSettingsRow(
+                    title = "Heart-rate strap",
+                    value = ProfileTabLabels.heartRateStrap(paired),
+                    valueColor = if (paired) OrColors.Success else OrColors.OnSurfaceMuted,
+                    onClick = onManageHeartRateStrap,
+                )
+                OrSettingsDivider()
+                // GPX route import (PRD #21/T21).
+                OrSettingsRow(
+                    title = "Route (GPX)",
+                    value = routeError
+                        ?: activeRoute?.let { ProfileTabLabels.routeSummary(it.name, it.totalDistanceMeters) }
+                        ?: "No route loaded",
+                    valueColor = if (routeError != null) OrColors.Warning else OrColors.OnSurfaceMuted,
+                ) {
+                    if (activeRoute != null) {
+                        OrSecondaryButton(text = "Clear", onClick = {
+                            routeHolder.clear()
+                            routeError = null
+                        })
+                    }
+                    OrSecondaryButton(
+                        text = if (activeRoute == null) "Load route" else "Change",
+                        onClick = { pickRouteFile.launch("*/*") },
                     )
                 }
             }
 
-            OutlinedButton(
-                onClick = onEditProfile,
-                modifier = Modifier.width(280.dp).padding(top = 32.dp),
-            ) {
-                Text("Edit profile")
-            }
-
-            OutlinedButton(
-                onClick = { showSwitchConfirmation = true },
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("Switch rider")
-            }
-
-            SettingsShortcutsRow(modifier = Modifier.padding(top = 16.dp))
-
-            OutlinedButton(
-                onClick = onManageHeartRateStrap,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text(
-                    if (activeProfile?.pairedHrDeviceAddress != null) {
-                        "Heart-rate strap: paired"
-                    } else {
-                        "Pair heart-rate strap"
-                    },
-                )
-            }
-
-            OutlinedButton(
-                onClick = onManageAppUpdates,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("App updates")
-            }
-
-            OutlinedButton(
-                onClick = onManageContentSources,
-                modifier = Modifier.width(280.dp).padding(top = 16.dp),
-            ) {
-                Text("Content sources")
-            }
-
-            Text(
-                text = "Route (GPX)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 32.dp),
-            )
-            activeRoute?.let { route ->
-                Text(
-                    text = "%s  •  %.2f mi".format(
-                        route.name ?: "Loaded route",
-                        route.totalDistanceMeters / 1609.344,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            routeError?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                OutlinedButton(onClick = { pickRouteFile.launch("*/*") }) {
-                    Text(if (activeRoute == null) "Load Route" else "Change Route")
-                }
-                if (activeRoute != null) {
-                    OutlinedButton(onClick = {
-                        routeHolder.clear()
-                        routeError = null
-                    }) {
-                        Text("Clear Route")
-                    }
-                }
-            }
-
-            Text(
-                text = "Backup & restore",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 32.dp),
-            )
-            Text(
-                text = "Also backed up automatically after every ride to " +
-                    MediaStoreAutoBackupStore.RELATIVE_PATH +
-                    MediaStoreAutoBackupStore.fileNameFor(context.packageName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        val backup = viewModel.createBackupContent()
-                        ExportShare.share(context, "openride_backup.json", backup, "application/json")
-                    }
-                }) {
-                    Text("Back Up")
-                }
-                OutlinedButton(onClick = { pickBackupFile.launch("application/json") }) {
-                    Text("Restore from file")
-                }
-            }
-            restoreError?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
+            OrSettingsGroup(title = "Classes") {
+                OrSettingsRow(
+                    title = "Content sources",
+                    value = "Your creators and playlists",
+                    onClick = onManageContentSources,
                 )
             }
         }
-    }
 
-    // Tap-to-confirm (PRD P1-6/T16): a stray tap on "Switch rider" shouldn't silently drop the
-    // active profile mid-session — the whole point is that the *next* ride logged shouldn't
-    // land under the wrong rider by accident.
-    if (showSwitchConfirmation) {
-        val riderName = activeProfile?.name ?: "the current rider"
-        AlertDialog(
-            onDismissRequest = { showSwitchConfirmation = false },
-            title = { Text("Switch rider?") },
-            text = { Text("You'll leave $riderName's session. Any ride you start next will be logged under whichever rider you pick.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSwitchConfirmation = false
-                    viewModel.switchRider()
-                    onSwitchRider()
-                }) {
-                    Text("Switch rider")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSwitchConfirmation = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+            // PRD P1-5 (T12): stock Android settings, for when OpenRide is the tablet's launcher.
+            OrSettingsGroup(title = "Device") {
+                OrSettingsRow(
+                    title = "Wi-Fi",
+                    value = "Android Wi-Fi settings",
+                    onClick = { launchSettings(context, Settings.ACTION_WIFI_SETTINGS) },
+                )
+                OrSettingsDivider()
+                OrSettingsRow(
+                    title = "Device settings",
+                    value = "Volume, display, Bluetooth",
+                    onClick = { launchSettings(context, Settings.ACTION_SETTINGS) },
+                )
+                OrSettingsDivider()
+                OrSettingsRow(title = "App updates", onClick = onManageAppUpdates)
+            }
+        }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+            // Whole-database backup and restore (PRD P1-8, T15).
+            OrSettingsGroup(title = "Backup & restore") {
+                OrSettingsRow(
+                    title = "Back up",
+                    value = "Every rider and ride, as a file",
+                    onClick = {
+                        scope.launch {
+                            val backup = viewModel.createBackupContent()
+                            ExportShare.share(context, "openride_backup.json", backup, "application/json")
+                        }
+                    },
+                )
+                OrSettingsDivider()
+                OrSettingsRow(
+                    title = "Restore from file",
+                    value = restoreError ?: "Replaces everything on this bike",
+                    valueColor = if (restoreError != null) OrColors.Warning else OrColors.OnSurfaceMuted,
+                    onClick = { pickBackupFile.launch("application/json") },
+                )
+            }
+            Text(
+                // The folder only: the full file name wrapped over four lines in the column.
+                text = "Also saved after every ride to " + MediaStoreAutoBackupStore.RELATIVE_PATH.trimEnd('/'),
+                style = OrType.Caption,
+                color = OrColors.OnSurfaceMuted,
+                modifier = Modifier.padding(horizontal = OrSpacing.md),
+            )
+        }
     }
 
     // Destructive confirmation (tap-to-confirm, matching the End Ride pattern elsewhere in the
     // app) — restoring wipes every profile and ride currently on the device.
     pendingRestoreContent?.let { content ->
-        AlertDialog(
-            onDismissRequest = { pendingRestoreContent = null },
-            title = { Text("Restore backup?") },
-            text = { Text("This replaces ALL profiles and ride history on this device with the backup file's contents. This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingRestoreContent = null
-                    scope.launch {
-                        viewModel.restoreFromContent(content).fold(
-                            onSuccess = {
-                                restoreError = null
-                                onRestoreComplete()
-                            },
-                            onFailure = { error ->
-                                restoreError = "Restore failed: ${error.message ?: "invalid backup file"}"
-                            },
-                        )
-                    }
-                }) {
-                    Text("Restore")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRestoreContent = null }) {
-                    Text("Cancel")
+        OrConfirmDialog(
+            title = "Restore backup?",
+            text = "This replaces ALL profiles and ride history on this device with the backup file's contents. This can't be undone.",
+            confirmText = "Restore",
+            destructive = true,
+            onDismiss = { pendingRestoreContent = null },
+            onConfirm = {
+                pendingRestoreContent = null
+                scope.launch {
+                    viewModel.restoreFromContent(content).fold(
+                        onSuccess = {
+                            restoreError = null
+                            onRestoreComplete()
+                        },
+                        onFailure = { error ->
+                            restoreError = "Restore failed: ${error.message ?: "invalid backup file"}"
+                        },
+                    )
                 }
             },
         )

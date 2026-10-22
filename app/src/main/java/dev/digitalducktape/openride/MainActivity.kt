@@ -14,6 +14,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.digitalducktape.openride.ui.navigation.OpenRideNavHost
 import dev.digitalducktape.openride.ui.theme.OpenRideTheme
+import dev.digitalducktape.openride.ui.designsystem.riderAccent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
 
 /**
@@ -57,7 +60,9 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            OpenRideTheme {
+            // The UI colour is the active rider's avatar colour (riderAccent), lime before one is picked.
+            val rider by appContainer.activeProfile.collectAsState()
+            OpenRideTheme(accent = riderAccent(rider?.avatarColor)) {
                 OpenRideNavHost(appContainer = appContainer)
             }
         }

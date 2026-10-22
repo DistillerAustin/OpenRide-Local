@@ -1,25 +1,18 @@
 package dev.digitalducktape.openride.ui.ride
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,213 +21,179 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.digitalducktape.openride.core.data.Ride
+import dev.digitalducktape.openride.core.data.RideSample
 import dev.digitalducktape.openride.games.session.GameLabels
 import dev.digitalducktape.openride.ui.common.ExportShare
 import dev.digitalducktape.openride.ui.common.GameBadge
-import dev.digitalducktape.openride.ui.common.TimeFormat
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrChip
+import dev.digitalducktape.openride.ui.designsystem.component.OrEmptyState
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrLabel
+import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrStarRating
+import dev.digitalducktape.openride.ui.designsystem.component.OrStatBand
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 import kotlinx.coroutines.launch
 
 /**
- * Post-ride summary and history detail (PRD P0-5, v2 metrics spec): a metric tab row
- * (Output / Cadence / Resistance / Heart-Rate-when-recorded) selecting which per-second
- * series the graph draws and which headline stats sit above it — after the original bike
- * UI's per-ride view. Reused unmodified as history's detail view (T8) — [viewModel] loads
- * by ride id from Room either way, so this screen never needs to know whether it's showing
- * a ride just stopped or one from history.
+ * Ride summary connected to its [RideSummaryViewModel] (the Route half of the Route/Screen
+ * split): loads the ride by id, writes the TCX / CSV exports to a share sheet, applies the FTP
+ * suggestion, and resets a just-finished session on Done before leaving.
  */
 @Composable
-fun RideSummaryScreen(
+fun RideSummaryRoute(
     viewModel: RideSummaryViewModel,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val ride by viewModel.ride.collectAsState()
-    val samples by viewModel.samples.collectAsState()
-    val suggestedFtp by viewModel.suggestedFtp.collectAsState()
-    val ftpApplied by viewModel.ftpApplied.collectAsState()
-    val gameBadge by viewModel.gameBadge.collectAsState()
-    val gameResults by viewModel.gameResults.collectAsState()
+    val ride by viewModel.ride.collectAsStateWithLifecycle()
+    val samples by viewModel.samples.collectAsStateWithLifecycle()
+    val suggestedFtp by viewModel.suggestedFtp.collectAsStateWithLifecycle()
+    val ftpApplied by viewModel.ftpApplied.collectAsStateWithLifecycle()
+    val gameBadge by viewModel.gameBadge.collectAsStateWithLifecycle()
+    val gameResults by viewModel.gameResults.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var selectedMetric by remember { mutableStateOf(RideMetric.Output) }
 
     LaunchedEffect(Unit) { viewModel.load() }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 48.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            val current = ride
-            if (current == null) {
-                Text(
-                    text = "Loading…",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 32.dp),
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text(
-                            text = "Ride complete",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Text(
-                            text = "${TimeFormat.elapsed(current.durationSec)} · " +
-                                (current.calories?.let { "$it kcal" } ?: "%.0f kJ".format(current.outputKj)),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        gameBadge?.let { GameBadge(it, modifier = Modifier.padding(top = 8.dp)) }
-                    }
-                }
-
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-                    MetricTabRow(
-                        metrics = RideMetric.available(samples),
-                        selected = selectedMetric,
-                        onSelect = { selectedMetric = it },
-                    )
-
-                    StatBand(
-                        stats = RideMetricStats.stats(selectedMetric, current, samples),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 24.dp),
-                    )
-
-                    MetricGraph(
-                        points = RideMetricStats.points(selectedMetric, samples),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 20.dp),
-                    )
-
-                    if (gameResults.isNotEmpty()) {
-                        GameResultsList(
-                            rows = gameResults,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp),
-                        )
-                    }
-
-                    ExportRow(
-                        onExportTcx = {
-                            viewModel.tcxContent()?.let { tcx ->
-                                ExportShare.share(context, "ride_${current.id}.tcx", tcx, "application/vnd.garmin.tcx+xml")
-                            }
-                        },
-                        onExportCsv = {
-                            viewModel.sampleCsvContent()?.let { csv ->
-                                ExportShare.share(context, "ride_${current.id}.csv", csv, "text/csv")
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 24.dp),
-                    )
-
-                    if (suggestedFtp != null) {
-                        FtpSuggestionCard(
-                            suggestedFtp = suggestedFtp!!,
-                            applied = ftpApplied,
-                            onApply = { scope.launch { viewModel.applySuggestedFtp() } },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp),
-                        )
-                    }
-                }
+    RideSummaryScreen(
+        uiState = RideSummaryUiState(ride, samples, gameBadge, gameResults, suggestedFtp, ftpApplied),
+        onExportTcx = {
+            val id = ride?.id
+            viewModel.tcxContent()?.let { tcx ->
+                ExportShare.share(context, "ride_$id.tcx", tcx, "application/vnd.garmin.tcx+xml")
             }
+        },
+        onExportCsv = {
+            val id = ride?.id
+            viewModel.sampleCsvContent()?.let { csv -> ExportShare.share(context, "ride_$id.csv", csv, "text/csv") }
+        },
+        onApplyFtp = { scope.launch { viewModel.applySuggestedFtp() } },
+        onDone = {
+            viewModel.dismiss()
+            onDismiss()
+        },
+        modifier = modifier,
+    )
+}
 
-            Button(
-                onClick = {
-                    viewModel.dismiss()
-                    onDismiss()
-                },
-                modifier = Modifier.padding(top = 40.dp),
-            ) {
-                Text("Done")
+/**
+ * Post-ride summary and history detail (PRD P0-5, v2 metrics spec), stateless. One screen, no
+ * scrolling (the rider's ask, 2026-10-21): a header with the exports and Done, then the metric
+ * chips, the selected metric's TOTAL / AVG / MAX band and its graph on the left and, when there
+ * is any, the games and the FTP suggestion on the right. Only a very long circuit's game list
+ * scrolls, inside its column. The same screen serves a ride just stopped and one from History.
+ */
+@Composable
+fun RideSummaryScreen(
+    uiState: RideSummaryUiState,
+    onExportTcx: () -> Unit,
+    onExportCsv: () -> Unit,
+    onApplyFtp: () -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var selectedMetric by remember { mutableStateOf(RideMetric.Output) }
+    val current = uiState.ride
+    if (current == null) {
+        OrEmptyState(message = "Loading…", modifier = modifier.background(OrColors.Background))
+        return
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(OrColors.Background)
+            .padding(horizontal = OrSpacing.ScreenGutter, vertical = OrSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(OrSpacing.md),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
+                    OrLabel(text = "Ride complete", style = OrType.ScreenTitle, color = OrColors.OnBackground)
+                    uiState.gameBadge?.let { GameBadge(it) }
+                }
+                OrLabel(text = RideSummaryUiState.subtitle(current), style = OrType.Body, color = OrColors.OnSurfaceMuted)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(OrSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                OrSecondaryButton(text = "Export TCX", onClick = onExportTcx)
+                OrSecondaryButton(text = "Export CSV", onClick = onExportCsv)
+                OrPrimaryButton(text = "Done", onClick = onDone)
+            }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(OrSpacing.xl)) {
+            Column(modifier = Modifier.weight(3f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(OrSpacing.md)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+                    uiState.metrics.forEach { metric ->
+                        OrChip(text = metric.chipLabel, selected = metric == selectedMetric, onClick = { selectedMetric = metric })
+                    }
+                }
+                OrStatBand(
+                    stats = RideSummaryUiState.stats(selectedMetric, current, uiState.samples),
+                    labelColor = OrColors.Accent,
+                    spacing = OrSpacing.xxl,
+                )
+                MetricGraph(
+                    points = RideMetricStats.points(selectedMetric, uiState.samples),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            }
+            if (uiState.hasSideColumn) {
+                Column(modifier = Modifier.weight(2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+                    if (uiState.gameResults.isNotEmpty()) {
+                        GameResultsList(rows = uiState.gameResults, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
+                    }
+                    uiState.suggestedFtp?.let { ftp ->
+                        FtpSuggestionCard(
+                            suggestedFtp = ftp,
+                            applied = uiState.ftpApplied,
+                            onApply = onApplyFtp,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/** "OUTPUT" as a chip label: "Output", "Heart rate". */
+private val RideMetric.chipLabel: String
+    get() = label.lowercase().replaceFirstChar { it.uppercase() }
 
 /** A game session's segments (#35): each game, its role and difficulty, score and stars. */
 @Composable
 private fun GameResultsList(rows: List<GameLabels.ResultRow>, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Games",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        rows.forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = row.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = row.detail,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (!row.skipped) {
-                    Text(
-                        text = "★".repeat(row.stars) + "☆".repeat(3 - row.stars),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = OpenRideColors.Accent,
-                    )
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+        OrEyebrow(text = "Games")
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+            items(rows) { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(color = OrColors.Surface, shape = OrShapes.Small)
+                        .padding(horizontal = OrSpacing.md, vertical = OrSpacing.sm + OrSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        OrLabel(text = row.title, style = OrType.Subtitle, color = OrColors.OnBackground)
+                        OrLabel(text = row.detail, style = OrType.Caption, color = OrColors.OnSurfaceMuted)
+                    }
+                    if (!row.skipped) OrStarRating(stars = row.stars)
                 }
             }
         }
-    }
-}
-
-/**
- * Export actions (PRD P1-1/P1-2, T14): a TCX file (with the full per-second series, for
- * Apple Health via a third-party bridge app) and a plain per-second CSV, both handed to the
- * Android share sheet via [ExportShare].
- */
-@Composable
-private fun ExportRow(
-    onExportTcx: () -> Unit,
-    onExportCsv: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        OutlinedButton(onClick = onExportTcx) { Text("Export TCX") }
-        OutlinedButton(onClick = onExportCsv) { Text("Export CSV") }
     }
 }
 
@@ -249,91 +208,48 @@ private fun FtpSuggestionCard(
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        Text(
-            text = "Estimated FTP: ${suggestedFtp}W",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = "95% of your best 20-minute average power this ride",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Row(
+        modifier = modifier.background(OrColors.Surface, OrShapes.Small).padding(OrSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            OrLabel(text = "Estimated FTP: $suggestedFtp W", style = OrType.Subtitle, color = OrColors.OnBackground)
+            Text(text = "95% of your best 20 minutes", style = OrType.Caption, color = OrColors.OnSurfaceMuted)
+        }
         if (applied) {
-            Text(
-                text = "FTP updated",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            OrLabel(text = "FTP updated", style = OrType.Button, color = OrColors.Success)
         } else {
-            Button(onClick = onApply, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Update my FTP")
-            }
+            OrAccentButton(text = "Update FTP", onClick = onApply)
         }
     }
 }
 
-/** Pill tab row selecting the graphed metric, after the original bike UI's tab strip. */
+@BikePreview
 @Composable
-private fun MetricTabRow(
-    metrics: List<RideMetric>,
-    selected: RideMetric,
-    onSelect: (RideMetric) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        metrics.forEach { metric ->
-            val isSelected = metric == selected
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = if (isSelected) OpenRideColors.Accent else MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(20.dp),
-                    )
-                    .clickable { onSelect(metric) }
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = metric.label,
-                    style = MetricTextStyles.TileLabel,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onBackground
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
+private fun RideSummaryScreenPreview() {
+    val ride = Ride(
+        id = 7, profileId = 1, startEpochMs = 0, durationSec = 25 * 60, avgCadence = 82, maxCadence = 104,
+        avgPower = 168, maxPower = 312, avgResistance = 41, outputKj = 252.0, calories = null,
+    )
+    val samples = (0..1500 step 10).map { t ->
+        RideSample(rideId = 7, tSec = t, cadence = 80 + (t / 10) % 15, resistance = 40, power = 140 + (t / 7) % 90)
     }
-}
-
-/** TOTAL / AVG / MAX headline stats for the selected metric. */
-@Composable
-private fun StatBand(stats: List<MetricStat>, modifier: Modifier = Modifier) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(48.dp)) {
-        stats.forEach { stat ->
-            Column {
-                Text(
-                    text = stat.label,
-                    style = MetricTextStyles.TileLabel,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = stat.value,
-                        style = MetricTextStyles.TileValueLarge,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = stat.unit,
-                        style = MetricTextStyles.UnitLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 6.dp, bottom = 10.dp),
-                    )
-                }
-            }
-        }
+    OpenRideTheme {
+        RideSummaryScreen(
+            uiState = RideSummaryUiState(
+                ride = ride,
+                samples = samples,
+                gameBadge = "Demo · 20 min",
+                gameResults = listOf(
+                    GameLabels.ResultRow("Tug of War", "Work · Normal · 1,240", 2, skipped = false),
+                    GameLabels.ResultRow("Safe Cracker", "Recovery · Easy · 860", 3, skipped = false),
+                ),
+                suggestedFtp = 214,
+            ),
+            onExportTcx = {},
+            onExportCsv = {},
+            onApplyFtp = {},
+            onDone = {},
+        )
     }
 }

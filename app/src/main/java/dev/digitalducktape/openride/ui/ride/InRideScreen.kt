@@ -10,14 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,6 +32,12 @@ import dev.digitalducktape.openride.ui.theme.MetricTextStyles
 import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import dev.digitalducktape.openride.ui.theme.zoneColor
 import kotlinx.coroutines.launch
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
 
 /**
  * The core screen (PRD P0-7/P0-9/P0-10, v2 redesign spec): bike-app arrangement — elapsed
@@ -101,14 +103,11 @@ fun InRideScreen(
                         .padding(top = 24.dp, end = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedButton(
+                    OrSecondaryButton(
+                        text = if (uiState.isPaused) "Resume" else "Pause",
                         onClick = { if (uiState.isPaused) viewModel.resume() else viewModel.pause() },
-                    ) {
-                        Text(if (uiState.isPaused) "Resume" else "Pause")
-                    }
-                    Button(onClick = { showEndConfirmation = true }) {
-                        Text("End Ride")
-                    }
+                    )
+                    OrAccentButton(text = "End ride", onClick = { showEndConfirmation = true })
                 }
 
                 OutputHero(
@@ -132,26 +131,20 @@ fun InRideScreen(
     }
 
     if (showEndConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showEndConfirmation = false },
-            title = { Text("End ride?") },
-            text = { Text("This will stop and save your ride.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showEndConfirmation = false
-                    scope.launch {
-                        val ride = viewModel.endRide()
-                        if (ride != null) onRideEnded(ride.id)
-                    }
-                }) {
-                    Text("End Ride")
+        OrConfirmDialog(
+            title = "End ride?",
+            text = "This will stop and save your ride.",
+            confirmText = "End ride",
+            // The rider's colour, not red (rider's ask, 2026-10-21).
+            destructive = false,
+            onConfirm = {
+                showEndConfirmation = false
+                scope.launch {
+                    val ride = viewModel.endRide()
+                    if (ride != null) onRideEnded(ride.id)
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showEndConfirmation = false }) {
-                    Text("Cancel")
-                }
-            },
+            onDismiss = { showEndConfirmation = false },
         )
     }
 }

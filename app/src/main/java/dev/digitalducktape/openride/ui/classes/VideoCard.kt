@@ -2,19 +2,17 @@ package dev.digitalducktape.openride.ui.classes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,18 +20,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import dev.digitalducktape.openride.core.content.Video
 import dev.digitalducktape.openride.ui.common.TimeFormat
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
+import dev.digitalducktape.openride.ui.designsystem.ComponentPreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrOverlayBadge
+import dev.digitalducktape.openride.ui.designsystem.component.OrShelfHeader
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 
 val CardWidth = 280.dp
 private val CardThumbnailHeight = 158.dp
 
+/**
+ * A class: its thumbnail (Coil, at display size) with the TAKEN, duration and Unavailable
+ * badges laid over it, and its title in two lines under it. The whole card is one touch target.
+ */
 @Composable
 fun VideoCard(
     video: Video,
@@ -44,7 +52,8 @@ fun VideoCard(
     Column(
         modifier = modifier
             .width(CardWidth)
-            .clickable(onClick = onClick),
+            .clip(OrShapes.Small)
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         Box {
             AsyncImage(
@@ -54,110 +63,103 @@ fun VideoCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(CardThumbnailHeight)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clip(OrShapes.Small)
+                    .background(OrColors.SurfaceRaised)
                     // A feed-fallback class can't be verified as public, so it can't be started
                     // (ClassesViewModel.startRideForVideo refuses it). Dim it and badge it so it
                     // reads as unavailable rather than looking like a normal, tappable class.
                     .alpha(if (video.startable) 1f else 0.4f),
             )
-            // "Already ridden" badge (v2): when this class was last taken by the active
-            // rider — the reminder that keeps someone from unknowingly repeating a class.
+            // "Already ridden" (v2): when the active rider last took this class.
             takenEpochMs?.let { epochMs ->
-                TakenBadge(
-                    epochMs = epochMs,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp),
+                OrOverlayBadge(
+                    text = TakenLabel.format(epochMs),
+                    icon = Icons.Filled.Check,
+                    iconTint = OrColors.Success,
+                    modifier = Modifier.align(Alignment.TopStart).padding(OrSpacing.sm),
                 )
             }
-            // Duration is only shown when known — the RSS feed never includes it and
-            // oEmbed doesn't reliably either (see YouTubeContentRepository), so most
-            // videos simply won't have a badge here rather than showing a fake "0:00".
+            // Duration only when known: the RSS feed never has it and oEmbed not reliably, so
+            // most fallback videos simply have no badge rather than a fake "0:00".
             video.durationSec?.let { seconds ->
-                DurationBadge(
-                    seconds = seconds,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp),
+                OrOverlayBadge(
+                    text = TimeFormat.elapsed(seconds),
+                    style = OrType.Caption,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(OrSpacing.sm),
                 )
             }
             if (!video.startable) {
-                UnavailableBadge(
-                    modifier = Modifier
-                        .align(Alignment.Center),
+                OrOverlayBadge(
+                    text = "Unavailable, refresh",
+                    style = OrType.Caption,
+                    modifier = Modifier.align(Alignment.Center),
                 )
             }
         }
         Text(
             text = video.title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = if (video.startable) 1f else 0.5f),
+            style = OrType.Body,
+            color = if (video.startable) OrColors.OnBackground else OrColors.OnSurfaceMuted,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = OrSpacing.sm),
         )
     }
 }
 
-/** Overlay marking a feed-fallback class that can't be started until a page fetch verifies it. */
+/**
+ * A titled horizontal row of [VideoCard]s: a creator on the Classes tab (the title opens their
+ * page via [onTitleClick]) or LATEST and each playlist on a creator's page.
+ */
 @Composable
-private fun UnavailableBadge(modifier: Modifier = Modifier) {
-    Text(
-        text = "Unavailable — refresh",
-        style = MetricTextStyles.UnitLabel,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(6.dp),
-            )
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    )
-}
-
-/** Check + "TAKEN JUL 19" pill over the thumbnail of an already-ridden class. */
-@Composable
-private fun TakenBadge(epochMs: Long, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(6.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Check,
-            contentDescription = null,
-            tint = OpenRideColors.Success,
-            modifier = Modifier.size(12.dp),
-        )
-        Text(
-            text = TakenLabel.format(epochMs),
-            style = MetricTextStyles.UnitLabel,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(start = 4.dp),
-        )
+fun VideoShelf(
+    title: String,
+    videos: List<Video>,
+    takenVideos: Map<String, Long>,
+    onVideoSelected: (Video) -> Unit,
+    modifier: Modifier = Modifier,
+    onTitleClick: (() -> Unit)? = null,
+    onTitleClickLabel: String? = null,
+    body: (@Composable () -> Unit)? = null,
+) {
+    Column(modifier = modifier.padding(top = OrSpacing.md)) {
+        OrShelfHeader(title = title, onClick = onTitleClick, onClickLabel = onTitleClickLabel)
+        if (body != null) {
+            body()
+        } else {
+            LazyRow(
+                modifier = Modifier.padding(top = OrSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(OrSpacing.md),
+            ) {
+                items(videos, key = { it.id }) { video ->
+                    VideoCard(
+                        video = video,
+                        takenEpochMs = takenVideos[video.id],
+                        onClick = { onVideoSelected(video) },
+                    )
+                }
+            }
+        }
     }
 }
 
+internal val previewVideos = listOf(
+    Video(id = "a", title = "45 min climb, steady tempo", thumbnailUrl = "", channelName = "Hill Club", durationSec = 45 * 60, publishedEpochMs = 3),
+    Video(id = "b", title = "20 min intervals", thumbnailUrl = "", channelName = "Hill Club", durationSec = 20 * 60, publishedEpochMs = 2),
+    Video(id = "c", title = "Lakeside scenic ride", thumbnailUrl = "", channelName = "Hill Club", durationSec = null, publishedEpochMs = 1, startable = false),
+)
+
+@ComponentPreview
 @Composable
-private fun DurationBadge(seconds: Int, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                shape = RoundedCornerShape(6.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    ) {
-        Text(
-            text = TimeFormat.elapsed(seconds),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground,
+private fun VideoShelfPreview() {
+    OpenRideTheme {
+        VideoShelf(
+            title = "Hill Club",
+            videos = previewVideos,
+            takenVideos = mapOf("a" to 1_760_000_000_000L),
+            onVideoSelected = {},
+            onTitleClick = {},
+            modifier = Modifier.width(960.dp).padding(OrSpacing.lg),
         )
     }
 }

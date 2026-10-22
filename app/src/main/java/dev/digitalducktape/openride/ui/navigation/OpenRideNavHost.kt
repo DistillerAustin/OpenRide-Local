@@ -1,5 +1,7 @@
 package dev.digitalducktape.openride.ui.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -14,23 +16,23 @@ import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.BuildConfig
 import dev.digitalducktape.openride.games.session.VisitDestination
 import dev.digitalducktape.openride.viewModelFactory
-import dev.digitalducktape.openride.ui.creator.CreatorScreen
+import dev.digitalducktape.openride.ui.creator.CreatorRoute
 import dev.digitalducktape.openride.ui.creator.CreatorViewModel
-import dev.digitalducktape.openride.ui.sources.ContentSourcesScreen
+import dev.digitalducktape.openride.ui.sources.ContentSourcesRoute
 import dev.digitalducktape.openride.ui.sources.ContentSourcesViewModel
-import dev.digitalducktape.openride.ui.update.UpdateScreen
+import dev.digitalducktape.openride.ui.update.UpdateRoute
 import dev.digitalducktape.openride.ui.update.UpdateViewModel
 import dev.digitalducktape.openride.ui.main.MainScaffold
-import dev.digitalducktape.openride.ui.profile.ProfileEditorScreen
+import dev.digitalducktape.openride.ui.profile.ProfileEditorRoute
 import dev.digitalducktape.openride.ui.profile.ProfileEditorViewModel
-import dev.digitalducktape.openride.ui.profile.ProfileSelectScreen
+import dev.digitalducktape.openride.ui.profile.ProfileSelectRoute
 import dev.digitalducktape.openride.ui.profile.ProfileSelectViewModel
-import dev.digitalducktape.openride.ui.profile.HrPairingScreen
+import dev.digitalducktape.openride.ui.profile.HrPairingRoute
 import dev.digitalducktape.openride.ui.profile.HrPairingViewModel
 import dev.digitalducktape.openride.ui.ride.InRideScreen
 import dev.digitalducktape.openride.ui.ride.InRideViewModel
 import dev.digitalducktape.openride.ui.ride.VideoRideScreen
-import dev.digitalducktape.openride.ui.ride.RideSummaryScreen
+import dev.digitalducktape.openride.ui.ride.RideSummaryRoute
 import dev.digitalducktape.openride.ui.ride.RideSummaryViewModel
 
 /**
@@ -54,14 +56,22 @@ fun OpenRideNavHost(appContainer: AppContainer) {
         appContainer.visitNavigator.consume(destination)
     }
 
-    NavHost(navController = navController, startDestination = Destinations.ProfileSelect) {
+    NavHost(
+        navController = navController,
+        startDestination = Destinations.ProfileSelect,
+        // No transitions anywhere, as in the tabs (MainScaffold).
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
+    ) {
         composable(Destinations.ProfileSelect) {
             val viewModel: ProfileSelectViewModel = viewModel(
                 factory = viewModelFactory {
                     ProfileSelectViewModel(appContainer.profileRepository, appContainer.activeProfileHolder)
                 },
             )
-            ProfileSelectScreen(
+            ProfileSelectRoute(
                 viewModel = viewModel,
                 onProfileSelected = {
                     navController.navigate(Destinations.Main) {
@@ -78,7 +88,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     ProfileEditorViewModel(appContainer.profileRepository, appContainer.activeProfileHolder)
                 },
             )
-            ProfileEditorScreen(
+            ProfileEditorRoute(
                 viewModel = viewModel,
                 avatarPhotoStore = appContainer.avatarPhotoStore,
                 title = "Add rider",
@@ -101,7 +111,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            ProfileEditorScreen(
+            ProfileEditorRoute(
                 viewModel = viewModel,
                 avatarPhotoStore = appContainer.avatarPhotoStore,
                 title = "Edit profile",
@@ -124,7 +134,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            HrPairingScreen(
+            HrPairingRoute(
                 viewModel = viewModel,
                 onDone = { navController.popBackStack() },
             )
@@ -141,7 +151,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            UpdateScreen(
+            UpdateRoute(
                 viewModel = viewModel,
                 onDone = { navController.popBackStack() },
             )
@@ -156,7 +166,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            ContentSourcesScreen(
+            ContentSourcesRoute(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
             )
@@ -232,7 +242,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            CreatorScreen(
+            CreatorRoute(
                 viewModel = viewModel,
                 onStartVideoRide = { videoId ->
                     navController.navigate(Destinations.videoRide(videoId))
@@ -257,7 +267,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                     )
                 },
             )
-            RideSummaryScreen(
+            RideSummaryRoute(
                 viewModel = viewModel,
                 onDismiss = { navController.popBackStack() },
             )

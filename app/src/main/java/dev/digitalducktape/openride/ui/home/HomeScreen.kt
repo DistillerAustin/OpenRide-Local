@@ -1,252 +1,208 @@
 package dev.digitalducktape.openride.ui.home
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.core.ride.RideGoal
-import dev.digitalducktape.openride.ui.common.ProfileAvatar
-import dev.digitalducktape.openride.ui.games.BetaBadge
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSize
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrBetaBadge
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrPrimaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrTile
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 
 /**
- * Home tab (PRD P0-7): greeting with the active rider and a prominent Quick Start button.
- * The curated-classes browser (PRD P0-6) lives in the Classes tab (T10) rather than
- * duplicated here — see [dev.digitalducktape.openride.ui.classes.ClassesScreen].
+ * Home tab, connected to its [HomeViewModel] (the Route half of docs/MAIN_UI_REFRESH.md §2's
+ * Route/Screen split). Starting a ride only navigates when the view model actually started one,
+ * i.e. when a rider is active.
+ */
+@Composable
+fun HomeRoute(
+    viewModel: HomeViewModel,
+    onQuickStart: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenGames: () -> Unit = {},
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HomeScreen(
+        uiState = uiState,
+        onStartRide = { if (viewModel.startQuickRide()) onQuickStart() },
+        onSetGoal = viewModel::setGoal,
+        onOpenGames = onOpenGames,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Home tab (PRD P0-7), stateless: the update notice and two tiles side by side, under the shared
+ * top bar (which carries the rider). *Just ride* holds the screen's one primary action, **Start
+ * ride**, with the pre-ride goal (PRD P1-3) just above it; *Games* (BETA) opens the games hub.
+ * The curated classes live in the Classes tab, not here.
+ *
+ * Laid out for the 1280 × 528 dp between the top and bottom bars; the tiles take whatever height
+ * is left, so the shell's notices (update, sensors offline) fit above without scrolling.
  */
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel,
-    onQuickStart: () -> Unit,
-    onOpenProfile: () -> Unit,
+    uiState: HomeUiState,
+    onStartRide: () -> Unit,
+    onSetGoal: (RideGoal) -> Unit,
+    onOpenGames: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenGames: () -> Unit = {},
-    updateVersionName: String? = null,
-    onOpenUpdate: () -> Unit = {},
-    onDismissUpdate: () -> Unit = {},
 ) {
-    val activeProfile by viewModel.activeProfile.collectAsState(initial = null)
-    val goal by viewModel.goal.collectAsState()
     var showGoalDialog by remember { mutableStateOf(false) }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        // Scrolls so the update banner (or a larger font) can't squeeze the last card: without
-        // it the Games card was left with ~9dp of height and showed only a dash.
-        Column(
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm, bottom = OrSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+    ) {
+        Row(
+            // Both tiles share whatever height the shell leaves (less when a notice shows above),
+            // so Start sits low, near the rider's hand, and nothing ever scrolls.
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 48.dp, vertical = 36.dp),
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
         ) {
-            // PRD #22/T22: launch-time update check surfaces here as a dismissible banner that
-            // taps through to the App updates screen. Nothing installs without an explicit tap.
-            if (updateVersionName != null) {
-                UpdateBanner(
-                    versionName = updateVersionName,
-                    onUpdate = onOpenUpdate,
-                    onDismiss = onDismissUpdate,
-                    modifier = Modifier.padding(bottom = 24.dp),
-                )
-            }
-
-            // Bike-app-style header: greeting on the left, the rider's avatar chip on the
-            // right (v2 redesign spec).
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "WELCOME BACK",
-                        style = MetricTextStyles.SectionEyebrow,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = activeProfile?.name ?: "Rider",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-                // Tapping the rider's own face is the natural "go to my profile" gesture.
-                ProfileAvatar(
-                    profile = activeProfile,
-                    size = 56.dp,
-                    emojiSize = 26.sp,
-                    modifier = Modifier.clickable(onClick = onOpenProfile),
-                )
-            }
-
-            // Hero card: the one big action on this screen.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 32.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(20.dp),
-                    )
-                    .padding(28.dp),
-            ) {
-                Text(
-                    text = "JUST RIDE",
-                    style = MetricTextStyles.SectionEyebrow,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = "Quick Start",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-                Text(
-                    text = "Free ride with live cadence, resistance, and output",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = { if (viewModel.startQuickRide()) onQuickStart() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.height(56.dp),
-                    ) {
-                        Text(
-                            text = "Start ride",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
-                    }
-                    Text(
-                        text = goalSummaryLabel(goal),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(start = 24.dp),
-                    )
-                    OutlinedButton(onClick = { showGoalDialog = true }) {
-                        Text(if (goal == RideGoal.None) "Set goal" else "Change goal")
-                    }
-                }
-            }
-
-            // Games (beta): workouts that play like games, advertised right under the quick start.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 20.dp)
-                    .background(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp))
-                    .clickable(onClick = onOpenGames)
-                    .padding(horizontal = 28.dp, vertical = 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "\uD83C\uDFAE  GAMES",
-                            style = MetricTextStyles.SectionEyebrow,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        BetaBadge(modifier = Modifier.padding(start = 12.dp))
-                    }
-                    Text(
-                        text = "Play your workout",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    Text(
-                        text = "Games, circuits and your own builds, in one ride. New, and still being tuned.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                Button(onClick = onOpenGames) { Text("Enter Games") }
-            }
+            JustRideTile(
+                uiState = uiState,
+                onStartRide = onStartRide,
+                onEditGoal = { showGoalDialog = true },
+                modifier = Modifier.weight(3f).fillMaxHeight(),
+            )
+            GamesTile(
+                onOpenGames = onOpenGames,
+                modifier = Modifier.weight(2f).fillMaxHeight(),
+            )
         }
     }
 
     if (showGoalDialog) {
         GoalDialog(
-            currentGoal = goal,
+            currentGoal = uiState.goal,
             onDismiss = { showGoalDialog = false },
             onSave = { newGoal ->
-                viewModel.setGoal(newGoal)
+                onSetGoal(newGoal)
                 showGoalDialog = false
             },
         )
     }
 }
 
-/**
- * Non-blocking "an update is available" banner (PRD #22/T22). "Update" opens the App updates
- * screen (the actual download/install still happens there, behind explicit taps); "Dismiss"
- * hides it for this session.
- */
 @Composable
-private fun UpdateBanner(
-    versionName: String,
-    onUpdate: () -> Unit,
-    onDismiss: () -> Unit,
+private fun JustRideTile(
+    uiState: HomeUiState,
+    onStartRide: () -> Unit,
+    onEditGoal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(16.dp),
-            )
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    OrTile(modifier = modifier) {
+        OrEyebrow(text = "Just ride", color = OrColors.Accent)
         Text(
-            text = "OpenRide $versionName is available",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.weight(1f),
+            text = "Quick start",
+            style = OrType.Title,
+            color = OrColors.OnBackground,
+            modifier = Modifier.padding(top = OrSpacing.sm),
         )
-        TextButton(onClick = onDismiss) {
-            Text("Dismiss", color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
-        Button(
-            onClick = onUpdate,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            modifier = Modifier.padding(start = 8.dp),
+        Text(
+            text = "Free ride with live cadence, resistance and output",
+            style = OrType.Body,
+            color = OrColors.OnSurfaceMuted,
+            modifier = Modifier.padding(top = OrSpacing.xs),
+        )
+        Spacer(modifier = Modifier.weight(1f).heightIn(min = OrSpacing.lg))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Update", fontWeight = FontWeight.Bold)
+            Text(
+                text = uiState.goalLabel,
+                style = OrType.Subtitle,
+                color = if (uiState.goal == RideGoal.None) OrColors.OnSurfaceMuted else OrColors.OnBackground,
+                modifier = Modifier.weight(1f),
+            )
+            OrSecondaryButton(text = uiState.goalActionLabel, onClick = onEditGoal)
         }
+        OrPrimaryButton(
+            text = "Start ride",
+            onClick = onStartRide,
+            modifier = Modifier.fillMaxWidth().padding(top = OrSpacing.md),
+        )
+    }
+}
+
+@Composable
+private fun GamesTile(onOpenGames: () -> Unit, modifier: Modifier = Modifier) {
+    OrTile(modifier = modifier, onClick = onOpenGames) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OrEyebrow(text = "🎮  Games", color = OrColors.Accent)
+            OrBetaBadge(modifier = Modifier.padding(start = OrSpacing.md))
+        }
+        Text(
+            text = "Play your workout",
+            style = OrType.Title,
+            color = OrColors.OnBackground,
+            modifier = Modifier.padding(top = OrSpacing.sm),
+        )
+        Text(
+            text = "Games, circuits and your own builds, in one ride. New, and still being tuned.",
+            style = OrType.Body,
+            color = OrColors.OnSurfaceMuted,
+            modifier = Modifier.padding(top = OrSpacing.xs),
+        )
+        Spacer(modifier = Modifier.weight(1f).heightIn(min = OrSpacing.lg))
+        OrSecondaryButton(
+            text = "Enter Games",
+            onClick = onOpenGames,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+private val previewRider = Profile(
+    id = 1,
+    name = "Sam",
+    avatarEmoji = "🚴",
+    avatarColor = 0xFF3D7BD9.toInt(),
+    weightKg = null,
+    ftp = 210,
+)
+
+@BikePreview
+@Composable
+private fun HomeScreenPreview() {
+    OpenRideTheme {
+        HomeScreen(
+            uiState = HomeUiState(profile = previewRider, goal = RideGoal.Duration(30 * 60)),
+            onStartRide = {},
+            onSetGoal = {},
+            onOpenGames = {},
+        )
     }
 }

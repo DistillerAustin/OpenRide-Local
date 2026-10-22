@@ -1,32 +1,25 @@
 package dev.digitalducktape.openride.ui.main
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Text
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.common.ExportShare
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -35,35 +28,31 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.digitalducktape.openride.AppContainer
-import kotlinx.coroutines.flow.map
 import dev.digitalducktape.openride.viewModelFactory
-import dev.digitalducktape.openride.ui.classes.ClassesScreen
+import dev.digitalducktape.openride.ui.classes.ClassesRoute
+import dev.digitalducktape.openride.core.sensor.offlineFor
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.component.OrNavBar
+import dev.digitalducktape.openride.ui.designsystem.component.OrNavBarItem
+import dev.digitalducktape.openride.ui.designsystem.component.OrTopBar
 import dev.digitalducktape.openride.ui.classes.ClassesViewModel
 import dev.digitalducktape.openride.ui.games.GamesLauncherScreen
 import dev.digitalducktape.openride.ui.games.launchGames
-import dev.digitalducktape.openride.ui.history.HistoryScreen
+import dev.digitalducktape.openride.ui.history.HistoryRoute
 import dev.digitalducktape.openride.ui.history.HistoryViewModel
-import dev.digitalducktape.openride.ui.home.HomeScreen
+import dev.digitalducktape.openride.ui.home.HomeRoute
 import dev.digitalducktape.openride.ui.home.HomeViewModel
 import dev.digitalducktape.openride.ui.navigation.Destinations
 import dev.digitalducktape.openride.ui.navigation.MainTabs
 import dev.digitalducktape.openride.ui.profile.ProfileTabScreen
 import dev.digitalducktape.openride.ui.profile.ProfileTabViewModel
 
-private data class TabSpec(val route: String, val label: String, val icon: ImageVector, val emoji: String? = null)
-
-private val TABS = listOf(
-    TabSpec(MainTabs.Home, "Home", Icons.Filled.Home),
-    TabSpec(MainTabs.Classes, "Classes", Icons.Filled.PlayArrow),
-    TabSpec(MainTabs.Games, "Games", Icons.Filled.Star, emoji = "\uD83C\uDFAE"),
-    TabSpec(MainTabs.History, "History", Icons.Filled.DateRange),
-    TabSpec(MainTabs.Profile, "Profile", Icons.Filled.Person),
-)
-
 /**
- * The tabbed section of the app: a bottom [NavigationBar] (Home / Classes / History /
- * Profile — the bike-app tab arrangement, PRD P0-7 / v2 redesign spec) plus a nested
- * `NavHost` for those four destinations. Starting a ride or switching riders navigates the
+ * The tabbed section of the app (docs/MAIN_UI_REFRESH.md §3, "Shell"): the shared [OrTopBar]
+ * (the tab's title, the screen's own actions, the rider), a nested `NavHost` for the tabs, and
+ * the [OrNavBar] along the bottom (Home / Classes / Games / History / Profile, see
+ * [TopLevelDestination]), as on the stock bike software. Starting a ride or switching riders navigates the
  * *outer* nav controller (passed in), which lives one level up in
  * [dev.digitalducktape.openride.ui.navigation.OpenRideNavHost] — those flows intentionally
  * leave this tabbed chrome behind rather than becoming a fifth tab.
@@ -78,8 +67,7 @@ fun MainScaffold(
     val backStackEntry by innerNavController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Same options whether a tab comes from the bottom bar or an in-screen shortcut (the
-    // home header's avatar chip): single top, state saved/restored per tab.
+    // Single top, state saved/restored per tab.
     fun navigateToTab(route: String) {
         innerNavController.navigate(route) {
             popUpTo(innerNavController.graph.findStartDestination().id) {
@@ -90,48 +78,122 @@ fun MainScaffold(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    val activeProfile by appContainer.activeProfile.collectAsState()
+
+    // Every tab's view model, made here when the tabs first show rather than when each tab is
+    // first opened, so their data is already loaded and a tab draws whole on its first frame
+    // (rider bike test, 2026-10-21: History and Profile filled in piece by piece).
+    val homeViewModel: HomeViewModel = viewModel(
+        factory = viewModelFactory {
+            HomeViewModel(appContainer.activeProfileHolder, appContainer.profileRepository, appContainer.rideSessionManager)
+        },
+    )
+    val classesViewModel: ClassesViewModel = viewModel(
+        factory = viewModelFactory {
+            ClassesViewModel(
+                appContainer.contentRepository,
+                appContainer.rideSessionManager,
+                appContainer.activeProfileHolder,
+                appContainer.rideRepository,
+            )
+        },
+    )
+    val historyViewModel: HistoryViewModel = viewModel(
+        factory = viewModelFactory { HistoryViewModel(appContainer.activeProfileHolder, appContainer.rideRepository) },
+    )
+    val profileViewModel: ProfileTabViewModel = viewModel(
+        factory = viewModelFactory {
+            ProfileTabViewModel(appContainer.activeProfileHolder, appContainer.profileRepository, appContainer.backupRepository)
+        },
+    )
+    val classRows by classesViewModel.rows.collectAsState()
+    val classGrid by classesViewModel.gridVideos.collectAsState()
+    val history by historyViewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // null until offlineFor() first answers: the dot stays neutral rather than claiming "connected".
+    val sensorsOffline by remember { appContainer.bikeDataSource.connectionState.offlineFor() }
+        .collectAsState(initial = null as Boolean?)
+    val heartRateState by appContainer.heartRateManager.connectionState.collectAsState()
+    val heartRateBpm by appContainer.heartRateManager.bpm.collectAsState()
+    val availableUpdate by appContainer.updateAvailability.collectAsState()
+    val updateBannerDismissed by appContainer.updateBannerDismissed.collectAsState()
+    val currentTab = TopLevelDestination.fromRoute(currentRoute) ?: TopLevelDestination.Start
+
+    Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
+        OrTopBar(
+            title = currentTab.label,
+            // Each tab's own buttons, drawn with the bar in the same frame as the tab.
+            actions = {
+                when (currentTab) {
+                    TopLevelDestination.Classes -> OrAccentButton(
+                        text = "Random ride",
+                        enabled = classGrid?.isNotEmpty() ?: classRows.any { it.videos.isNotEmpty() },
+                        onClick = {
+                            classesViewModel.startRandomRide()?.let { outerNavController.navigate(Destinations.videoRide(it)) }
+                        },
+                    )
+                    TopLevelDestination.History -> if (history?.rows?.isNotEmpty() == true) {
+                        OrSecondaryButton(text = "Export CSV", onClick = {
+                            scope.launch {
+                                val csv = historyViewModel.historyCsvContent()
+                                ExportShare.share(context, "ride_history.csv", csv, "text/csv")
+                            }
+                        })
+                    }
+                    else -> {}
+                }
+            },
+            trailing = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SensorStatus(offline = sensorsOffline)
+                    HeartRateStatus(
+                        paired = activeProfile?.pairedHrDeviceAddress != null,
+                        state = heartRateState,
+                        bpm = heartRateBpm,
+                    )
+                    // The rider's own name switches rider (rider's ask, 2026-10-21): straight to the
+                    // picker, which leaves the tabs; picking anyone, them included, comes back.
+                    RiderChip(profile = activeProfile, onClick = {
+                        profileViewModel.switchRider()
+                        outerNavController.navigate(Destinations.ProfileSelect) {
+                            popUpTo(Destinations.Main) { inclusive = true }
+                        }
+                    })
+                }
+            },
+        )
+        AppNotices(
+            sensorsOffline = sensorsOffline == true,
+            updateVersionName = availableUpdate?.versionName?.takeUnless { updateBannerDismissed },
+            onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
+            onDismissUpdate = { appContainer.dismissUpdateBanner() },
+        )
         NavHost(
             navController = innerNavController,
-            startDestination = MainTabs.Home,
-            modifier = Modifier.weight(1f),
+            startDestination = TopLevelDestination.Start.route,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            // No transitions (rider, 2026-10-21): the default cross-fade left the old tab's
+            // top-bar actions showing mid-fade and felt inconsistent.
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
             composable(MainTabs.Home) {
-                val context = LocalContext.current
-                val viewModel: HomeViewModel = viewModel(
-                    factory = viewModelFactory {
-                        HomeViewModel(
-                            appContainer.activeProfileHolder,
-                            appContainer.profileRepository,
-                            appContainer.rideSessionManager,
-                        )
-                    },
-                )
-                val availableUpdate by appContainer.updateAvailability.collectAsState()
-                val bannerDismissed by appContainer.updateBannerDismissed.collectAsState()
-                HomeScreen(
-                    viewModel = viewModel,
+                HomeRoute(
+                    viewModel = homeViewModel,
                     onQuickStart = { outerNavController.navigate(Destinations.InRide) },
-                    onOpenProfile = { navigateToTab(MainTabs.Profile) },
                     onOpenGames = { launchGames(context) },
-                    updateVersionName = availableUpdate?.versionName?.takeUnless { bannerDismissed },
-                    onOpenUpdate = { outerNavController.navigate(Destinations.AppUpdate) },
-                    onDismissUpdate = { appContainer.dismissUpdateBanner() },
                 )
             }
             composable(MainTabs.Classes) {
-                val viewModel: ClassesViewModel = viewModel(
-                    factory = viewModelFactory {
-                        ClassesViewModel(
-                            appContainer.contentRepository,
-                            appContainer.rideSessionManager,
-                            appContainer.activeProfileHolder,
-                            appContainer.rideRepository,
-                        )
-                    },
-                )
-                ClassesScreen(
-                    viewModel = viewModel,
+                ClassesRoute(
+                    viewModel = classesViewModel,
                     onStartVideoRide = { videoId ->
                         outerNavController.navigate(Destinations.videoRide(videoId))
                     },
@@ -142,41 +204,22 @@ fun MainScaffold(
             }
             composable(MainTabs.Games) {
                 // A launcher: the Games hub inside Godot holds the picker, circuits and settings.
-                val context = LocalContext.current
                 val saving by appContainer.gameVisitManager.saving.collectAsState()
                 GamesLauncherScreen(saving = saving, onEnter = { launchGames(context) })
             }
             composable(MainTabs.History) {
-                val viewModel: HistoryViewModel = viewModel(
-                    factory = viewModelFactory {
-                        HistoryViewModel(appContainer.activeProfileHolder, appContainer.rideRepository)
-                    },
-                )
-                HistoryScreen(
-                    viewModel = viewModel,
+                HistoryRoute(
+                    viewModel = historyViewModel,
                     onRideSelected = { rideId ->
                         outerNavController.navigate(Destinations.rideSummary(rideId))
                     },
                 )
             }
             composable(MainTabs.Profile) {
-                val viewModel: ProfileTabViewModel = viewModel(
-                    factory = viewModelFactory {
-                        ProfileTabViewModel(
-                            appContainer.activeProfileHolder,
-                            appContainer.profileRepository,
-                            appContainer.backupRepository,
-                        )
-                    },
-                )
                 ProfileTabScreen(
-                    viewModel = viewModel,
+                    viewModel = profileViewModel,
+                    activeProfile = activeProfile,
                     onEditProfile = { outerNavController.navigate(Destinations.ProfileEdit) },
-                    onSwitchRider = {
-                        outerNavController.navigate(Destinations.ProfileSelect) {
-                            popUpTo(Destinations.Main) { inclusive = true }
-                        }
-                    },
                     onRestoreComplete = {
                         // The active profile (and possibly its id entirely) may no longer be
                         // meaningful after a restore, so route back to profile select the same
@@ -198,31 +241,14 @@ fun MainScaffold(
                 )
             }
         }
-
-        // Hairline above the bar — the bike app's tab bar sits on a near-black surface
-        // separated from content by a faint divider rather than elevation.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(OpenRideColors.Divider),
-        )
-        NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-            TABS.forEach { tab ->
-                NavigationBarItem(
-                    selected = currentRoute == tab.route,
-                    onClick = { navigateToTab(tab.route) },
-                    icon = {
-                        if (tab.emoji != null) Text(tab.emoji, fontSize = 24.sp) else Icon(imageVector = tab.icon, contentDescription = tab.label)
-                    },
-                    label = { Text(text = tab.label) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
+        OrNavBar {
+            TopLevelDestination.entries.forEach { destination ->
+                OrNavBarItem(
+                    label = destination.label,
+                    icon = destination.icon,
+                    emoji = destination.emoji,
+                    selected = currentRoute == destination.route,
+                    onClick = { navigateToTab(destination.route) },
                 )
             }
         }
