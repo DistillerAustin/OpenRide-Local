@@ -5,38 +5,63 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.digitalducktape.openride.core.content.PlaylistSummary
 import dev.digitalducktape.openride.core.content.Video
-import dev.digitalducktape.openride.ui.classes.VideoCard
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
+import dev.digitalducktape.openride.ui.classes.VideoShelf
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSize
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrBanner
+import dev.digitalducktape.openride.ui.designsystem.component.OrBannerTone
+import dev.digitalducktape.openride.ui.designsystem.component.OrEmptyState
+import dev.digitalducktape.openride.ui.designsystem.component.OrLoading
+import dev.digitalducktape.openride.ui.designsystem.component.OrScreenHeader
+import dev.digitalducktape.openride.ui.designsystem.component.OrSpinner
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 
 /**
- * A creator's page, reached by tapping their shelf name on the Classes tab: a LATEST shelf of
- * their recent classes, then one shelf per playlist they've curated.
+ * A creator's page, connected to its [CreatorViewModel] (the Route half of the Route/Screen
+ * split): loads the creator on entry and only navigates to a video ride when the view model
+ * actually started one.
+ */
+@Composable
+fun CreatorRoute(
+    viewModel: CreatorViewModel,
+    onStartVideoRide: (videoId: String) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val takenVideos by viewModel.takenVideos.collectAsStateWithLifecycle(initialValue = emptyMap())
+
+    LaunchedEffect(Unit) { viewModel.load() }
+
+    CreatorScreen(
+        uiState = uiState,
+        takenVideos = takenVideos,
+        onVideoSelected = { video -> if (viewModel.startRideForVideo(video.id)) onStartVideoRide(video.id) },
+        onPlaylistVisible = { playlistId -> viewModel.loadPlaylist(playlistId) },
+        onBack = onBack,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The entry point `OpenRideNavHost` still calls; forwards to [CreatorRoute]. Remove once the nav
+ * host calls [CreatorRoute] directly.
  */
 @Composable
 fun CreatorScreen(
@@ -44,55 +69,42 @@ fun CreatorScreen(
     onStartVideoRide: (videoId: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+) = CreatorRoute(viewModel, onStartVideoRide, onBack, modifier)
+
+/**
+ * A creator's page, stateless, reached by tapping their shelf name on the Classes tab: a header
+ * with Back and their name, then a LATEST shelf of their recent classes and one shelf per
+ * playlist they've curated. Back is always there, even when the creator has gone.
+ */
+@Composable
+fun CreatorScreen(
+    uiState: CreatorUiState,
+    takenVideos: Map<String, Long>,
+    onVideoSelected: (Video) -> Unit,
+    onPlaylistVisible: suspend (String) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val takenVideos by viewModel.takenVideos.collectAsState(initial = emptyMap())
-
-    LaunchedEffect(Unit) { viewModel.load() }
-
-    val startRide: (Video) -> Unit = { video ->
-        if (viewModel.startRideForVideo(video.id)) onStartVideoRide(video.id)
-    }
-
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        when (val state = uiState) {
-            is CreatorUiState.Loading -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-
-            is CreatorUiState.NotFound -> Column(
-                modifier = Modifier.fillMaxSize().padding(vertical = 32.dp, horizontal = 48.dp),
-            ) {
-                // This screen runs on the bike's own launcher, so a rider stranded here (their
-                // source was deleted while they navigated) still needs a way back.
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back to classes",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "That creator is no longer in your catalog",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(OrColors.Background)
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, bottom = OrSpacing.lg),
+    ) {
+        OrScreenHeader(
+            title = (uiState as? CreatorUiState.Loaded)?.displayName ?: "Creator",
+            onBack = onBack,
+            backLabel = "Classes",
+        )
+        when (uiState) {
+            CreatorUiState.Loading -> OrLoading()
+            // A rider stranded here (their source was deleted while they navigated) still has Back.
+            CreatorUiState.NotFound -> OrEmptyState(message = "That creator is no longer in your catalog")
             is CreatorUiState.Loaded -> LoadedCreator(
-                state = state,
+                state = uiState,
                 takenVideos = takenVideos,
-                onVideoSelected = startRide,
-                onPlaylistVisible = { playlistId -> viewModel.loadPlaylist(playlistId) },
-                onBack = onBack,
+                onVideoSelected = onVideoSelected,
+                onPlaylistVisible = onPlaylistVisible,
             )
         }
     }
@@ -104,114 +116,68 @@ private fun LoadedCreator(
     takenVideos: Map<String, Long>,
     onVideoSelected: (Video) -> Unit,
     onPlaylistVisible: suspend (String) -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize().padding(vertical = 32.dp, horizontal = 48.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    // Icons.AutoMirrored.Filled.ArrowBack is in material-icons-core (verified in
-                    // the bundled jar) and is already used this way elsewhere in the app.
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to classes",
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
-            }
-            Text(
-                text = state.displayName,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-
+    Column(verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
         if (state.refreshFailed) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Text(
-                    text = "Couldn't refresh this creator — showing the last saved list",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            OrBanner(text = "Couldn't refresh this creator. Showing the last saved list", tone = OrBannerTone.Warning)
         }
-
-        LazyColumn(contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)) {
+        LazyColumn(contentPadding = PaddingValues(bottom = OrSpacing.lg)) {
             item {
-                Shelf(
-                    title = "LATEST",
+                VideoShelf(
+                    title = "Latest",
                     videos = state.latest,
                     takenVideos = takenVideos,
                     onVideoSelected = onVideoSelected,
                 )
             }
             items(state.playlistRows, key = { it.playlist.id }) { row ->
-                // Each playlist is its own page fetch, so it's requested when its shelf is
-                // first composed rather than all at once when the page opens.
                 LaunchedEffect(row.playlist.id) {
-                    if (row.videos.isEmpty() && !row.isLoading && !row.loadFailed) {
-                        onPlaylistVisible(row.playlist.id)
-                    }
+                    if (PlaylistShelf.needsLoad(row)) onPlaylistVisible(row.playlist.id)
                 }
-                Shelf(
-                    title = row.playlist.title.uppercase(),
+                val shelf = PlaylistShelf.of(row)
+                VideoShelf(
+                    title = row.playlist.title,
                     videos = row.videos,
                     takenVideos = takenVideos,
                     onVideoSelected = onVideoSelected,
-                    isLoading = row.isLoading,
-                    emptyMessage = if (row.loadFailed) "Couldn't load this playlist" else null,
+                    body = when (shelf) {
+                        PlaylistShelf.Loading -> {
+                            { OrSpinner(modifier = Modifier.padding(top = OrSpacing.sm), size = OrSize.IconInline + OrSpacing.xs) }
+                        }
+                        PlaylistShelf.Failed -> {
+                            {
+                                Box(Modifier.fillMaxWidth().padding(top = OrSpacing.xs)) {
+                                    Text(text = PlaylistShelf.Failed.MESSAGE, style = OrType.Body, color = OrColors.OnSurfaceMuted)
+                                }
+                            }
+                        }
+                        PlaylistShelf.Videos -> null
+                    },
                 )
             }
         }
     }
 }
 
+@BikePreview
 @Composable
-private fun Shelf(
-    title: String,
-    videos: List<Video>,
-    takenVideos: Map<String, Long>,
-    onVideoSelected: (Video) -> Unit,
-    modifier: Modifier = Modifier,
-    isLoading: Boolean = false,
-    emptyMessage: String? = null,
-) {
-    Column(modifier = modifier.padding(top = 28.dp)) {
-        Text(
-            text = title,
-            style = MetricTextStyles.SectionEyebrow,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun CreatorScreenPreview() {
+    val video = Video("a", "45 min climb, steady tempo", "", "Hill Club", 45 * 60, 1)
+    OpenRideTheme {
+        CreatorScreen(
+            uiState = CreatorUiState.Loaded(
+                displayName = "Hill Club",
+                latest = listOf(video, video.copy(id = "b", title = "20 min intervals")),
+                playlistRows = listOf(
+                    PlaylistRow(PlaylistSummary("p1", "Climbs", "", 12), isLoading = true),
+                    PlaylistRow(PlaylistSummary("p2", "Recovery", "", 4), loadFailed = true),
+                ),
+                refreshFailed = true,
+            ),
+            takenVideos = emptyMap(),
+            onVideoSelected = {},
+            onPlaylistVisible = {},
+            onBack = {},
         )
-        when {
-            isLoading -> CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 16.dp).size(28.dp),
-            )
-            videos.isEmpty() && emptyMessage != null -> Text(
-                text = emptyMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-            else -> LazyRow(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                items(videos, key = { it.id }) { video ->
-                    VideoCard(
-                        video = video,
-                        takenEpochMs = takenVideos[video.id],
-                        onClick = { onVideoSelected(video) },
-                    )
-                }
-            }
-        }
     }
 }

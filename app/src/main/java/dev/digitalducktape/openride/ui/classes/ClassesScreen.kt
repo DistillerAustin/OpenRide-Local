@@ -1,86 +1,63 @@
 package dev.digitalducktape.openride.ui.classes
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import dev.digitalducktape.openride.ui.designsystem.component.OrChip
-import dev.digitalducktape.openride.ui.designsystem.OrSpacing
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.digitalducktape.openride.core.content.ChannelSection
+import dev.digitalducktape.openride.core.content.ContentCategory
 import dev.digitalducktape.openride.core.content.Video
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
+import dev.digitalducktape.openride.ui.designsystem.BikePreview
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.component.OrBanner
+import dev.digitalducktape.openride.ui.designsystem.component.OrBannerTone
+import dev.digitalducktape.openride.ui.designsystem.component.OrChip
+import dev.digitalducktape.openride.ui.designsystem.component.OrDropdownChip
+import dev.digitalducktape.openride.ui.designsystem.component.OrEmptyState
+import dev.digitalducktape.openride.ui.designsystem.component.OrLoading
+import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 import kotlinx.coroutines.launch
 
 /**
- * Classes tab: browse by creator, or filter the whole catalog at once.
- *
- * Two layouts, one screen. With the default sort and no length filter the tab shows one
- * horizontal row per configured creator, which is how someone browses when they don't have
- * something specific in mind. Choosing a sort or a length is a question about the entire
- * catalog ("a 30-minute class, any creator"), so those switch to a flat grid — per-creator
- * rows can't answer it. Category chips narrow both layouts.
+ * Classes tab, connected to its [ClassesViewModel] (the Route half of the Route/Screen split):
+ * refreshes the catalog on entry, shows the view model's one-off messages as toasts, and only
+ * navigates to a video ride when the view model actually started one. Random ride lives in the
+ * shared top bar (`MainScaffold`).
  */
 @Composable
-fun ClassesScreen(
+fun ClassesRoute(
     viewModel: ClassesViewModel,
     onStartVideoRide: (videoId: String) -> Unit,
     onOpenCreator: (sourceId: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val takenVideos by viewModel.takenVideos.collectAsState(initial = emptyMap())
-    val filters by viewModel.filters.collectAsState()
-    val rows by viewModel.rows.collectAsState()
-    val gridVideos by viewModel.gridVideos.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val takenVideos by viewModel.takenVideos.collectAsStateWithLifecycle()
+    val filters by viewModel.filters.collectAsStateWithLifecycle()
+    val rows by viewModel.rows.collectAsStateWithLifecycle()
+    val gridVideos by viewModel.gridVideos.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.refresh() }
-
-    val startRide: (Video) -> Unit = { video ->
-        if (viewModel.startRideForVideo(video)) onStartVideoRide(video.id)
-    }
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -89,148 +66,117 @@ fun ClassesScreen(
         }
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        when (val state = uiState) {
-            is ClassesUiState.Loading -> LoadingContent()
-            is ClassesUiState.Loaded -> LoadedContent(
-                anyRefreshFailed = state.anyRefreshFailed,
-                filters = filters,
-                rows = rows,
-                gridVideos = gridVideos,
-                takenVideos = takenVideos,
-                onCategorySelected = viewModel::setCategory,
-                onSortSelected = viewModel::setSort,
-                onLengthSelected = viewModel::setLength,
-                onHideTakenToggled = viewModel::setHideTaken,
-                onVideoSelected = startRide,
-                onOpenCreator = onOpenCreator,
-                onRandomRide = { viewModel.randomVideo()?.let(startRide) },
-                onRetry = { scope.launch { viewModel.refresh() } },
-            )
-        }
-    }
+    ClassesScreen(
+        state = ClassesScreenState.from(uiState, filters, rows, gridVideos, takenVideos),
+        onCategorySelected = viewModel::setCategory,
+        onSortSelected = viewModel::setSort,
+        onLengthSelected = viewModel::setLength,
+        onHideTakenToggled = viewModel::setHideTaken,
+        onVideoSelected = { video -> if (viewModel.startRideForVideo(video)) onStartVideoRide(video.id) },
+        onOpenCreator = onOpenCreator,
+        onRetry = { scope.launch { viewModel.refresh() } },
+        modifier = modifier,
+    )
 }
 
+/**
+ * The entry point `MainScaffold` still calls; forwards to [ClassesRoute]. Remove once the shell
+ * calls [ClassesRoute] directly.
+ */
 @Composable
-private fun LoadingContent(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-    }
-}
+fun ClassesScreen(
+    viewModel: ClassesViewModel,
+    onStartVideoRide: (videoId: String) -> Unit,
+    onOpenCreator: (sourceId: Long) -> Unit,
+    modifier: Modifier = Modifier,
+) = ClassesRoute(viewModel, onStartVideoRide, onOpenCreator, modifier)
 
+/**
+ * Classes tab, stateless: browse by creator, or filter the whole catalog at once.
+ *
+ * Two layouts, one screen. With the default sort and no length filter the tab shows one shelf
+ * per configured creator (tap a creator's name for their page). Choosing a sort or a length is
+ * a question about the entire catalog ("a 30-minute class, any creator"), so those switch to a
+ * flat grid. Category chips and Hide completed narrow both.
+ */
 @Composable
-private fun LoadedContent(
-    anyRefreshFailed: Boolean,
-    filters: ClassFilters,
-    rows: List<ChannelSection>,
-    gridVideos: List<Video>?,
-    takenVideos: Map<String, Long>,
+fun ClassesScreen(
+    state: ClassesScreenState,
     onCategorySelected: (CategoryFilter) -> Unit,
     onSortSelected: (ClassSort) -> Unit,
     onLengthSelected: (LengthFilter) -> Unit,
     onHideTakenToggled: (Boolean) -> Unit,
     onVideoSelected: (Video) -> Unit,
-    onOpenCreator: (Long) -> Unit,
-    onRandomRide: () -> Unit,
+    onOpenCreator: (sourceId: Long) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hasAnything = gridVideos?.isNotEmpty() ?: rows.any { it.videos.isNotEmpty() }
+    if (state.body is ClassesBody.Loading) {
+        OrLoading(modifier = modifier)
+        return
+    }
 
-    Column(modifier = modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 0.dp, bottom = 16.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(OrSpacing.md),
+    ) {
         FilterBar(
-            filters = filters,
+            filters = state.filters,
+            lengthLabel = state.lengthLabel,
             onCategorySelected = onCategorySelected,
             onSortSelected = onSortSelected,
             onLengthSelected = onLengthSelected,
             onHideTakenToggled = onHideTakenToggled,
         )
 
-        if (anyRefreshFailed) {
-            RefreshFailedBanner(modifier = Modifier.padding(top = 16.dp))
+        if (state.refreshFailed) {
+            OrBanner(text = ClassesScreenState.REFRESH_FAILED_MESSAGE, tone = OrBannerTone.Warning)
         }
 
-        if (!hasAnything) {
-            EmptyContent(isFiltered = !filters.isDefaultBrowse, onRetry = onRetry)
-        } else if (gridVideos != null) {
-            LazyVerticalGrid(
+        when (val body = state.body) {
+            is ClassesBody.Empty -> OrEmptyState(
+                message = body.message,
+                actionText = if (body.showRetry) "Retry" else null,
+                onAction = onRetry,
+            )
+            is ClassesBody.Grid -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = CardWidth),
-                modifier = Modifier.padding(top = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(OrSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(OrSpacing.lg),
+                contentPadding = PaddingValues(bottom = OrSpacing.lg),
             ) {
-                items(gridVideos, key = { it.id }) { video ->
+                items(body.videos, key = { it.id }) { video ->
                     VideoCard(
                         video = video,
-                        takenEpochMs = takenVideos[video.id],
+                        takenEpochMs = state.takenVideos[video.id],
                         onClick = { onVideoSelected(video) },
                     )
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(top = 4.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
-            ) {
-                items(rows, key = { it.sourceId }) { section ->
-                    ChannelRow(
-                        section = section,
-                        takenVideos = takenVideos,
+            is ClassesBody.Shelves -> LazyColumn(contentPadding = PaddingValues(bottom = OrSpacing.lg)) {
+                items(body.sections, key = { it.sourceId }) { section ->
+                    VideoShelf(
+                        title = section.channelName,
+                        videos = section.videos,
+                        takenVideos = state.takenVideos,
                         onVideoSelected = onVideoSelected,
-                        onOpenCreator = { onOpenCreator(section.sourceId) },
+                        // The creator's own page: their full recent catalog and playlists.
+                        onTitleClick = { onOpenCreator(section.sourceId) },
+                        onTitleClickLabel = "Open ${section.channelName}",
                     )
                 }
             }
+            ClassesBody.Loading -> Unit
         }
-    }
-}
-
-/** Empty state: a filter that matched nothing is a different problem than no content at all. */
-@Composable
-private fun EmptyContent(isFiltered: Boolean, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = if (isFiltered) {
-                    "No classes match these filters"
-                } else {
-                    "No classes available right now — check your connection and try again"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (!isFiltered) {
-                Text(
-                    text = "Tap to retry",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 12.dp).clickable(onClick = onRetry),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RefreshFailedBanner(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            text = "Couldn't refresh one or more channels — showing the last saved list",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
 @Composable
 private fun FilterBar(
     filters: ClassFilters,
+    lengthLabel: String,
     onCategorySelected: (CategoryFilter) -> Unit,
     onSortSelected: (ClassSort) -> Unit,
     onLengthSelected: (LengthFilter) -> Unit,
@@ -249,22 +195,20 @@ private fun FilterBar(
                 onClick = { onCategorySelected(category) },
             )
         }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        DropdownFilter(
+        Spacer(modifier = Modifier.width(OrSpacing.md))
+        OrDropdownChip(
             label = filters.sort.label,
             options = ClassSort.entries.map { it to it.label },
             onSelected = onSortSelected,
+            selectedValue = filters.sort,
         )
-        DropdownFilter(
-            label = if (filters.length == LengthFilter.Any) "Any length" else filters.length.label,
-            options = LengthFilter.entries.map { it to it.label },
+        OrDropdownChip(
+            label = lengthLabel,
+            options = LengthFilter.entries.map { it to ClassesScreenState.lengthChipLabel(it) },
             onSelected = onLengthSelected,
+            selectedValue = filters.length,
         )
-
         Spacer(modifier = Modifier.weight(1f))
-
         OrChip(
             text = "Hide completed",
             selected = filters.hideTaken,
@@ -273,77 +217,27 @@ private fun FilterBar(
     }
 }
 
-/** A compact dropdown — the bike's screen is wide but touch targets need to stay large. */
+@BikePreview
 @Composable
-private fun <T> DropdownFilter(
-    label: String,
-    options: List<Pair<T, String>>,
-    onSelected: (T) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier) {
-        OrChip(text = label, selected = false, onClick = { expanded = true }, dropdown = true)
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { (value, text) ->
-                DropdownMenuItem(
-                    text = { Text(text) },
-                    onClick = {
-                        expanded = false
-                        onSelected(value)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChannelRow(
-    section: ChannelSection,
-    takenVideos: Map<String, Long>,
-    onVideoSelected: (Video) -> Unit,
-    onOpenCreator: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.padding(top = 28.dp)) {
-        // Tapping the shelf eyebrow opens the creator's own page — their full recent catalog
-        // plus the playlists they've curated, which the single row here can't show.
-        Row(
-            // Sized to a real touch target for a screen operated mid-ride, without growing the
-            // shelf's visual rhythm — the eyebrow text stays centered at its normal size.
-            modifier = Modifier
-                .heightIn(min = 48.dp)
-                .clickable(onClick = onOpenCreator),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = section.channelName.uppercase(),
-                style = MetricTextStyles.SectionEyebrow,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // KeyboardArrowRight stands in for a chevron glyph — ChevronRight itself lives in
-            // material-icons-extended, which this app doesn't depend on (see the Random Ride
-            // button above for the same constraint).
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "Open ${section.channelName}",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        LazyRow(
-            modifier = Modifier.padding(top = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            items(section.videos, key = { it.id }) { video ->
-                VideoCard(
-                    video = video,
-                    takenEpochMs = takenVideos[video.id],
-                    onClick = { onVideoSelected(video) },
-                )
-            }
-        }
+private fun ClassesScreenPreview() {
+    val sections = listOf(
+        ChannelSection(1, "c1", "Hill Club", ContentCategory.Workout, previewVideos, refreshFailed = false),
+        ChannelSection(2, "c2", "Lakeside Rides", ContentCategory.Scenic, previewVideos.reversed(), refreshFailed = true),
+    )
+    OpenRideTheme {
+        ClassesScreen(
+            state = ClassesScreenState(
+                body = ClassesBody.Shelves(sections),
+                refreshFailed = true,
+                takenVideos = mapOf("a" to 1_760_000_000_000L),
+            ),
+            onCategorySelected = {},
+            onSortSelected = {},
+            onLengthSelected = {},
+            onHideTakenToggled = {},
+            onVideoSelected = {},
+            onOpenCreator = {},
+            onRetry = {},
+        )
     }
 }
