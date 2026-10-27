@@ -21,9 +21,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
-import dev.digitalducktape.openride.ui.theme.zoneColor
+import dev.digitalducktape.openride.ui.designsystem.OrColors
+import dev.digitalducktape.openride.ui.designsystem.OrSize
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.zoneColor
 
 /**
  * The two-tier in-ride metrics panel (v2 redesign spec's signature element, refined against
@@ -34,7 +37,7 @@ import dev.digitalducktape.openride.ui.theme.zoneColor
  *   by its BEST, unit in tracked caps under the value. Resistance has no BEST flank — the
  *   session aggregates deliberately don't track a max for it.
  * - **Secondary strip** — SPEED / DISTANCE / TOTAL OUTPUT (+ HEART RATE once a strap is
- *   paired), smaller, label-and-unit above value.
+ *   paired), smaller, label-and-unit before the value.
  *
  * Over video ([translucent]) the panel sits on a bottom-up black gradient rather than a
  * card, exactly like the class player; on the plain in-ride screen it gets a solid surface.
@@ -48,29 +51,42 @@ fun RideMetricsBar(
 ) {
     val background = if (translucent) {
         Modifier.background(
-            Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))),
+            Brush.verticalGradient(
+                0f to Color.Transparent,
+                VideoScrimFadeEnd to VideoScrimLabels,
+                1f to VideoScrimBottom,
+            ),
         )
     } else {
-        Modifier.background(OpenRideColors.Surface)
+        Modifier.background(OrColors.Surface)
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .then(background)
-            .padding(top = if (translucent) 28.dp else 16.dp, bottom = 10.dp),
+            .padding(top = if (translucent) OrSpacing.xl else OrSpacing.md, bottom = OrSpacing.md),
     ) {
         PrimaryRow(uiState)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 10.dp)
+                .padding(horizontal = OrSpacing.lg, vertical = OrSpacing.sm + OrSpacing.xs)
                 .height(1.dp)
-                .background(OpenRideColors.Divider),
+                .background(OrColors.Divider),
         )
         SecondaryRow(uiState)
     }
 }
+
+/**
+ * The gradient behind the bar over video fades in over the bar's top padding only, so the
+ * muted labels below it (CADENCE, OUTPUT) sit on 80 % black even over a bright sky or water:
+ * a gradient that faded across the whole bar left them unreadable (bike test, 2026-10-27).
+ */
+private const val VideoScrimFadeEnd = 0.2f
+private val VideoScrimLabels = Color(0xCC000000)
+private val VideoScrimBottom = Color(0xE6000000)
 
 @Composable
 private fun PrimaryRow(uiState: InRideUiState, modifier: Modifier = Modifier) {
@@ -132,26 +148,19 @@ private fun PrimaryMetric(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Flank(label = "AVG", value = avg, trend = avgTrend)
+        Flank(label = "AVG", value = avg, trend = avgTrend, showsTrend = true)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = OrSpacing.md),
         ) {
-            Text(
-                text = label,
-                style = MetricTextStyles.TileLabel,
-                color = OpenRideColors.OnSurfaceVariant,
-            )
+            OrEyebrow(label)
             Text(
                 text = current,
-                style = MetricTextStyles.PrimaryValue,
-                color = currentColor ?: OpenRideColors.OnBackground,
+                style = OrType.MetricPrimary,
+                color = currentColor ?: OrColors.OnBackground,
+                maxLines = 1,
             )
-            Text(
-                text = unit,
-                style = MetricTextStyles.UnitLabel,
-                color = OpenRideColors.OnSurfaceVariant,
-            )
+            OrEyebrow(unit)
         }
         if (best != null) {
             Flank(label = "BEST", value = best, trend = null)
@@ -162,34 +171,47 @@ private fun PrimaryMetric(
     }
 }
 
-private val FlankWidth = 64.dp
+/** Wide enough for a four-digit best at [OrType.MetricFlank]. */
+private val FlankWidth = 80.dp
 
 @Composable
-private fun Flank(label: String, value: String, trend: Boolean?, modifier: Modifier = Modifier) {
+private fun Flank(
+    label: String,
+    value: String,
+    trend: Boolean?,
+    modifier: Modifier = Modifier,
+    showsTrend: Boolean = false,
+) {
     Column(modifier = modifier.width(FlankWidth), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (trend != null) {
-                // Core icons only ship the down-drop arrow; the up variant is it, flipped.
+        // Every flank's label row is the arrow's height, and the AVG one keeps the arrow's place
+        // while there is no trend, so AVG and BEST line up and nothing jumps as the arrow comes
+        // and goes (bike test, 2026-10-27).
+        Row(
+            modifier = Modifier.height(OrSize.IconInline),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showsTrend && trend == null) {
+                Box(Modifier.size(OrSize.IconInline))
+            } else if (trend != null) {
+                // Core icons only ship the down-drop arrow; the up variant is it, flipped. Below
+                // average is muted rather than red: Danger is a fill only, and red on the dark
+                // ground fails contrast. The arrow's direction carries the meaning.
                 Icon(
                     imageVector = Icons.Filled.ArrowDropDown,
                     contentDescription = if (trend) "above average" else "below average",
-                    tint = if (trend) OpenRideColors.Success else OpenRideColors.Danger,
+                    tint = if (trend) OrColors.Success else OrColors.OnSurfaceMuted,
                     modifier = Modifier
-                        .size(16.dp)
+                        .size(OrSize.IconInline)
                         .rotate(if (trend) 180f else 0f),
                 )
             }
-            Text(
-                text = label,
-                style = MetricTextStyles.UnitLabel,
-                color = OpenRideColors.OnSurfaceVariant,
-            )
+            OrEyebrow(label)
         }
         Text(
             text = value,
-            style = MetricTextStyles.FlankValue,
-            color = OpenRideColors.OnBackground,
-            modifier = Modifier.padding(top = 2.dp),
+            style = OrType.MetricFlank,
+            color = OrColors.OnBackground,
+            maxLines = 1,
         )
     }
 }
@@ -241,22 +263,13 @@ private fun SecondaryMetric(label: String, unit: String, value: String, modifier
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = label,
-            style = MetricTextStyles.UnitLabel,
-            color = OpenRideColors.OnSurfaceVariant,
-        )
-        Text(
-            text = "($unit)",
-            style = MetricTextStyles.UnitLabel,
-            color = OpenRideColors.OnSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp),
-        )
+        OrEyebrow("$label ($unit)")
         Text(
             text = value,
-            style = MetricTextStyles.SecondaryValue,
-            color = OpenRideColors.OnBackground,
-            modifier = Modifier.padding(start = 10.dp),
+            style = OrType.MetricSecondary,
+            color = OrColors.OnBackground,
+            maxLines = 1,
+            modifier = Modifier.padding(start = OrSpacing.sm + OrSpacing.xs),
         )
     }
 }
@@ -266,8 +279,8 @@ private fun PrimaryDivider() {
     Box(
         modifier = Modifier
             .width(1.dp)
-            .height(88.dp)
-            .background(OpenRideColors.Divider),
+            .height(104.dp)
+            .background(OrColors.Divider),
     )
 }
 
@@ -276,7 +289,7 @@ private fun SecondaryDivider() {
     Box(
         modifier = Modifier
             .width(1.dp)
-            .height(28.dp)
-            .background(OpenRideColors.Divider),
+            .height(OrSpacing.xl)
+            .background(OrColors.Divider),
     )
 }

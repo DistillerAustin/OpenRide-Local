@@ -13,8 +13,8 @@ class ProfileEditorLabelsTest {
 
     @Test
     fun `colour swatches are named by their place in the row`() {
-        assertEquals("Avatar colour 1 of 8", ProfileEditorLabels.colorDescription(0, 8))
-        assertEquals("Avatar colour 8 of 8", ProfileEditorLabels.colorDescription(7, 8))
+        assertEquals("Avatar color 1 of 8", ProfileEditorLabels.colorDescription(0, 8))
+        assertEquals("Avatar color 8 of 8", ProfileEditorLabels.colorDescription(7, 8))
     }
 
     @Test

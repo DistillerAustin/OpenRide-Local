@@ -9,10 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -23,27 +22,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.digitalducktape.openride.core.ride.PowerZone
 import dev.digitalducktape.openride.core.ride.RideGoal
 import dev.digitalducktape.openride.core.route.RoutePosition
 import dev.digitalducktape.openride.ui.common.TimeFormat
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
-import dev.digitalducktape.openride.ui.theme.zoneColor
-import kotlinx.coroutines.launch
-import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
-import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
-import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
-import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrBanner
+import dev.digitalducktape.openride.ui.designsystem.component.OrBannerTone
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import dev.digitalducktape.openride.ui.designsystem.zoneColor
+import kotlinx.coroutines.launch
 
 /**
  * The core screen (PRD P0-7/P0-9/P0-10, v2 redesign spec): bike-app arrangement — elapsed
- * timer top-center with goal progress beneath it, the huge zone-colored current-output
- * numeral in the middle, and the shared [RideMetricsBar] pinned along the bottom edge.
- * Keep-screen-on is driven from [dev.digitalducktape.openride.MainActivity] observing
+ * timer top-left with the goal hairline across the top edge, the huge zone-colored
+ * current-output numeral in the middle, and the shared [RideMetricsBar] pinned along the bottom
+ * edge. Keep-screen-on is driven from [dev.digitalducktape.openride.MainActivity] observing
  * [dev.digitalducktape.openride.core.ride.RideSessionManager.isRideActive] directly, not
  * from this screen, so the flag can't be left dangling across navigation/recomposition.
  */
@@ -57,77 +58,64 @@ fun InRideScreen(
     val scope = rememberCoroutineScope()
     var showEndConfirmation by remember { mutableStateOf(false) }
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Goal progress runs across the very top edge (matching the video ride's strip).
-            uiState.goalProgress?.let { progress ->
-                LinearProgressIndicator(
-                    progress = { progress.toFloat() },
-                    modifier = Modifier.fillMaxWidth().height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = OpenRideColors.Divider,
-                )
-            }
-            if (!uiState.sensorsAvailable) {
-                SensorFailureBanner()
-            }
-            if (uiState.autoPaused) {
-                AutoPausedBanner()
-            }
+    Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
+        // Goal progress runs across the very top edge (matching the video ride's strip).
+        uiState.goalProgress?.let { GoalHairline(it) }
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 20.dp, start = 32.dp),
-                ) {
-                    Text(
-                        text = TimeFormat.elapsed(uiState.elapsedSec),
-                        style = MetricTextStyles.TimerDisplay,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = if (uiState.goal != RideGoal.None) {
-                            "ELAPSED · ${goalShortLabel(uiState.goal)}"
-                        } else {
-                            "ELAPSED"
-                        },
-                        style = MetricTextStyles.UnitLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 24.dp, end = 32.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OrSecondaryButton(
-                        text = if (uiState.isPaused) "Resume" else "Pause",
-                        onClick = { if (uiState.isPaused) viewModel.resume() else viewModel.pause() },
-                    )
-                    OrAccentButton(text = "End ride", onClick = { showEndConfirmation = true })
-                }
-
-                OutputHero(
-                    uiState = uiState,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-
-                uiState.routePosition?.let { position ->
-                    RouteProgressRow(
-                        routeName = uiState.route?.name,
-                        position = position,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 40.dp, vertical = 12.dp),
-                    )
-                }
-            }
-
-            RideMetricsBar(uiState = uiState, translucent = false)
+        // Sensors down and auto-pause each get a one-line notice above the timer.
+        if (!uiState.sensorsAvailable) {
+            RideNotice("Sensors not detected. Check the bike's connection")
         }
+        if (uiState.autoPaused) {
+            RideNotice("Auto-paused. Pedal to resume")
+        }
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = OrSpacing.md, start = OrSpacing.ScreenGutter),
+            ) {
+                Text(
+                    text = TimeFormat.elapsed(uiState.elapsedSec),
+                    style = OrType.MetricTimer,
+                    color = OrColors.OnBackground,
+                )
+                OrEyebrow(
+                    if (uiState.goal != RideGoal.None) "Elapsed · ${goalShortLabel(uiState.goal)}" else "Elapsed",
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = OrSpacing.lg, end = OrSpacing.ScreenGutter),
+                horizontalArrangement = Arrangement.spacedBy(OrSpacing.md),
+            ) {
+                OrSecondaryButton(
+                    text = if (uiState.isPaused) "Resume" else "Pause",
+                    onClick = { if (uiState.isPaused) viewModel.resume() else viewModel.pause() },
+                )
+                OrAccentButton(text = "End ride", onClick = { showEndConfirmation = true })
+            }
+
+            OutputHero(
+                uiState = uiState,
+                modifier = Modifier.align(Alignment.Center),
+            )
+
+            uiState.routePosition?.let { position ->
+                RouteProgressRow(
+                    routeName = uiState.route?.name,
+                    position = position,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = OrSpacing.ScreenGutter, vertical = OrSpacing.md),
+                )
+            }
+        }
+
+        RideMetricsBar(uiState = uiState, translucent = false)
     }
 
     if (showEndConfirmation) {
@@ -149,78 +137,73 @@ fun InRideScreen(
     }
 }
 
+/** The goal's progress as a hairline along the top edge, in the rider's colour. */
+@Composable
+internal fun GoalHairline(progress: Double, modifier: Modifier = Modifier) {
+    LinearProgressIndicator(
+        progress = { progress.toFloat() },
+        modifier = modifier.fillMaxWidth().height(OrSpacing.xs),
+        color = OrColors.Accent,
+        trackColor = OrColors.Divider,
+        drawStopIndicator = {},
+        gapSize = 0.dp,
+    )
+}
+
+/** A ride's warning (sensors down, auto-paused), inset from the screen's edges. */
+@Composable
+private fun RideNotice(text: String) {
+    OrBanner(
+        text = text,
+        tone = OrBannerTone.Warning,
+        modifier = Modifier.padding(start = OrSpacing.ScreenGutter, end = OrSpacing.ScreenGutter, top = OrSpacing.md),
+    )
+}
+
 /**
  * The screen's centerpiece: current output in watts, zone-colored once the rider has an
- * FTP set, with a zone chip beneath. "--" (never a fake zero, P0-9) while sensors are down.
+ * FTP set, with the zone named beneath. "--" (never a fake zero, P0-9) while sensors are down.
  */
 @Composable
 private fun OutputHero(uiState: InRideUiState, modifier: Modifier = Modifier) {
     val zone = uiState.currentZone
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "OUTPUT (W)",
-            style = MetricTextStyles.TileLabel,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        OrEyebrow("Output (W)")
         Text(
             text = if (uiState.sensorsAvailable) "${uiState.metrics.powerWatts}" else "--",
-            style = MetricTextStyles.OutputHero,
-            color = if (zone != null) zoneColor(zone) else MaterialTheme.colorScheme.onBackground,
+            style = OrType.MetricHero,
+            color = if (zone != null) zoneColor(zone) else OrColors.OnBackground,
         )
         if (zone != null) {
-            Box(
-                modifier = Modifier
-                    .background(color = zoneColor(zone).copy(alpha = 0.18f), shape = RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = "ZONE ${zone.number} · ${zone.label.uppercase()}",
-                    style = MetricTextStyles.TileLabel,
-                    color = zoneColor(zone),
-                )
-            }
+            ZoneChip(zone)
         } else if (uiState.ftp == null) {
             Text(
                 text = "Set an FTP in your profile to see power zones",
-                style = MetricTextStyles.TileValueSecondary,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = OrType.Body,
+                color = OrColors.OnSurfaceMuted,
             )
         }
     }
 }
 
+/**
+ * The current zone: its colour as a swatch and its name in text colour, since zones 1, 2 and 7
+ * are too dark to read as text on the ground (see [dev.digitalducktape.openride.ui.designsystem.OrZoneColors]).
+ */
 @Composable
-private fun SensorFailureBanner(modifier: Modifier = Modifier) {
+private fun ZoneChip(zone: PowerZone, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .background(OpenRideColors.Warning)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.Center,
+            .background(OrColors.Surface, OrShapes.Pill)
+            .padding(horizontal = OrSpacing.md, vertical = OrSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm + OrSpacing.xs),
     ) {
+        Box(Modifier.size(OrSpacing.md).background(zoneColor(zone), CircleShape))
         Text(
-            text = "Sensors not detected — check bike connection",
-            color = OpenRideColors.Background,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-/** Shown while the ride auto-paused on freewheel (PRD #20/T20) — pedaling auto-resumes it,
- *  or the rider can tap Resume. Distinct from the sensor-failure banner. */
-@Composable
-private fun AutoPausedBanner(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = "Auto-paused — pedal to resume",
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            fontWeight = FontWeight.Bold,
+            text = "Zone ${zone.number} · ${zone.label}",
+            style = OrType.Subtitle,
+            color = OrColors.OnBackground,
         )
     }
 }
@@ -244,21 +227,27 @@ private fun RouteProgressRow(
         ) {
             Text(
                 text = routeName ?: "Route",
-                style = MetricTextStyles.TileLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = OrType.Body,
+                color = OrColors.OnSurfaceMuted,
+                maxLines = 1,
             )
             Text(
                 text = "%+.1f%% grade  •  %.2f mi to go".format(position.gradePercent, remainingMiles),
-                style = MetricTextStyles.TileLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = OrType.Body,
+                color = OrColors.OnSurfaceMuted,
+                maxLines = 1,
             )
         }
         LinearProgressIndicator(
             progress = { position.progressFraction.toFloat() },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp),
-            color = MaterialTheme.colorScheme.tertiary,
+                .padding(top = OrSpacing.sm)
+                .height(OrSpacing.xs),
+            color = OrColors.Info,
+            trackColor = OrColors.Divider,
+            drawStopIndicator = {},
+            gapSize = 0.dp,
         )
     }
 }
@@ -269,7 +258,7 @@ private const val METERS_PER_MILE = 1609.344
 /** Compact goal readout for the timer's sub-label (PRD P1-3) — the top-edge hairline
  *  carries the progress itself. */
 private fun goalShortLabel(goal: RideGoal): String = when (goal) {
-    is RideGoal.Duration -> "GOAL ${TimeFormat.elapsed(goal.targetSec)}"
-    is RideGoal.Output -> "GOAL %.0f KJ".format(goal.targetKj)
+    is RideGoal.Duration -> "Goal ${TimeFormat.elapsed(goal.targetSec)}"
+    is RideGoal.Output -> "Goal %.0f kJ".format(goal.targetKj)
     RideGoal.None -> ""
 }
