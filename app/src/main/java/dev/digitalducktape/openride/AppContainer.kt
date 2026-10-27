@@ -9,6 +9,8 @@ import android.media.AudioPlaybackConfiguration
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.core.content.ContextCompat
@@ -43,6 +45,7 @@ import dev.digitalducktape.openride.core.heartrate.AndroidBleScanner
 import dev.digitalducktape.openride.core.heartrate.BleHeartRateDataSource
 import dev.digitalducktape.openride.core.heartrate.BleScanner
 import dev.digitalducktape.openride.core.heartrate.HeartRateManager
+import dev.digitalducktape.openride.core.heartrate.strapWanted
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
 import dev.digitalducktape.openride.core.profile.AvatarPhotoStore
 import dev.digitalducktape.openride.core.ride.RideSessionManager
@@ -74,6 +77,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
@@ -246,6 +252,13 @@ class AppContainer(private val applicationContext: Context) {
             profileRepository = profileRepository,
             connectionFactory = { address -> BleHeartRateDataSource(applicationContext, address) },
             scope = containerScope,
+            wanted = strapWanted(
+                foreground = ProcessLifecycleOwner.get().lifecycle.currentStateFlow
+                    .map { it.isAtLeast(Lifecycle.State.STARTED) },
+                // Read on first collection, not here: rideSessionManager takes this manager's
+                // bpm, so touching it while building this one loops forever (a crash on launch).
+                rideActive = flow { emitAll(rideSessionManager.isRideActive) },
+            ),
         )
     }
 

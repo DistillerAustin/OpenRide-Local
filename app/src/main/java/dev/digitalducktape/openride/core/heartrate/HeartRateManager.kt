@@ -4,15 +4,22 @@ import dev.digitalducktape.openride.core.data.ProfileRepository
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
 import dev.digitalducktape.openride.core.sensor.ConnectionState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -30,18 +37,23 @@ import kotlinx.coroutines.launch
  * @param connectionFactory builds a (not-yet-started) [ManagedHeartRateDataSource] for a given
  *   BLE address. Production wiring passes `{ address -> BleHeartRateDataSource(context, address) }`;
  *   tests pass a fake.
+ * @param wanted whether OpenRide needs the strap right now ([strapWanted]: in front, or riding).
+ *   While false the strap is let go, so another app (or OpenRide's other build on the same
+ *   tablet) can find and use it: a connected strap stops advertising, and one held by a
+ *   backgrounded app couldn't be paired anywhere else (rider, 2026-10-27).
  */
 class HeartRateManager(
     activeProfileHolder: ActiveProfileHolder,
     profileRepository: ProfileRepository,
     private val connectionFactory: (address: String) -> ManagedHeartRateDataSource,
     private val scope: CoroutineScope,
-) {
+    wanted: Flow<Boolean> = flowOf(true),
+) : HeartRateDataSource {
     private val _bpm = MutableStateFlow<Int?>(null)
-    val bpm: StateFlow<Int?> = _bpm.asStateFlow()
+    override val bpm: StateFlow<Int?> = _bpm.asStateFlow()
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Unavailable)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private var currentSource: ManagedHeartRateDataSource? = null
     private var forwardingJob: Job? = null
@@ -60,8 +72,9 @@ class HeartRateManager(
             // "no rider active yet" / "active rider has no paired strap" cases, rather than
             // silently sitting uninitialized until Room's first real query result lands.
             profileRepository.observeProfiles().onStart { emit(emptyList()) },
-        ) { id, profiles ->
-            profiles.firstOrNull { it.id == id }?.pairedHrDeviceAddress
+            wanted,
+        ) { id, profiles, isWanted ->
+            profiles.firstOrNull { it.id == id }?.pairedHrDeviceAddress?.takeIf { isWanted }
         }
             .distinctUntilChanged()
             .onEach { address -> reconnect(address) }
@@ -97,3 +110,18 @@ class HeartRateManager(
         _connectedAddress.value = null
     }
 }
+
+/**
+ * Whether OpenRide needs the strap: while it's in front ([foreground]), or a ride is recording
+ * ([rideActive]) with the music app in front. Letting go waits [grace], so a quick trip to
+ * Settings or the music app doesn't cost a reconnect (about 12 s on the bike).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun strapWanted(foreground: Flow<Boolean>, rideActive: Flow<Boolean>, grace: Duration = 30.seconds): Flow<Boolean> =
+    combine(foreground, rideActive) { inFront, riding -> inFront || riding }
+        .distinctUntilChanged()
+        .transformLatest { wanted ->
+            if (!wanted) delay(grace)
+            emit(wanted)
+        }
+        .distinctUntilChanged()
