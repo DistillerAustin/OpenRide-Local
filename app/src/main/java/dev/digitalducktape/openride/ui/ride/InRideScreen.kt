@@ -38,6 +38,7 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
 import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
 import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.designsystem.zoneColor
+import dev.digitalducktape.openride.ui.music.NowPlayingPanel
 import kotlinx.coroutines.launch
 
 /**
@@ -98,6 +99,14 @@ fun InRideScreen(
                 )
                 OrAccentButton(text = "End ride", onClick = { showEndConfirmation = true })
             }
+
+            // The rider's music, beside the output: the space either side of it is otherwise
+            // empty, so the panel can be read and tapped from the saddle (rider's ask, 2026-10-27).
+            NowPlayingPanel(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = OrSpacing.ScreenGutter),
+            )
 
             OutputHero(
                 uiState = uiState,

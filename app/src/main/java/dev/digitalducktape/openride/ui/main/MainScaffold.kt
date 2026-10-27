@@ -30,6 +30,9 @@ import androidx.navigation.compose.rememberNavController
 import dev.digitalducktape.openride.AppContainer
 import dev.digitalducktape.openride.viewModelFactory
 import dev.digitalducktape.openride.ui.classes.ClassesRoute
+import dev.digitalducktape.openride.core.music.MusicApps
+import dev.digitalducktape.openride.ui.music.MiniPlayer
+import dev.digitalducktape.openride.ui.music.openMusicAccessSettings
 import dev.digitalducktape.openride.core.sensor.offlineFor
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
@@ -120,6 +123,9 @@ fun MainScaffold(
     val availableUpdate by appContainer.updateAvailability.collectAsState()
     val updateBannerDismissed by appContainer.updateBannerDismissed.collectAsState()
     val currentTab = TopLevelDestination.fromRoute(currentRoute) ?: TopLevelDestination.Start
+    // Re-checked on every resume by the top bar's player, which is on every tab.
+    val musicControlsOn by appContainer.nowPlaying.hasAccess.collectAsState()
+    val defaultMusicApp by appContainer.nowPlaying.defaultApp.collectAsState()
 
     Column(modifier = modifier.fillMaxSize().background(OrColors.Background)) {
         OrTopBar(
@@ -150,6 +156,7 @@ fun MainScaffold(
                     horizontalArrangement = Arrangement.spacedBy(OrSpacing.lg),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    MiniPlayer()
                     SensorStatus(offline = sensorsOffline)
                     HeartRateStatus(
                         paired = activeProfile?.pairedHrDeviceAddress != null,
@@ -238,6 +245,12 @@ fun MainScaffold(
                         outerNavController.navigate(Destinations.ContentSources)
                     },
                     routeHolder = appContainer.routeHolder,
+                    musicApp = remember(defaultMusicApp) { defaultMusicApp?.let { MusicApps.find(context, it) } },
+                    onMusicAppChosen = { appContainer.nowPlaying.setDefaultApp(it.packageName) },
+                    musicControlsOn = musicControlsOn,
+                    onManageMusicControls = {
+                        openMusicAccessSettings(context, appContainer.nowPlaying.listenerComponent)
+                    },
                 )
             }
         }

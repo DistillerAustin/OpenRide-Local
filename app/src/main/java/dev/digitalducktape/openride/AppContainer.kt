@@ -64,6 +64,7 @@ import dev.digitalducktape.openride.games.session.VisitNavigator
 import dev.digitalducktape.openride.games.session.GamesSettingsStore
 import dev.digitalducktape.openride.games.session.SharedPrefsGamesSettingsStore
 import dev.digitalducktape.openride.games.session.OtherMusicDetector
+import dev.digitalducktape.openride.core.music.NowPlayingMonitor
 import dev.digitalducktape.openride.core.sensor.AffernetBikeDataSource
 import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import dev.digitalducktape.openride.core.sensor.MockBikeDataSource
@@ -400,6 +401,9 @@ class AppContainer(private val applicationContext: Context) {
     val routeHolder: RouteHolder by lazy {
         RouteHolder()
     }
+
+    /** What the rider's music app is playing, for the mini player (top bar and Just Ride). */
+    val nowPlaying: NowPlayingMonitor by lazy { NowPlayingMonitor(applicationContext) }
 
     /** Fetch/download side of the GitHub-native self-updater (PRD #22/T22). */
     val updateRepository: UpdateRepository by lazy {

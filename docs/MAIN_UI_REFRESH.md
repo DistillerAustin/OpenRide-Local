@@ -268,3 +268,38 @@ Decisions taken while building phases 1–5, for whoever picks up phase 6:
   the trend comes and goes. Over video, both scrims now go dark within the first fifth of the
   metrics bar and hold dark down past ELAPSED: with plain fades, the muted labels vanished over
   bright sky and water.
+
+## 8. The music mini player
+
+The rider's music, inside OpenRide, from whatever app plays it: no Spotify, Apple or Pandora
+integration (rider's call, 2026-10-26; it replaces PR #62's open-the-app button, whose idea is
+kept for when nothing plays).
+
+- **Built on Android's media sessions** (`NowPlayingMonitor`), the data the system's own media
+  controls use. Reading another app's session needs Notification access; the do-nothing
+  `NowPlayingListenerService` exists only so the rider can grant it.
+- **Two settings, in Profile → Music** (rider's ask, 2026-10-27): *Music app*, the app the
+  player opens, picked from icon tiles; and *Now playing*, which opens OpenRide's Notification
+  access switch and says what it reads before Android's own warning ("all notifications") does.
+- **Controls are media-button events**, the way a headset sends them: SiriusXM ignored another
+  app's direct play/pause, and Spotify doesn't offer a plain "play".
+- **Where:** a compact card in the top bar of every tab, and a larger panel in Just Ride, left
+  of the output, where the screen was empty (128 dp art, 64 dp controls). Not over a class
+  video: the class's own sound is the point. A scenic-ride "mute the video" option would need a
+  bike test of frame rate and audio focus first.
+- **Fixed sizes** (the card 440 dp, the panel 392 dp), so the controls don't move as titles
+  change; a title or artist too long for its space scrolls sideways. Previous and next stay in
+  place, dimmed, when an app doesn't offer them (Pandora has no previous and limits skips).
+  Tapping the song opens the app.
+- **With nothing playing** the button reads "Open Spotify" (the rider's music app) and opens it
+  in one tap; before an app is chosen it asks with the same picker. Just Ride's panel keeps its
+  size then, so nothing shifts when a song starts. Every app drops its session a while after a
+  pause (Spotify at once, SiriusXM in minutes), so this is the usual state before a ride.
+- **No playlist picking in OpenRide.** On the bike (2026-10-27) only SiriusXM let OpenRide browse
+  its library; Spotify, Apple Music, Pandora and Plexamp refuse anyone but Android Auto and the
+  like. The
+  rider changes playlist in the app, one tap away.
+- **Tested on the bike** with Apple Music, Spotify, Pandora, SiriusXM and Plexamp (art, title,
+  artist, play / pause / next / previous; Plexamp also seeks and offers repeat, shuffle, speed,
+  play-from-search and a "Love this track" action, but no queue or rating), and in Just Ride with mock sensors: the ride keeps recording
+  while the music app is in front.
