@@ -80,6 +80,8 @@ class GameBridge(
     private val heartRateBpm: StateFlow<Int?>,
     /** Head-tracker fields 6-9: the camera tracker's latest snapshot (see [toTrackerReading]). */
     private val trackerReading: () -> TrackerReading = { TrackerReading.OFF },
+    /** Input frame field 12: the rider's own music app has a track, so game music stays off. */
+    private val riderMusic: () -> Boolean = { false },
 ) : GameSignals {
     @Volatile
     private var session: GameSession? = null
@@ -113,6 +115,7 @@ class GameBridge(
             heartRateBpm = heartRateBpm.value,
             tracker = trackerReading(),
             segmentTimeLeftSec = current?.segmentTimeLeftSec ?: -1.0,
+            riderMusic = riderMusic(),
         )
     }
 

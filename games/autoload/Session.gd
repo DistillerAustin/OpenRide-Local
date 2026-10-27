@@ -181,8 +181,7 @@ func start_plan(request: Dictionary) -> void:
 		_local.start_plan(request)
 
 
-## key: "camera_games" (bool), "music" ("auto" | "on" | "off"), "music_volume" or "sfx_volume"
-## (0..1). Kotlin stores it and sends hub_state.
+## key: "camera_games" (bool), "music_volume" or "sfx_volume" (0..1). Kotlin stores it and sends hub_state.
 func update_setting(key: String, value: Variant) -> void:
 	print("OPENRIDE_GAMES -> update_setting %s %s" % [key, JSON.stringify(value)])
 	if _bridge:

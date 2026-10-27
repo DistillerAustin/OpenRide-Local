@@ -40,7 +40,7 @@ const RIDER_NAME := "Ed"  ## LocalSession.RIDER_NAME
 
 var visit_id := ""
 var phase := ""  ## "" (no visit), hub, plan, saving, ended
-var settings := {"camera_games": true, "music": "auto", "music_volume": 0.8, "sfx_volume": 1.0}
+var settings := {"camera_games": true, "music_volume": 0.8, "sfx_volume": 1.0}
 var permission := "granted"
 var camera_failed := false
 var calibrated := ""
@@ -111,10 +111,9 @@ func state() -> Dictionary:
 	}
 
 
-## The settings resolved for playing now (GameAudioPrefs.resolve): "auto" plays on a desktop.
+## The volumes for playing now (GameAudioPrefs.resolve).
 func audio() -> Dictionary:
-	return {"music": settings.music != "off", "music_volume": settings.music_volume,
-		"sfx_volume": settings.sfx_volume}
+	return {"music_volume": settings.music_volume, "sfx_volume": settings.sfx_volume}
 
 
 func camera_available() -> bool:
@@ -314,9 +313,6 @@ func update_setting(key: String, value: Variant) -> void:
 	match key:
 		"camera_games":
 			settings.camera_games = bool(value)
-		"music":
-			if str(value) in ["auto", "on", "off"]:
-				settings.music = str(value)
 		"music_volume", "sfx_volume":
 			settings[key] = clampf(float(value), 0.0, 1.0)
 		_:

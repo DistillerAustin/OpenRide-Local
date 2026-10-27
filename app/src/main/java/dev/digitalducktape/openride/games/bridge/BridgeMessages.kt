@@ -137,8 +137,6 @@ data class SegmentStartMessage(
 
 @Serializable
 data class AudioSettings(
-    /** False when the rider's own music is playing or game music is off. */
-    val music: Boolean,
     @SerialName("music_volume") val musicVolume: Double,
     @SerialName("sfx_volume") val sfxVolume: Double,
 )
@@ -226,7 +224,7 @@ data class HubStateMessage(
     val phase: HubPhase,
     val rider: HubRider,
     val settings: HubSettings,
-    /** The settings resolved now (`GameAudioPrefs.resolve`), for the hub's own music. */
+    /** The volumes (`GameAudioPrefs.resolve`), for the hub's own music. */
     val audio: AudioSettings,
     val camera: HubCamera,
     /** `GameCatalog` without the demo, in display order. */
@@ -257,8 +255,6 @@ data class HubRider(
 @Serializable
 data class HubSettings(
     @SerialName("camera_games") val cameraGames: Boolean,
-    /** `auto`, `on` or `off`. */
-    val music: String,
     @SerialName("music_volume") val musicVolume: Double,
     @SerialName("sfx_volume") val sfxVolume: Double,
 )
@@ -420,8 +416,6 @@ data class PlanRequestMessage(
 sealed interface SettingUpdate {
     data class CameraGames(val on: Boolean) : SettingUpdate
 
-    /** `auto`, `on` or `off`. */
-    data class Music(val mode: String) : SettingUpdate
     data class MusicVolume(val volume: Double) : SettingUpdate
     data class SfxVolume(val volume: Double) : SettingUpdate
 }
@@ -499,14 +493,11 @@ object BridgeMessages {
         val value = runCatching { json.parseToJsonElement(valueJson) }.getOrNull() as? JsonPrimitive ?: return null
         return when (key) {
             "camera_games" -> value.takeIf { !it.isString }?.booleanOrNull?.let { SettingUpdate.CameraGames(it) }
-            "music" -> value.takeIf { it.isString }?.content?.takeIf { it in MUSIC_MODES }?.let { SettingUpdate.Music(it) }
             "music_volume" -> value.takeIf { !it.isString }?.doubleOrNull?.let { SettingUpdate.MusicVolume(it.coerceIn(0.0, 1.0)) }
             "sfx_volume" -> value.takeIf { !it.isString }?.doubleOrNull?.let { SettingUpdate.SfxVolume(it.coerceIn(0.0, 1.0)) }
             else -> null
         }
     }
-
-    private val MUSIC_MODES = setOf("auto", "on", "off")
 
     private fun difficultyOf(word: String?): Difficulty = when (word) {
         "easy" -> Difficulty.EASY

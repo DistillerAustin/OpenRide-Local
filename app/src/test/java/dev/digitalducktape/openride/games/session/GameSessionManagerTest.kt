@@ -41,11 +41,10 @@ class GameSessionManagerTest {
     private val racer = GameDeclaration("racer", "Racer", setOf(JustRideSupport.MINUTES), timedEndMode = EndMode.GAME)
     private val catalog = GameCatalog(listOf(GameCatalog.DEMO, quick, racer))
 
-    private fun runner(otherMusic: () -> Boolean = { false }, tracker: TrackerLink? = null) = GameSessionManager(
+    private fun runner(tracker: TrackerLink? = null) = GameSessionManager(
         signals = signals,
         scope = scope,
         tracker = tracker,
-        otherMusicActive = otherMusic,
         random = Random(7),
     )
 
@@ -105,7 +104,7 @@ class GameSessionManagerTest {
         val params = segment["params"]!!.jsonObject
         assertEquals(240, params.int("target_watts"))
         assertEquals(70, params.int("cadence_floor"))
-        assertTrue(segment["audio"]!!.jsonObject["music"]!!.jsonPrimitive.boolean)
+        assertNull(segment["audio"]!!.jsonObject["music"]) // no switch: the frame says when the rider's music plays
         assertEquals(1200.0, m.segmentTimeLeftSec, 0.0)
     }
 
@@ -149,27 +148,12 @@ class GameSessionManagerTest {
     }
 
     @Test
-    fun `game music is off when the rider's own music plays`() {
-        runner(otherMusic = { true }).play(oneMinute)
+    fun `every segment carries the rider's volumes`() {
+        runner().play(oneMinute)
 
         val audio = signals.payload("segment_started")["audio"]!!.jsonObject
-        assertFalse(audio["music"]!!.jsonPrimitive.boolean)
+        assertEquals(0.8, audio["music_volume"]!!.jsonPrimitive.double, 0.0)
         assertEquals(1.0, audio["sfx_volume"]!!.jsonPrimitive.double, 0.0)
-    }
-
-    @Test
-    fun `game music is re-checked at every segment start`() {
-        var riderMusic = true
-        val m = runner(otherMusic = { riderMusic }).play(SessionRequest.Circuit("circuit-20"))
-        riderMusic = false
-        m.report(skipped = true, gameId = "demo")
-        riderMusic = true
-        m.report(skipped = true, gameId = "demo")
-
-        assertEquals(
-            listOf(false, true, false),
-            signals.payloads("segment_started").map { it["audio"]!!.jsonObject["music"]!!.jsonPrimitive.boolean },
-        )
     }
 
     @Test

@@ -60,10 +60,19 @@ class GameBridgeTest {
         val frame = bridge.inputFrame()
 
         assertArrayEquals(
-            doubleArrayOf(1.0, 85.0, 160.0, 35.0, 16.0, 128.0, 0.0, 0.0, 0.0, 0.0, 33.0, 1.0),
+            doubleArrayOf(1.0, 85.0, 160.0, 35.0, 16.0, 128.0, 0.0, 0.0, 0.0, 0.0, 33.0, 1.0, 0.0),
             frame,
             0.0,
         )
+    }
+
+    @Test
+    fun `the rider's music reaches the frame as it changes`() {
+        var riderMusic = false
+        val withMusic = GameBridge(bike, heartRate, riderMusic = { riderMusic })
+        assertEquals(0.0, withMusic.inputFrame()[InputFrame.RIDER_MUSIC], 0.0)
+        riderMusic = true
+        assertEquals(1.0, withMusic.inputFrame()[InputFrame.RIDER_MUSIC], 0.0)
     }
 
     @Test
@@ -205,9 +214,9 @@ class GameBridgeTest {
 
     @Test
     fun `tracker readings feed the head-tracker fields`() {
-        val tracked = GameBridge(bike, heartRate) {
+        val tracked = GameBridge(bike, heartRate, trackerReading = {
             TrackerReading(leanX = 0.3, leanDepth = -0.2, standing = true, state = TrackerState.TRACKING)
-        }
+        })
 
         val frame = tracked.inputFrame()
 

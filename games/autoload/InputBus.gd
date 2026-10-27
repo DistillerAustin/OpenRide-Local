@@ -26,7 +26,8 @@ const I_STANDING := 8
 const I_TRACKER_STATE := 9
 const I_SEGMENT_TIME_LEFT := 10
 const I_SENSORS_OK := 11
-const FRAME_SIZE := 12
+const I_RIDER_MUSIC := 12  ## added after v1; read only when the frame has it
+const FRAME_SIZE := 12  ## the fields every v1 frame has
 
 ## tracker_state values.
 const TRACKER_OFF := 0
@@ -47,6 +48,9 @@ var tracker_state := TRACKER_OFF
 var segment_time_left := -1.0  ## gameplay seconds left, -1 when open-ended
 ## While false, games freeze scoring and show the "sensors not detected" banner.
 var sensors_ok := false
+## The rider's own music app has a track (the app's mini player): AudioDirector keeps game
+## music off meanwhile. M toggles it in the keyboard simulator.
+var rider_music := false
 ## The latest raw frame, for debugging.
 var frame := PackedFloat64Array()
 
@@ -62,6 +66,7 @@ var _sim_resistance := 35.0
 var _sim_lean_x := 0.0
 var _sim_lean_depth := 0.0
 var _sim_standing := false
+var _sim_rider_music := false
 
 
 func _ready() -> void:
@@ -97,6 +102,7 @@ func _process(delta: float) -> void:
 	tracker_state = int(f[I_TRACKER_STATE])
 	segment_time_left = f[I_SEGMENT_TIME_LEFT]
 	sensors_ok = f[I_SENSORS_OK] > 0.5
+	rider_music = f.size() > I_RIDER_MUSIC and f[I_RIDER_MUSIC] > 0.5
 	frame_updated.emit()
 
 
@@ -105,6 +111,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_SPACE:
 		_sim_standing = not _sim_standing
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_M:
+		_sim_rider_music = not _sim_rider_music
 		get_viewport().set_input_as_handled()
 
 
@@ -119,7 +128,7 @@ func _simulate(delta: float) -> PackedFloat64Array:
 		0.0, 100.0)
 	var watts := sim_power(_sim_cadence, _sim_resistance)
 	var f := PackedFloat64Array()
-	f.resize(FRAME_SIZE)
+	f.resize(I_RIDER_MUSIC + 1)
 	f[I_VERSION] = VERSION
 	f[I_CADENCE] = roundf(_sim_cadence)
 	f[I_POWER] = roundf(watts)
@@ -132,6 +141,7 @@ func _simulate(delta: float) -> PackedFloat64Array:
 	f[I_TRACKER_STATE] = Session.local_tracker_state()
 	f[I_SEGMENT_TIME_LEFT] = Session.local_time_left()
 	f[I_SENSORS_OK] = 1.0
+	f[I_RIDER_MUSIC] = 1.0 if _sim_rider_music else 0.0
 	return f
 
 

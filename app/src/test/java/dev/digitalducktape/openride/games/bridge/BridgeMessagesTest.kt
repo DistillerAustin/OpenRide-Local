@@ -75,7 +75,7 @@ class BridgeMessagesTest {
             difficulty = Difficulty.HARD,
             effort = true,
             seed = 1234,
-            audio = AudioSettings(music = false, musicVolume = 0.8, sfxVolume = 1.0),
+            audio = AudioSettings(musicVolume = 0.8, sfxVolume = 1.0),
             params = buildJsonObject { put("target_watts", 250) },
         )
 
@@ -89,8 +89,7 @@ class BridgeMessagesTest {
             json.keys,
         )
         assertEquals("timer", json["end_mode"]!!.jsonPrimitive.content)
-        assertEquals(setOf("music", "music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
-        assertEquals("false", json["audio"]!!.jsonObject["music"]!!.jsonPrimitive.content)
+        assertEquals(setOf("music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
         assertEquals(250, json["params"]!!.jsonObject["target_watts"]!!.jsonPrimitive.content.toInt())
         assertEquals("game", parse(BridgeMessages.encode(segment.copy(endMode = EndMode.GAME)))["end_mode"]!!.jsonPrimitive.content)
     }
@@ -216,8 +215,8 @@ class BridgeMessagesTest {
         visitId = "v-1760890000000",
         phase = HubPhase.HUB,
         rider = HubRider(id = 3, name = "Ed", avatarPng = "/cache/games/avatar_3.png", avatarColor = "#4F7CFF", ftpWatts = 150, ftpIsDefault = true),
-        settings = HubSettings(cameraGames = true, music = "auto", musicVolume = 0.8, sfxVolume = 1.0),
-        audio = AudioSettings(music = true, musicVolume = 0.8, sfxVolume = 1.0),
+        settings = HubSettings(cameraGames = true, musicVolume = 0.8, sfxVolume = 1.0),
+        audio = AudioSettings(musicVolume = 0.8, sfxVolume = 1.0),
         camera = HubCamera(permission = CameraPermission.GRANTED, available = true, calibrated = "lean_x", sameDayExtremes = true),
         catalog = listOf(
             HubCatalogGame(
@@ -251,8 +250,8 @@ class BridgeMessagesTest {
             setOf("id", "name", "avatar_png", "avatar_color", "ftp_watts", "ftp_is_default"),
             json["rider"]!!.jsonObject.keys,
         )
-        assertEquals(setOf("camera_games", "music", "music_volume", "sfx_volume"), json["settings"]!!.jsonObject.keys)
-        assertEquals(setOf("music", "music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
+        assertEquals(setOf("camera_games", "music_volume", "sfx_volume"), json["settings"]!!.jsonObject.keys)
+        assertEquals(setOf("music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
         val camera = json["camera"]!!.jsonObject
         assertEquals(setOf("permission", "available", "calibrated", "same_day_extremes"), camera.keys)
         assertEquals("granted", camera["permission"]!!.jsonPrimitive.content)
@@ -361,11 +360,10 @@ class BridgeMessagesTest {
     @Test
     fun `settings updates parse by key, and anything else is null`() {
         assertEquals(SettingUpdate.CameraGames(false), BridgeMessages.parseSetting("camera_games", "false"))
-        assertEquals(SettingUpdate.Music("off"), BridgeMessages.parseSetting("music", "\"off\""))
         assertEquals(SettingUpdate.MusicVolume(0.5), BridgeMessages.parseSetting("music_volume", "0.5"))
         assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "1"))
         assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "7.0")) // clamped
-        assertNull(BridgeMessages.parseSetting("music", "\"loud\""))
+        assertNull(BridgeMessages.parseSetting("music", "\"off\"")) // the old Game music switch, gone
         assertNull(BridgeMessages.parseSetting("camera_games", "\"yes\""))
         assertNull(BridgeMessages.parseSetting("brightness", "1"))
         assertNull(BridgeMessages.parseSetting("music_volume", "not json"))

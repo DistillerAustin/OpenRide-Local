@@ -85,7 +85,6 @@ class GameVisitManager(
     /** Renders the rider's avatar PNG for the hub, or null. */
     private val avatar: suspend (Profile) -> String? = { null },
     private val catalog: GameCatalog = GameCatalog.DEFAULT,
-    private val otherMusicActive: () -> Boolean = { false },
     private val clock: () -> Long = System::currentTimeMillis,
     /** Where the app goes when the rider leaves (the ride summary, or the profile editor). */
     private val navigator: VisitNavigator = VisitNavigator(),
@@ -224,9 +223,6 @@ class GameVisitManager(
             is SettingUpdate.CameraGames -> {
                 settings.update { it.copy(cameraGames = update.on) }
                 tracker?.setCameraGamesEnabled(update.on)
-            }
-            is SettingUpdate.Music -> settings.update {
-                it.copy(audio = it.audio.copy(music = GameMusicMode.valueOf(update.mode.uppercase())))
             }
             is SettingUpdate.MusicVolume -> settings.update { it.copy(audio = it.audio.copy(musicVolume = update.volume)) }
             is SettingUpdate.SfxVolume -> settings.update { it.copy(audio = it.audio.copy(sfxVolume = update.volume)) }
@@ -604,7 +600,6 @@ class GameVisitManager(
                 profile = rider,
                 avatarPng = avatarPng,
                 settings = settings.settings.value,
-                otherMusicActive = otherMusicActive(),
                 permission = cameraPermission(),
                 cameraFailed = cameraFailed(),
                 calibrated = calibrated(),

@@ -33,7 +33,6 @@ class HubStateBuilderTest {
         profile = profile,
         avatarPng = "/cache/games/avatar_3.png",
         settings = settings,
-        otherMusicActive = false,
         permission = permission,
         cameraFailed = cameraFailed,
         calibrated = "",
@@ -123,10 +122,9 @@ class HubStateBuilderTest {
 
     @Test
     fun `settings and the resolved audio are sent as wire words`() {
-        val state = HubStateBuilder.build(inputs(settings = GamesSettings(GameAudioPrefs(GameMusicMode.OFF, 0.5, 0.7))))
-        assertEquals("off", state.settings.music)
+        val state = HubStateBuilder.build(inputs(settings = GamesSettings(GameAudioPrefs(0.5, 0.7))))
         assertEquals(0.5, state.settings.musicVolume, 0.0)
-        assertFalse(state.audio.music)
+        assertEquals(0.5, state.audio.musicVolume, 0.0)
         assertEquals(0.7, state.audio.sfxVolume, 0.0)
     }
 

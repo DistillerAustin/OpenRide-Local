@@ -34,6 +34,8 @@ func before_test() -> void:
 
 
 func after_test() -> void:
+	InputBus._sim_rider_music = false
+	AudioDirector.set_rider_music(false)
 	AudioDirector.end_session()
 	AudioDirector._music_generator = Callable()
 	AudioDirector._sounds.clear()
@@ -158,6 +160,24 @@ func test_music_off_in_a_new_segment_fades_the_music_out() -> void:
 	assert_bool(AudioDirector.is_music_playing()).is_false()
 	AudioDirector._process(AudioDirector.CROSSFADE_SEC)
 	assert_bool(AudioDirector._decks[0].playing or AudioDirector._decks[1].playing).is_false()
+
+
+func test_the_riders_own_music_fades_game_music_out_and_back_in() -> void:
+	AudioDirector.register_music_generator(_stems)
+	AudioDirector.register_sound("whoosh", _tone())
+	AudioDirector.play_music({"name": "drive"}, 90.0, 7)
+	await _until(func(): return AudioDirector.is_music_playing())
+	InputBus._sim_rider_music = true  # the frame says the rider's music app has a track
+	await _until(func(): return AudioDirector.rider_music)
+	assert_bool(AudioDirector.is_music_playing()).is_false()
+	assert_bool(AudioDirector.play_sfx("whoosh")).override_failure_message("effects keep playing").is_true()
+	# A game asking for its music meanwhile is kept, not played.
+	AudioDirector.play_music({"name": "climb"}, 100.0, 7)
+	await await_millis(100)
+	assert_bool(AudioDirector.is_music_playing()).is_false()
+	InputBus._sim_rider_music = false
+	await _until(func(): return AudioDirector.is_music_playing())
+	assert_str(AudioDirector.current_music_key()).contains("climb")
 
 
 func test_stems_follow_intensity_gates() -> void:
