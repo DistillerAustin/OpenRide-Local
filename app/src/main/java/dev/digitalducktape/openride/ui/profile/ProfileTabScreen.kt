@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
@@ -48,7 +49,7 @@ import kotlinx.coroutines.launch
  * Profile nav tab: shows the active rider, offers "Switch rider" (PRD P0-3/P1-6 — tap-to-
  * confirm before clearing the active profile and returning to profile select, so a stray tap
  * mid-session can't silently log the next ride under the wrong rider), quick shortcuts to
- * stock Android Wi-Fi/device settings (PRD P1-5, T12), and whole-database backup/restore
+ * stock Android Wi-Fi/device settings (PRD P1-5, T12), the home-screen switch (#47), and whole-database backup/restore
  * (PRD P1-8, T15). Laid out as the rider on the left and grouped settings rows on the right
  * (Ride, Classes, Device, Backup & restore), every row a 72 dp touch target.
  */
@@ -73,6 +74,19 @@ fun ProfileTabScreen(
     var restoreError by remember { mutableStateOf<String?>(null) }
 
     var routeError by remember { mutableStateOf<String?>(null) }
+
+    // The home-screen alias (#47, #63). Re-read on resume: the default is picked in a system
+    // dialog or the Home settings page, outside this screen.
+    var isHome by remember { mutableStateOf(HomeScreenLauncher.isHome(context)) }
+    var homeError by remember { mutableStateOf<String?>(null) }
+    var confirmHomeOff by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        isHome = HomeScreenLauncher.isHome(context)
+        onPauseOrDispose {}
+    }
+    val chooseDefaultHome = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        isHome = HomeScreenLauncher.settleAfterChoosing(context)
+    }
 
     // GPX route import (PRD #21/T21). GetContent rather than a typed picker because GPX has no
     // reliably-registered MIME type across file providers — "*/*" keeps every provider listing it.
@@ -163,6 +177,34 @@ fun ProfileTabScreen(
                     onClick = { launchSettings(context, Settings.ACTION_SETTINGS) },
                 )
                 OrSettingsDivider()
+                OrSettingsRow(
+                    title = "Home screen",
+                    value = homeError ?: ProfileTabLabels.homeScreen(isHome),
+                    valueColor = when {
+                        homeError != null -> OrColors.Warning
+                        isHome -> OrColors.Success
+                        else -> OrColors.OnSurfaceMuted
+                    },
+                ) {
+                    // One button: two side by side squeezed the title to a word per line.
+                    if (isHome) {
+                        OrSecondaryButton(text = "Turn off", onClick = {
+                            if (HomeScreenLauncher.hasOtherHome(context)) {
+                                confirmHomeOff = true
+                            } else {
+                                homeError = "No other home app to fall back to"
+                            }
+                        })
+                    } else {
+                        OrSecondaryButton(text = "Turn on", onClick = {
+                            homeError = null
+                            HomeScreenLauncher.setEnabled(context, true)
+                            isHome = HomeScreenLauncher.isHome(context)
+                            if (!isHome) chooseDefaultHome.launch(HomeScreenLauncher.chooseDefaultIntent(context))
+                        })
+                    }
+                }
+                OrSettingsDivider()
                 OrSettingsRow(title = "App updates", onClick = onManageAppUpdates)
             }
         }
@@ -196,6 +238,20 @@ fun ProfileTabScreen(
                 modifier = Modifier.padding(horizontal = OrSpacing.md),
             )
         }
+    }
+
+    if (confirmHomeOff) {
+        OrConfirmDialog(
+            title = "Stop using OpenRide as home?",
+            text = "The bike will start into another home app instead. You can turn this back on here.",
+            confirmText = "Turn off",
+            onDismiss = { confirmHomeOff = false },
+            onConfirm = {
+                confirmHomeOff = false
+                HomeScreenLauncher.setEnabled(context, false)
+                isHome = HomeScreenLauncher.isHome(context)
+            },
+        )
     }
 
     // Destructive confirmation (tap-to-confirm, matching the End Ride pattern elsewhere in the

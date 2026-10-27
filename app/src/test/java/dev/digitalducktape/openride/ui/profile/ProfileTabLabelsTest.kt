@@ -33,4 +33,10 @@ class ProfileTabLabelsTest {
         assertEquals("Paired", ProfileTabLabels.heartRateStrap(true))
         assertEquals("Not paired", ProfileTabLabels.heartRateStrap(false))
     }
+
+    @Test
+    fun `the home-screen row says whether OpenRide is the bike's home screen`() {
+        assertEquals("Off", ProfileTabLabels.homeScreen(isHome = false))
+        assertEquals("On", ProfileTabLabels.homeScreen(isHome = true))
+    }
 }
