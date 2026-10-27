@@ -36,6 +36,7 @@ class SharedPrefsGamesSettingsStore(context: Context) : GamesSettingsStore {
     override fun update(transform: (GamesSettings) -> GamesSettings) {
         val next = transform(state.value)
         prefs.edit()
+            .putBoolean(KEY_GAME_MUSIC, next.audio.gameMusic)
             .putFloat(KEY_MUSIC_VOLUME, next.audio.musicVolume.toFloat())
             .putFloat(KEY_SFX_VOLUME, next.audio.sfxVolume.toFloat())
             .putBoolean(KEY_CAMERA_GAMES, next.cameraGames)
@@ -45,6 +46,7 @@ class SharedPrefsGamesSettingsStore(context: Context) : GamesSettingsStore {
 
     private fun read() = GamesSettings(
         audio = GameAudioPrefs(
+            gameMusic = prefs.getBoolean(KEY_GAME_MUSIC, true),
             musicVolume = prefs.getFloat(KEY_MUSIC_VOLUME, 0.8f).toDouble(),
             sfxVolume = prefs.getFloat(KEY_SFX_VOLUME, 1.0f).toDouble(),
         ),
@@ -52,6 +54,7 @@ class SharedPrefsGamesSettingsStore(context: Context) : GamesSettingsStore {
     )
 
     private companion object {
+        const val KEY_GAME_MUSIC = "game_music"
         const val KEY_MUSIC_VOLUME = "music_volume"
         const val KEY_SFX_VOLUME = "sfx_volume"
         const val KEY_CAMERA_GAMES = "camera_games"

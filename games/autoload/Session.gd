@@ -36,6 +36,9 @@ signal plan_rejected(reason: Dictionary)
 signal visit_ended(result: Dictionary)
 ## The visit id changed (a new visit): visit-scoped state (calibration, results) resets.
 signal visit_changed(visit_id: String)
+## v1.3: the rider's music app's track, for the hub's music card: {title, artist, art (a PNG
+## path or ""), playing, can_previous, can_next}, or {} with nothing. Also kept in `now_playing`.
+signal now_playing_changed(track: Dictionary)
 
 const BRIDGE := "OpenRideBridge"
 const LocalSession := preload("res://autoload/LocalSession.gd")
@@ -54,6 +57,8 @@ var director: SessionDirector
 var hub: Dictionary = {}
 ## The current hub visit's id, from hub_state or a visit's session_started; "" outside a visit.
 var visit_id := ""
+## The last now_playing ({} with nothing playing).
+var now_playing: Dictionary = {}
 
 var _bridge: Object = null
 var _local: Node = null
@@ -79,6 +84,8 @@ func _ready() -> void:
 			_bridge.connect("hub_state", func(json: String): _on_hub_state(_parse(json)))
 			_bridge.connect("plan_rejected", func(json: String): _on_plan_rejected(_parse(json)))
 			_bridge.connect("visit_ended", func(json: String): _on_visit_ended(_parse(json)))
+		if _bridge.has_signal("now_playing"):
+			_bridge.connect("now_playing", func(json: String): _on_now_playing(_parse(json)))
 	else:
 		_local = LocalSession.new(self)
 		add_child(_local)
@@ -181,7 +188,7 @@ func start_plan(request: Dictionary) -> void:
 		_local.start_plan(request)
 
 
-## key: "camera_games" (bool), "music_volume" or "sfx_volume" (0..1). Kotlin stores it and sends hub_state.
+## key: "camera_games" (bool), "game_music" (bool), "music_volume" or "sfx_volume" (0..1). Kotlin stores it and sends hub_state.
 func update_setting(key: String, value: Variant) -> void:
 	print("OPENRIDE_GAMES -> update_setting %s %s" % [key, JSON.stringify(value)])
 	if _bridge:
@@ -223,6 +230,17 @@ func exit_hub(next: String) -> void:
 		_bridge.exit_hub(next)
 	else:
 		_local.exit_hub(next)
+
+
+## The hub's music card: "play_pause", "next" or "previous", for the rider's music app.
+func music_control(action: String) -> void:
+	print("OPENRIDE_GAMES -> music_control %s" % action)
+	if _bridge:
+		# Called straight, with no has_method() guard: the app and this pack ship together, and
+		# the guarded call never reached the music app on the bike (2026-10-27).
+		_bridge.music_control(action)
+	else:
+		_local.music_control(action)
 
 
 ## The rider touched the hub. Send it at most once every 60 s: it resets Kotlin's idle guard.
@@ -325,6 +343,11 @@ func _on_session_finished(new_summary: Dictionary) -> void:
 	active = false
 	paused = false
 	session_finished.emit(summary)
+
+
+func _on_now_playing(track: Dictionary) -> void:
+	now_playing = track
+	now_playing_changed.emit(track)
 
 
 func _on_hub_state(state: Dictionary) -> void:

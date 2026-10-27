@@ -104,7 +104,7 @@ class GameSessionManagerTest {
         val params = segment["params"]!!.jsonObject
         assertEquals(240, params.int("target_watts"))
         assertEquals(70, params.int("cadence_floor"))
-        assertNull(segment["audio"]!!.jsonObject["music"]) // no switch: the frame says when the rider's music plays
+        assertTrue(segment["audio"]!!.jsonObject["music"]!!.jsonPrimitive.boolean) // the Game music switch, on by default
         assertEquals(1200.0, m.segmentTimeLeftSec, 0.0)
     }
 

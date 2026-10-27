@@ -18,6 +18,10 @@ interface GameSignals {
     fun hubState(stateJson: String)
     fun planRejected(reasonJson: String)
     fun visitEnded(resultJson: String)
+
+    // v1.3, the hub's music card.
+    /** The rider's music app's track ([NowPlayingMessage]), or `{}` with none. */
+    fun nowPlaying(nowPlayingJson: String) {}
 }
 
 /**
@@ -82,7 +86,13 @@ class GameBridge(
     private val trackerReading: () -> TrackerReading = { TrackerReading.OFF },
     /** Input frame field 12: the rider's own music app has a track, so game music stays off. */
     private val riderMusic: () -> Boolean = { false },
+    /** The hub's music card: `play_pause`, `next` or `previous`, for the rider's music app. */
+    private val musicControl: (String) -> Unit = {},
 ) : GameSignals {
+    /** The latest `now_playing`, sent again when Godot is (re)ready, since the engine drops signals before then. */
+    @Volatile
+    private var lastNowPlaying: String? = null
+
     @Volatile
     private var session: GameSession? = null
     private val readyPending = AtomicBoolean(false)
@@ -108,7 +118,10 @@ class GameBridge(
 
     fun inputFrame(): DoubleArray {
         val current = session
-        if (current != null && readyPending.compareAndSet(true, false)) current.onGameReady()
+        if (current != null && readyPending.compareAndSet(true, false)) {
+            current.onGameReady()
+            lastNowPlaying?.let { emitter?.nowPlaying(it) }
+        }
         return InputFrame.pack(
             metrics = bikeDataSource.metrics.value,
             connection = bikeDataSource.connectionState.value,
@@ -133,6 +146,13 @@ class GameBridge(
     fun requestCameraPermission() { session?.onRequestCameraPermission() }
     fun exitHub(next: String) { session?.onExitHub(next) }
     fun hubActivity() { session?.onHubActivity() }
+    fun musicControl(action: String) = musicControl.invoke(action)
+
+    /** What the rider's music app plays now: sent to Godot, and kept for when it's next ready. */
+    fun publishNowPlaying(nowPlayingJson: String) {
+        lastNowPlaying = nowPlayingJson
+        emitter?.nowPlaying(nowPlayingJson)
+    }
 
     // --- Kotlin → Godot ---
 
@@ -146,4 +166,5 @@ class GameBridge(
     override fun hubState(stateJson: String) { emitter?.hubState(stateJson) }
     override fun planRejected(reasonJson: String) { emitter?.planRejected(reasonJson) }
     override fun visitEnded(resultJson: String) { emitter?.visitEnded(resultJson) }
+    override fun nowPlaying(nowPlayingJson: String) = publishNowPlaying(nowPlayingJson)
 }

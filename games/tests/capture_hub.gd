@@ -4,6 +4,8 @@ extends SceneTree
 ##   $GODOT_BIN --path games --resolution 1920x1080 -s res://tests/capture_hub.gd -- --out=DIR
 ## Plays a desktop visit (LocalHub) and saves:
 ##   hub_1_home.png            the home screen (the FTP nudge, no bests yet)
+##   hub_1b_home_music.png     the same with the rider's music playing (♪ in the header)
+##   hub_1c_music_panel.png    the music panel it opens
 ##   hub_2_game_kart.png       Kart Race's screen
 ##   hub_3_game_tug.png        Tug of War's (rounds)
 ##   hub_4_circuit.png         the 30 min circuit
@@ -39,6 +41,16 @@ func _run() -> void:
 	await _settle()
 	_hub_node = current_scene
 	await _shot("hub_1_home")
+	# The rider's own music: ♪ in the header, and the music panel it opens.
+	_session._on_now_playing({"title": "Nothin' on You (feat. Bruno Mars)", "artist": "B.o.B, Bruno Mars",
+		"art": "", "playing": true, "can_previous": true, "can_next": false})
+	await _settle()
+	await _shot("hub_1b_home_music")
+	_session.director.music_panel.open()
+	await _settle()
+	await _shot("hub_1c_music_panel")
+	_session.director.music_panel.close()
+	_session._on_now_playing({})
 
 	_hub_node.nav.push("game", {"game_id": "kart_race"})
 	await _settle()

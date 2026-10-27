@@ -224,6 +224,7 @@ class GameVisitManager(
                 settings.update { it.copy(cameraGames = update.on) }
                 tracker?.setCameraGamesEnabled(update.on)
             }
+            is SettingUpdate.GameMusic -> settings.update { it.copy(audio = it.audio.copy(gameMusic = update.on)) }
             is SettingUpdate.MusicVolume -> settings.update { it.copy(audio = it.audio.copy(musicVolume = update.volume)) }
             is SettingUpdate.SfxVolume -> settings.update { it.copy(audio = it.audio.copy(sfxVolume = update.volume)) }
         }

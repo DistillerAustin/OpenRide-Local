@@ -137,6 +137,8 @@ data class SegmentStartMessage(
 
 @Serializable
 data class AudioSettings(
+    /** The hub's Game music switch. On, game music still stays off while the rider's own music plays (frame field 12). */
+    val music: Boolean = true,
     @SerialName("music_volume") val musicVolume: Double,
     @SerialName("sfx_volume") val sfxVolume: Double,
 )
@@ -255,6 +257,7 @@ data class HubRider(
 @Serializable
 data class HubSettings(
     @SerialName("camera_games") val cameraGames: Boolean,
+    @SerialName("game_music") val gameMusic: Boolean = true,
     @SerialName("music_volume") val musicVolume: Double,
     @SerialName("sfx_volume") val sfxVolume: Double,
 )
@@ -412,9 +415,22 @@ data class PlanRequestMessage(
     val slots: List<PlanRequestSlot> = emptyList(),
 )
 
+/** `now_playing(json)`: the rider's music app's track, for the hub's music card. */
+@Serializable
+data class NowPlayingMessage(
+    val title: String,
+    val artist: String,
+    /** A PNG of the album art in the app's cache, or "" without one. */
+    val art: String,
+    val playing: Boolean,
+    @SerialName("can_previous") val canPrevious: Boolean,
+    @SerialName("can_next") val canNext: Boolean,
+)
+
 /** `update_setting(key, value_json)`. */
 sealed interface SettingUpdate {
     data class CameraGames(val on: Boolean) : SettingUpdate
+    data class GameMusic(val on: Boolean) : SettingUpdate
 
     data class MusicVolume(val volume: Double) : SettingUpdate
     data class SfxVolume(val volume: Double) : SettingUpdate
@@ -434,6 +450,8 @@ object BridgeMessages {
     fun encode(state: HubStateMessage): String = encode(HubStateMessage.serializer(), state)
     fun encode(rejected: PlanRejectedMessage): String = encode(PlanRejectedMessage.serializer(), rejected)
     fun encode(ended: VisitEndedMessage): String = encode(VisitEndedMessage.serializer(), ended)
+    /** `{}` when nothing is playing. */
+    fun encode(playing: NowPlayingMessage?): String = playing?.let { encode(NowPlayingMessage.serializer(), it) } ?: "{}"
 
     /** For tests and tools: the payloads Kotlin sends, read back. */
     fun decodeHubState(text: String): HubStateMessage = json.decodeFromString(HubStateMessage.serializer(), text)
@@ -493,6 +511,7 @@ object BridgeMessages {
         val value = runCatching { json.parseToJsonElement(valueJson) }.getOrNull() as? JsonPrimitive ?: return null
         return when (key) {
             "camera_games" -> value.takeIf { !it.isString }?.booleanOrNull?.let { SettingUpdate.CameraGames(it) }
+            "game_music" -> value.takeIf { !it.isString }?.booleanOrNull?.let { SettingUpdate.GameMusic(it) }
             "music_volume" -> value.takeIf { !it.isString }?.doubleOrNull?.let { SettingUpdate.MusicVolume(it.coerceIn(0.0, 1.0)) }
             "sfx_volume" -> value.takeIf { !it.isString }?.doubleOrNull?.let { SettingUpdate.SfxVolume(it.coerceIn(0.0, 1.0)) }
             else -> null

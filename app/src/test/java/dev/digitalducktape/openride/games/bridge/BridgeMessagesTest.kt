@@ -89,7 +89,7 @@ class BridgeMessagesTest {
             json.keys,
         )
         assertEquals("timer", json["end_mode"]!!.jsonPrimitive.content)
-        assertEquals(setOf("music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
+        assertEquals(setOf("music", "music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
         assertEquals(250, json["params"]!!.jsonObject["target_watts"]!!.jsonPrimitive.content.toInt())
         assertEquals("game", parse(BridgeMessages.encode(segment.copy(endMode = EndMode.GAME)))["end_mode"]!!.jsonPrimitive.content)
     }
@@ -250,8 +250,8 @@ class BridgeMessagesTest {
             setOf("id", "name", "avatar_png", "avatar_color", "ftp_watts", "ftp_is_default"),
             json["rider"]!!.jsonObject.keys,
         )
-        assertEquals(setOf("camera_games", "music_volume", "sfx_volume"), json["settings"]!!.jsonObject.keys)
-        assertEquals(setOf("music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
+        assertEquals(setOf("camera_games", "game_music", "music_volume", "sfx_volume"), json["settings"]!!.jsonObject.keys)
+        assertEquals(setOf("music", "music_volume", "sfx_volume"), json["audio"]!!.jsonObject.keys)
         val camera = json["camera"]!!.jsonObject
         assertEquals(setOf("permission", "available", "calibrated", "same_day_extremes"), camera.keys)
         assertEquals("granted", camera["permission"]!!.jsonPrimitive.content)
@@ -358,8 +358,16 @@ class BridgeMessagesTest {
     }
 
     @Test
+    fun `now playing uses the contract keys, and nothing playing is an empty object`() {
+        val json = parse(BridgeMessages.encode(NowPlayingMessage("Song", "Band", "/cache/a.png", true, false, true)))
+        assertEquals(setOf("title", "artist", "art", "playing", "can_previous", "can_next"), json.keys)
+        assertEquals("{}", BridgeMessages.encode(null as NowPlayingMessage?))
+    }
+
+    @Test
     fun `settings updates parse by key, and anything else is null`() {
         assertEquals(SettingUpdate.CameraGames(false), BridgeMessages.parseSetting("camera_games", "false"))
+        assertEquals(SettingUpdate.GameMusic(false), BridgeMessages.parseSetting("game_music", "false"))
         assertEquals(SettingUpdate.MusicVolume(0.5), BridgeMessages.parseSetting("music_volume", "0.5"))
         assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "1"))
         assertEquals(SettingUpdate.SfxVolume(1.0), BridgeMessages.parseSetting("sfx_volume", "7.0")) // clamped

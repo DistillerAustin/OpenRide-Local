@@ -63,6 +63,7 @@ import dev.digitalducktape.openride.games.session.GameVisitManager
 import dev.digitalducktape.openride.games.session.VisitNavigator
 import dev.digitalducktape.openride.games.session.GamesSettingsStore
 import dev.digitalducktape.openride.games.session.SharedPrefsGamesSettingsStore
+import dev.digitalducktape.openride.games.session.NowPlayingFeed
 import dev.digitalducktape.openride.games.session.OtherMusicDetector
 import dev.digitalducktape.openride.core.music.NowPlayingMonitor
 import dev.digitalducktape.openride.core.sensor.AffernetBikeDataSource
@@ -276,7 +277,11 @@ class AppContainer(private val applicationContext: Context) {
             heartRateBpm = heartRateManager.bpm,
             trackerReading = { headTracker.state.value.toTrackerReading() },
             riderMusic = { riderMusic.value },
-        )
+            musicControl = { NowPlayingFeed.control(nowPlaying, it) },
+        ).also { bridge ->
+            // The hub's music card: the rider's track, sent as it changes.
+            NowPlayingFeed(applicationContext, nowPlaying, bridge::publishNowPlaying, containerScope)
+        }
     }
 
     /**

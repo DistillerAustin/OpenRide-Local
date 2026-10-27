@@ -88,7 +88,8 @@ func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 	var kh: KartHud = parts[1]
 	var track: KartTrackModel = parts[2]
 	Effort.begin_segment(true)
-	# Worst-case contents.
+	# Worst-case contents, the rider's music too (its button joins Recalibrate | Pause | End).
+	Session._on_now_playing({"title": "Die With A Smile", "artist": "Lady Gaga", "art": "", "playing": true})
 	var race := KartRaceLogic.new()
 	var racers := []
 	for r in KartRoster.lineup("raccoon", 8):
@@ -135,6 +136,8 @@ func test_the_kart_hud_lays_out_without_overlaps_at_its_longest() -> void:
 		assert_float(b.size.y).is_greater_equal(HudTheme.BUTTON_HEIGHT * 0.8 - 0.5)
 	assert_object(hud.recalibrate_button.get_parent()).is_same(hud.end_button.get_parent())
 	assert_float(hud.end_button.get_global_rect().end.x).is_greater(hud.pause_button.get_global_rect().end.x)
+	assert_bool(hud.music_button.is_visible_in_tree()).is_true()
+	Session._on_now_playing({})
 	var item := kh.item_button.get_global_rect()
 	assert_float(KartItemButton.SIZE).is_greater_equal(240.0)
 	assert_bool(item.get_center().x > SCREEN.size.x * 0.8 and item.get_center().y > SCREEN.size.y * 0.7).is_true()

@@ -44,6 +44,7 @@ private class RecordingEmitter : GameSignals {
     override fun hubState(stateJson: String) { events += "hub_state:$stateJson" }
     override fun planRejected(reasonJson: String) { events += "plan_rejected:$reasonJson" }
     override fun visitEnded(resultJson: String) { events += "visit_ended:$resultJson" }
+    override fun nowPlaying(nowPlayingJson: String) { events += "now_playing:$nowPlayingJson" }
 }
 
 class GameBridgeTest {
@@ -101,6 +102,26 @@ class GameBridgeTest {
         bridge.inputFrame()
 
         assertEquals(listOf("ready"), session.calls)
+    }
+
+    @Test
+    fun `now playing reaches Godot, and is sent again when it's next ready`() {
+        val emitter = RecordingEmitter()
+        bridge.publishNowPlaying("{\"title\":\"Before\"}")  // the engine isn't running yet: dropped, but kept
+        bridge.emitter = emitter
+        bridge.attach(RecordingSession())
+
+        bridge.inputFrame()
+        bridge.publishNowPlaying("{}")
+
+        assertEquals(listOf("now_playing:{\"title\":\"Before\"}", "now_playing:{}"), emitter.events)
+    }
+
+    @Test
+    fun `the music card's buttons reach the app`() {
+        val actions = mutableListOf<String>()
+        GameBridge(bike, heartRate, musicControl = { actions += it }).musicControl("next")
+        assertEquals(listOf("next"), actions)
     }
 
     @Test

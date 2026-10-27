@@ -143,6 +143,22 @@ func test_playing() -> void:
 	_assert_road_clear("playing", [hud])
 
 
+func test_playing_with_the_riders_music() -> void:
+	# The Music button joins Pause | End while the rider's music app has a track: still no
+	# overlaps and the road still clear, plain and in a game's skin.
+	Session._on_now_playing({"title": "Die With A Smile", "artist": "Lady Gaga", "art": "", "playing": true})
+	await _settle()
+	assert_bool(hud.music_button.visible).is_true()
+	_assert_no_overlaps("playing with music", [hud])
+	_assert_road_clear("playing with music", [hud])
+	hud.set_skin(GameTheme.new(Color(0.22, 0.71, 1.0), Color(0.05, 0.1, 0.24)).hud_skin())
+	await _settle()
+	_assert_no_overlaps("game theme with music", [hud])
+	_assert_road_clear("game theme with music", [hud])
+	hud.clear_skin()
+	Session._on_now_playing({})
+
+
 func test_power_bonus() -> void:
 	status.set_state(1.0, false, true, 5, 2, 1)
 	hud.metrics.refresh(102, 260, 64)

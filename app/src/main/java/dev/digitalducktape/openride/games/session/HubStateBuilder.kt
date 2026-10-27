@@ -90,6 +90,7 @@ object HubStateBuilder {
             } ?: HubRider(null, "", null, GUEST_COLOR, ftp.watts, ftp.isFallback),
             settings = HubSettings(
                 cameraGames = inputs.settings.cameraGames,
+                gameMusic = inputs.settings.audio.gameMusic,
                 musicVolume = inputs.settings.audio.musicVolume,
                 sfxVolume = inputs.settings.audio.sfxVolume,
             ),

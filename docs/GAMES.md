@@ -85,8 +85,9 @@ GDScript accesses it only through the `InputBus` and `Session` autoloads, never 
   - `difficulty` ∈ `easy | standard | hard`.
   - `effort`: whether the effort multiplier applies. True for work segments, and for Just Rides of
     games that declare `effort_in_just_ride` (Dodge Ball, Tug of War, Kart Race).
-  - `audio` holds the volumes (`music_volume`, `sfx_volume`). Whether game music plays is frame
-    field 12, live (see **Audio** below); an older Kotlin's `audio.music: false` is still honoured.
+  - `audio`: `{music, music_volume, sfx_volume}`. `music` is the hub's Game music switch; even
+    on, game music stays off while the rider's own music plays (frame field 12, live; see
+    **Audio** below).
   - `params` are game-specific and already scaled to FTP and difficulty by Kotlin.
 - `segment_ending()`: the timer ran out. The game must call `segment_finished` within 5 s, or Kotlin
   records a zero-score result.
@@ -233,8 +234,8 @@ starts).
     `phase` (`hub | plan | saving | ended`).
   - `rider`: `{id, name, avatar_png, avatar_color, ftp_watts, ftp_is_default}`. With no active
     rider, `id` is null and `name` is `""`. `avatar_png` is a 256×256 PNG path, or null.
-  - `settings`: `{camera_games, music_volume, sfx_volume}`; `audio`: the volumes
-    (`{music_volume, sfx_volume}`), for the hub's own music.
+  - `settings`: `{camera_games, game_music, music_volume, sfx_volume}`; `audio`: the same as a
+    segment's (`{music, music_volume, sfx_volume}`), for the hub's own music.
   - `camera`: `{permission: granted | denied | ask, available, calibrated: "" | lean_x |
     lean_2d, same_day_extremes}`.
   - `catalog`: `[{id, title, supports, min_sec, max_sec, min_rounds, max_rounds, round_sec,
@@ -247,6 +248,11 @@ starts).
     game_ids}]}`.
 - `plan_rejected(reason_json)`: `{request (as sent), reason: unknown_game | unsupported_mode |
   camera_unavailable | busy | empty_circuit | too_long}`, sent instead of `session_started`.
+- `now_playing(json)` (v1.3), as `Session.now_playing_changed(track)`, kept in
+  `Session.now_playing`: the rider's music app's track for the music panel, `{title, artist,
+  art, playing, can_previous, can_next}` (`art` a PNG path in the app's cache, or ""), or `{}`
+  with nothing. Sent when it changes, and again on the first input-frame poll after a session
+  attaches (the engine drops signals sent before it runs). Guarded with `has_signal`.
 - `visit_ended(result_json)`: `{visit_id, ride_id (or null), saved, discarded_reason: "" |
   too_short | no_pedalling | not_recording, next: app | edit_profile | hub, reason: exit | idle |
   app_resumed | replaced}`. Sent after the ride is saved or discarded. Godot calls nothing after
@@ -267,13 +273,14 @@ starts).
 | Method | Valid in | Kotlin does |
 | --- | --- | --- |
 | `start_plan(request_json)` | hub | Builds and runs the plan (`session_started` …), or sends `plan_rejected` |
-| `update_setting(key, value_json)` | any | `camera_games` (bool), `music_volume`, `sfx_volume` (0..1, clamped); stores it, then `hub_state`. Unknown keys and bad values are logged and ignored. |
+| `update_setting(key, value_json)` | any | `camera_games` (bool), `game_music` (bool), `music_volume`, `sfx_volume` (0..1, clamped); stores it, then `hub_state`. Unknown keys and bad values are logged and ignored. |
 | `hub_calibrate(mode, full)` | hub | Camera on, calibrate (`force = full`), camera off when it ends; `calibration_progress`, then `hub_state`. The hub sends `lean_x`, with `full` false until the visit is calibrated (centre only with today's extremes) and true after (Recalibrate). |
 | `cancel_calibration()` | hub | Stops a hub calibration; the visit's earlier calibration stays |
 | `request_camera_permission()` | hub | The host shows Android's prompt, then `hub_state` |
 | `exit_hub(next)` | hub | `app` or `edit_profile`: ends the visit, saves, `visit_ended`, task to back |
 | `show_loading(show)` | any | v1.2: the host covers the engine with its native loading screen (it keeps animating while the GL thread is blocked). `SessionDirector` raises it at `segment_started` and drops it once the game has drawn 3 frames, covering the first-frame shader compile |
 | `hub_activity()` | hub | The rider touched the hub (at most once per 60 s): resets the idle guard |
+| `music_control(action)` | any | v1.3, the music panel: `play_pause`, `next` or `previous`, sent to the rider's music app as a media button (`NowPlayingFeed`). Unknown words are logged and ignored |
 
 `start_plan` requests: `{kind: "just_ride", game_id, mode: minutes | rounds | open, length,
 difficulty}`, `{kind: "circuit", preset_id, difficulty}` or `{kind: "custom", difficulty, slots:
@@ -392,12 +399,13 @@ rider has no FTP, so 150 W was used and the hub should nudge), plus one power fi
 Game-specific params come from the game's `GameDeclaration.params` (the demo sends
 `cadence_floor`).
 
-**Audio.** The rider's own music wins, with no switch (rider, 2026-10-27): game music plays
-unless the rider's music app has a track, and effects and cues always play. Kotlin puts that in
-input frame field 12 (`rider_music`, `AppContainer.riderMusic`, checked once a second), and
-`AudioDirector` follows it every frame: game music fades out over the 2 s crossfade when the
-rider's music starts, mid-segment too, and the game's kept request fades back in when it goes.
-`segment.audio` carries only the volumes (`GameAudioPrefs`).
+**Audio.** The rider's own music wins (rider, 2026-10-27): game music plays unless the rider's
+music app has a track, or they turned Game music off in the hub's Settings (`audio.music`,
+`GameAudioPrefs.gameMusic`, on by default). Effects and cues always play. Kotlin puts the
+rider's music in input frame field 12 (`rider_music`, `AppContainer.riderMusic`, checked once a
+second), and `AudioDirector` follows it every frame: game music fades out over the 2 s
+crossfade when the rider's music starts, mid-segment too, and the game's kept request fades
+back in when it goes.
 
 - With Now playing access (Profile → Music), the rider's music is the app's mini player having a
   track, playing or paused (`NowPlayingMonitor`, Android's media sessions). An app drops its
@@ -557,8 +565,20 @@ Hub (Hub.gd)                 root Control; acts on what screens ask, talks to Se
   and shows its best under Difficulty; any other game shows its poster (picture, how-to, best),
   then its options as rows. Grouped options sit under "More options" (top right), a panel over
   the left column with Done (Android back closes it too). A circuit's screen: its lineup, Difficulty, its best and
-  Start. Settings: camera games, and the game music and effects volumes as 10% steppers (heard
-  at once). There is no game music switch: the rider's own music turns it off (see **Audio**).
+  Start. Settings: camera games, game music On/Off (the rider's own music still turns it off
+  while on; see **Audio**), and the music and effects volumes as 10% steppers (heard at once).
+- **The rider's music** (rider's ask, 2026-10-27): while their music app has a track
+  (`now_playing`), the header shows ♪ between the camera and Settings, and it opens the
+  **music panel** (`MusicPanel`, owned by `SessionDirector`, so the hub and every game share
+  it): the art, the title (two lines at most), the artist, previous, play/pause and next
+  (`music_control`), and Done; a tap outside closes it too. Previous and next stay, faded, when
+  the app doesn't offer them. In play, the HUD's button row adds a ♪ button beside Pause | End
+  that opens the same panel and pauses the ride until Done (no pause screen over it; a ride
+  already paused stays paused). A first try put a card on home's "Play a game"
+  line; the rider found it cramped, and its title ran into the artist. To fit ♪, the header's
+  items lost a little width each (rider 546, metrics 350, camera 300, Exit 250), and the
+  right-hand ones share one row (`hub_layout_test` and `hud_layout_test` check both with the
+  music showing).
 - **The circuit builder** (`BuilderScreen`, rules in `CircuitBuilder`, plan phase D): "Add a
   game" tiles (an `OptionCards` grid, flatter through `slot_aspect`; a tap adds the game), the
   lineup as `SlotRow`s in a `ScrollContainer` (the role colour and "2 · Work", the length on a
