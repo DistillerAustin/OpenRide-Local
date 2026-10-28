@@ -14,7 +14,8 @@ extends RefCounted
 ## **Dodge** (the default): keep away from the balls.
 ## - A ball that passes clear scores DODGE_POINTS (× the power bonus) and builds the streak.
 ## - Shield: drains while cadence < cadence_floor and refills above it. A hit with the shield
-##   up breaks it; with it down, the rider loses a life (Just Ride) or PENALTY points (circuit).
+##   up breaks it; with it down, the rider loses PENALTY points, and a life too in a Just Ride
+##   (rider, 2026-10-27: a hit there took only the life, so the score never showed it).
 ##
 ## **Catch**: steer into the balls.
 ## - A ball caught with the shield up scores the same points (× the power bonus) and builds the
@@ -161,6 +162,11 @@ func rate_at(t: float, w := 1) -> float:
 	return minf(r, RATE_CAP)
 
 
+## The best run so far: the finished ones as they ended, or this one if it's ahead.
+func best_run() -> float:
+	return maxf(best_run_points, run_points)
+
+
 func shield_up() -> bool:
 	return shield > 0.0
 
@@ -292,7 +298,6 @@ func _score(ball: Dictionary, type: String, power: float, events: Array[Dictiona
 	longest_streak = maxi(longest_streak, streak)
 	var points := DODGE_POINTS * power_multiplier(power)
 	run_points += points
-	best_run_points = maxf(best_run_points, run_points)
 	events.append({"type": type, "ball": ball, "points": points, "streak": streak})
 	if streak in STREAK_CHIMES:
 		events.append({"type": "streak", "count": streak})
@@ -305,18 +310,17 @@ func _hit(ball: Dictionary, events: Array[Dictionary]) -> void:
 		shield = 0.0
 		events.append({"type": "shield_break", "ball": ball})
 		return
+	run_points = maxf(0.0, run_points - PENALTY)
 	if has_lives:
 		lives -= 1
-		events.append({"type": "hit", "ball": ball, "penalty": 0.0, "lives": lives})
-		if lives <= 0:
-			game_over_left = GAME_OVER_SEC
-			events.append({"type": "game_over", "run": run, "points": run_points})
-	else:
-		run_points = maxf(0.0, run_points - PENALTY)
-		events.append({"type": "hit", "ball": ball, "penalty": PENALTY, "lives": lives})
+	events.append({"type": "hit", "ball": ball, "penalty": PENALTY, "lives": lives})
+	if has_lives and lives <= 0:
+		game_over_left = GAME_OVER_SEC
+		events.append({"type": "game_over", "run": run, "points": run_points})
 
 
 func _new_run() -> void:
+	best_run_points = best_run()  # a run's points as it ended, penalties taken off
 	run += 1
 	lives = LIVES
 	wave = 1

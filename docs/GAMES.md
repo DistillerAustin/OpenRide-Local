@@ -1483,7 +1483,10 @@ What to look for in the log:
 ## Dodge Ball (#39)
 
 **Modes** (the per-rider "Mode" option): **Dodge** keeps away from danger-red balls; **Catch**
-steers into shimmering gold ones. A ball caught with the shield down is fumbled (no points,
+steers into shimmering gold ones. In Dodge a hit with the shield up drops the shield; with it
+down it costs 50 points (a red −50 floats up) and, in a Just Ride, a life too (rider, 2026-10-27:
+a Just Ride hit used to take only the life, so the score never showed it). A Just Ride's score is
+its best run as that run ended, its hits taken off. A ball caught with the shield down is fumbled (no points,
 streak lost); a miss costs the streak, and three in a row a life in a Just Ride. Nothing is ever
 taken off in Catch, and every catch ball arrives within reach of the last. The result's
 `variant` is the mode played longest (`""` for Dodge, `"catch"`).
