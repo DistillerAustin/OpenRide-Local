@@ -14,6 +14,16 @@ It's installed using a free tool called [OpenPelo](https://github.com/doudar/Ope
   <img src="docs/screenshots/classes.png" width="32%" alt="Classes catalog" />
 </p>
 
+## New in 1.1
+
+Your music now has a place in the app, the bike's home screen is a setting you can switch on, and the heart-rate strap and the ride screens got a round of fixes.
+
+- **Music player** — see what's playing in your music app, with its cover, song and artist and previous, play/pause and next buttons, in the top bar and on the Just Ride screen. Tested with Spotify, Apple Music, Pandora, SiriusXM and Plexamp. See [Music player](#music-player).
+- **Music in the games** — game music steps aside while your own music plays, the **♪** button in the hub and in every game opens the player, and there's a Game music switch in the hub's settings.
+- **Home screen setting** — **Profile → Device → Home screen → Turn on** makes OpenRide the screen the bike starts into, with no computer or `adb` commands. This fixes [#47](https://github.com/digitalducktape/openride/issues/47), and the home-screen part of [#63](https://github.com/digitalducktape/openride/issues/63) on the newer tablet. Pressing Home also no longer opens a second copy of the app.
+- **Heart-rate strap** — it now connects reliably, reconnects by itself when the link drops, and shows **Connected • 72 bpm** on the pairing screen. Your heart rate also shows in the games.
+- **Ride screen and display fixes** — bigger readings on the ride screens, form labels that no longer overlap their boxes, games that fill the bike's whole screen with no side bars, and one sensor warning that every screen shows and clears together, including when the bike's sensor board goes quiet.
+
 ## New in 1.0
 
 This update brings a new Kart Race, a games hub for your workouts, better game graphics, music and sounds, and a new look for the whole app.
@@ -30,16 +40,36 @@ This update brings a new Kart Race, a games hub for your workouts, better game g
 - **A screen built for the bike** — big, simple controls readable from the saddle, tabs along the bottom, the bike's sensor and heart-rate status always in view, and each rider's own colour throughout
 - **A profile for everyone in the house** — each rider gets their own name, picture, and workout history
 - **A library of free classes** — a constantly-updating selection of cycling videos pulled in automatically, so there's always something new to ride to
+- **A music player for your own music** — what's playing in Spotify, Apple Music, Pandora, SiriusXM, Plexamp and other music apps, with controls, right on the ride screen. [Details below](#music-player)
 - **Mini-games (BETA)** — five pedal-powered games, including a full Kart Race, plus 20-, 30- and 45-minute game circuits and circuits you build yourself. [Details below](#mini-games-beta)
 - **Ride history and personal bests** — a calendar of every past ride, plus your all-time best output, cadence, and duration
 - **Export your ride data** — download any ride as a file (TCX or CSV) to keep or use elsewhere, so your data is always yours
-- **Heart-rate strap and Bluetooth headphone support** — pair a heart-rate monitor, and headphone audio just works once paired
+- **Heart-rate strap and Bluetooth headphone support** — pair a heart-rate monitor, see your bpm on the ride screens and in the games, and headphone audio just works once paired
 
 <p align="center">
   <img src="docs/screenshots/ride_summary.png" width="32%" alt="Ride summary with export" />
   <img src="docs/screenshots/history.png" width="32%" alt="Ride history and personal records" />
   <img src="docs/screenshots/profile.png" width="32%" alt="Profile and settings" />
 </p>
+
+## Music player
+
+OpenRide shows whatever your music app is playing: the cover, the song and the artist, with **previous**, **play/pause** and **next** buttons. It's a card in the top bar on every screen, and a larger panel beside the numbers on the Just Ride screen. It doesn't stream music itself, so you keep using your own app and your own account. Class videos have no player, because the class's own audio is the point.
+
+It works with music apps that tell Android what they're playing. It's been tried on the bike with Spotify, Apple Music, Pandora, SiriusXM and Plexamp (a way to play your own library from a Plex server on a NAS).
+
+**To set it up**, open **Profile → Music**:
+
+1. **Music app** — pick the app you listen to. When nothing is playing, the player offers to open it.
+2. **Now playing** — tap the row. Android needs you to give OpenRide **Notification access** before it will share what other apps are playing, and takes you to that screen.
+
+Android words that permission as access to all notifications. OpenRide only uses it to find out what's playing: it never reads, stores or reacts to a notification, and nothing leaves the bike. You can turn it off again at any time in the same place.
+
+Good to know:
+
+- **Songs and playlists are picked in your music app.** OpenRide shows and controls what's playing, but Spotify, Apple Music and Pandora don't let other apps browse their libraries.
+- **Players disappear when music stops for a while.** Most apps let go of their session after a pause, and the player goes with it. Press play in the music app and it's back.
+- **In the games**, the **♪** button in the hub and in each game opens the player (a game pauses until you tap **Done**), and game music turns itself off while your music plays.
 
 ## Mini-games (BETA)
 
@@ -125,7 +155,7 @@ OpenRide isn't in an app store, but you don't need to be technical to install it
 
 ### Make it the bike's home screen (optional)
 
-Making OpenRide the screen that greets you when the bike turns on, and making sure a Peloton software update doesn't undo any of this, are covered step by step in **[docs/INSTALL.md](docs/INSTALL.md)**. Please read it in full before starting: the order of steps there matters.
+To make OpenRide the screen that greets you when the bike turns on, open **Profile → Device → Home screen** and tap **Turn on**, then choose OpenRide in Android's prompt. **Turn off** puts the bike's previous home app back. Making sure a Peloton software update doesn't undo this, and what to do if Peloton's own screen still comes up over OpenRide on newer software, are covered step by step in **[docs/INSTALL.md](docs/INSTALL.md)**. Please read it in full before starting: the order of steps there matters.
 
 ### Staying up to date
 
@@ -139,6 +169,7 @@ The rest of this section is technical detail for anyone contributing to the code
 - Sensor access sits behind a `BikeDataSource` abstraction with a `MockBikeDataSource` (simulated ride) so all UI/logic development runs in a standard emulator; only the real system-service binding needs the physical bike
 - Room database: `Profile` / `Ride` / `RideSample` (per-second samples — required for TCX export)
 - Content browser fetches per-channel YouTube RSS (`/feeds/videos.xml?channel_id=…`) on-device: no API key, no quota, no backend
+- The music player reads other apps' Android media sessions (`core/music/NowPlayingMonitor`, which needs Notification access via an empty `NotificationListenerService`), with no per-service SDKs or accounts; the games reach it through the bridge's `now_playing` and `music_control` messages
 - Mini-games are a Godot 4.7.2 project in `games/`, embedded through `GameHostActivity` and the `OpenRideBridge` plugin; APK builds export it, so they need `GODOT_BIN` pointing at the Godot editor (unit tests don't) — see [docs/GAMES.md](docs/GAMES.md)
 
 ## License
