@@ -798,8 +798,8 @@ is the stage's top left. Only full-screen pieces cover the whole window:
 - a backdrop or shade (a direct child of a layer, a game or the hub): `Stage.bleed(control)`;
 - a 3D view: size its SubViewport with `Stage.view_size(scale)`, bleed the image showing it,
   and redo the size on `Stage.changed`; map a projected point back with `Stage.from_view()`;
-- painted 2D art made for 1920 (Safe Cracker's room) fills the sides another way: two strips
-  in the wall's shade, not a full-screen fill under it.
+- painted 2D art: paint past the stage's sides (Safe Cracker's rooms reach `SafePlaces.BLEED`,
+  160 px, each side; the props stay on the 1920 stage) and bake it over the wider span.
 
 `stage_test` checks this at 2057x1080, and `hub_layout_test` checks the hub there too.
 

@@ -27,10 +27,6 @@ var bake: SubViewport
 var room: Node2D
 var view: Sprite2D
 var bakes := 0  ## renders made, for tests
-## The room is painted for the 1920x1080 stage; on a wider window (#57) these strips fill the
-## canvas past its sides in the wall's shade (two strips, not a full-screen fill under the room:
-## the tablet's GPU pays for every pixel).
-var sides: Array[ColorRect] = []
 var rain: ColorRect
 var sea: ColorRect
 var lantern: Node2D
@@ -45,30 +41,23 @@ func _init() -> void:
 	bake.disable_3d = true
 	bake.transparent_bg = false
 	bake.gui_disable_input = true
-	bake.size_2d_override = Vector2i(SafePlaces.SIZE)
+	bake.size_2d_override = Vector2i(SafePlaces.WIDE)  # past the stage's sides (#57)
 	bake.size_2d_override_stretch = true
 	bake.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	add_child(bake)
 	room = SafeDial.Layer.new()
 	room.name = "Room"
 	room.paint = _paint_room
+	room.position = Vector2(SafePlaces.BLEED, 0)
 	bake.add_child(room)
 	bake.add_child(vignette())
 	view = Sprite2D.new()
 	view.name = "Room"
 	view.centered = false
+	view.position = Vector2(-SafePlaces.BLEED, 0)
 	view.texture = bake.get_texture()
 	view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(view)
-	for side in ["SideLeft", "SideRight"]:
-		var strip := ColorRect.new()
-		strip.name = side
-		strip.color = (SafePlaces.place(0).wall2 as Color).darkened(0.6)
-		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(strip)
-		sides.append(strip)
-	_fit_sides()
-	Stage.changed.connect(_fit_sides)
 	rain = _shader_rect("Rain", RAIN_RECT, preload("res://games/safe_cracker/safe_rain.gdshader"))
 	sea = _shader_rect("Sea", Rect2(PORTHOLE - Vector2.ONE * PORTHOLE_R, Vector2.ONE * PORTHOLE_R * 2.0),
 		preload("res://games/safe_cracker/safe_sea.gdshader"))
@@ -101,21 +90,8 @@ func _shader_rect(rect_name: String, r: Rect2, shader: Shader) -> ColorRect:
 	return c
 
 
-## The side strips: the visible canvas left and right of the stage.
-func _fit_sides() -> void:
-	var full := Stage.bleed_rect()
-	sides[0].position = full.position
-	sides[0].size = Vector2(-full.position.x, full.size.y)
-	sides[1].position = Vector2(SafePlaces.SIZE.x, full.position.y)
-	sides[1].size = Vector2(full.end.x - SafePlaces.SIZE.x, full.size.y)
-	for strip in sides:
-		strip.visible = strip.size.x > 0.0
-
-
 func set_place(index: int) -> void:
 	place_index = index
-	for strip in sides:
-		strip.color = (SafePlaces.place(index).wall2 as Color).darkened(0.6)
 	var id: String = SafePlaces.place(index).id
 	rain.visible = id == "office"
 	sea.visible = id == "cabin"
@@ -157,17 +133,17 @@ func _exit_tree() -> void:
 		get_tree().root.size_changed.disconnect(rebake)
 
 
-## Renders the room once, at the size the canvas is shown on screen (1792x1008 on the bike's
-## 1920x1008 panel), so the sprite maps one texel to one pixel.
+## Renders the room once, at the size the canvas is shown on screen (2090x1008 for the painted
+## room on the bike's 1920x1008 panel), so the sprite maps one texel to one pixel.
 func rebake() -> void:
 	if not is_inside_tree():
 		return
 	var win := Vector2(get_tree().root.size)
 	var s := clampf(minf(win.x / SafePlaces.SIZE.x, win.y / SafePlaces.SIZE.y), 0.25, 1.0)
-	var px := Vector2i((SafePlaces.SIZE * s).ceil())
+	var px := Vector2i((SafePlaces.WIDE * s).ceil())
 	if bake.size != px:
 		bake.size = px
-	view.scale = SafePlaces.SIZE / Vector2(px)
+	view.scale = SafePlaces.WIDE / Vector2(px)
 	room.queue_redraw()
 	bake.render_target_update_mode = SubViewport.UPDATE_ONCE
 	bakes += 1
@@ -204,7 +180,7 @@ static func vignette() -> TextureRect:
 	rect.texture = tex
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_SCALE
-	rect.size = SafePlaces.SIZE
+	rect.size = SafePlaces.WIDE  # over the whole painted room: its edges stay soot-dark (#57)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return rect
 
