@@ -311,8 +311,8 @@ func draft_screen(race: KartRaceLogic, cam: Camera3D, hud: KartHud) -> float:
 	if cam.is_position_behind(target):
 		return k.draft
 	var vp := cam.get_viewport()
-	var scale := HudTheme.W / maxf(vp.get_visible_rect().size.x, 1.0) if vp else 1.0
-	hud.draft_point = cam.unproject_position(target) * scale
+	var p := cam.unproject_position(target)
+	hud.draft_point = Stage.from_view(p, vp.get_visible_rect().size.max(Vector2.ONE)) if vp else p
 	return k.draft
 
 

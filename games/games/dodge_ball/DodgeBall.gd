@@ -55,6 +55,7 @@ var _view: SubViewport
 ## The tablet's one quality step: the 3D view from _full_scale to 0.55 if play stays under 54 fps.
 var governor := RenderScaleStep.new()
 var _full_scale := RENDER_SCALE
+var _view_scale := RENDER_SCALE  ## the scale the 3D view renders at now
 var _mode_sec := {"dodge": 0.0, "catch": 0.0}
 var _message_left := 0.0
 var _perf_usec := 0
@@ -138,7 +139,7 @@ func _ready() -> void:
 	_full_scale = scale
 	_view = SubViewport.new()
 	_view.name = "View3D"
-	_view.size = Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	_set_render_scale(scale)
 	_view.msaa_3d = int(tuning.get_value("render", "msaa", MSAA)) if tuned else MSAA
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
@@ -147,18 +148,18 @@ func _ready() -> void:
 	var shown := TextureRect.new()
 	shown.name = "View3DImage"
 	shown.texture = _view.get_texture()
-	shown.size = Vector2(HudTheme.W, HudTheme.H)
 	shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
+	Stage.bleed(shown)  # the whole window, past the centred stage (#57)
 	world.ball_bounced.connect(func(loud: float): AudioDirector.play_sfx("ball_bounce", linear_to_db(loud) - 10.0, randf_range(0.9, 1.1)))
 	_fx_layer = CanvasLayer.new()
 	_fx_layer.layer = SCREEN_FX_LAYER
 	add_child(_fx_layer)
 	var rect := ColorRect.new()
-	rect.size = Vector2(HudTheme.W, HudTheme.H)
+	Stage.bleed(rect)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fx_mat = ShaderMaterial.new()
 	_fx_mat.shader = load("res://games/dodge_ball/shaders/screen_fx.gdshader")
@@ -231,7 +232,8 @@ func _on_option_changed(key: String, _value: String) -> void:
 
 ## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
 func _set_render_scale(scale: float) -> void:
-	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	_view_scale = scale
+	var size := Stage.view_size(scale)
 	if _view.size != size:
 		_view.size = size
 

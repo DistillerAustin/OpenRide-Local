@@ -185,11 +185,11 @@ func _on_skip_pressed() -> void:
 ## fill-bound GPU a full-screen blend under it costs about half a screen of pixels every intro
 ## frame. Four strips frame the card; a patch in each corner fills behind its rounded edge.
 func _add_shade(card_rect: Rect2) -> void:
-	var full := Rect2(0, 0, HudTheme.W, HudTheme.H)
+	var full := Stage.bleed_rect()  # the whole window, past the centred stage (#57)
 	var strips: Array[Rect2] = [
-		Rect2(full.position, Vector2(full.size.x, card_rect.position.y)),
-		Rect2(Vector2(0, card_rect.end.y), Vector2(full.size.x, full.end.y - card_rect.end.y)),
-		Rect2(Vector2(0, card_rect.position.y), Vector2(card_rect.position.x, card_rect.size.y)),
+		Rect2(full.position, Vector2(full.size.x, card_rect.position.y - full.position.y)),
+		Rect2(Vector2(full.position.x, card_rect.end.y), Vector2(full.size.x, full.end.y - card_rect.end.y)),
+		Rect2(Vector2(full.position.x, card_rect.position.y), Vector2(card_rect.position.x - full.position.x, card_rect.size.y)),
 		Rect2(Vector2(card_rect.end.x, card_rect.position.y), Vector2(full.end.x - card_rect.end.x, card_rect.size.y)),
 	]
 	for strip in strips:

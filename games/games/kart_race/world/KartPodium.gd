@@ -118,10 +118,11 @@ func kart_state(i: int) -> KartState:
 	return _states[i]
 
 
-## Where each place's block front and kart top show on the canvas (1920x1080), from `camera`
-## drawing a view of `view_size` pixels: {faces, heads (Vector2 each, places 1-3), face_h (px)}.
+## Where each place's block front and kart top show on the stage (1920x1080, `Stage`), from
+## `camera` drawing a view of `view_size` pixels over the whole window: {faces, heads (Vector2
+## each, places 1-3), face_h (px)}.
 func screen_points(camera: Camera3D, view_size: Vector2) -> Dictionary:
-	var k := HudTheme.W / view_size.x
+	var at := func(p: Vector3) -> Vector2: return Stage.from_view(camera.unproject_position(p), view_size)
 	var faces: Array[Vector2] = []
 	var heads: Array[Vector2] = []
 	var face_h: Array[float] = []
@@ -129,10 +130,10 @@ func screen_points(camera: Camera3D, view_size: Vector2) -> Dictionary:
 		var h: float = HEIGHTS[i]
 		var top := global_transform * Vector3(XS[i], 0.16 + h, BLOCK.y * 0.5)
 		var bottom := global_transform * Vector3(XS[i], 0.16, BLOCK.y * 0.5)
-		var a := camera.unproject_position(top) * k
-		var b := camera.unproject_position(bottom) * k
+		var a: Vector2 = at.call(top)
+		var b: Vector2 = at.call(bottom)
 		faces.append((a + b) * 0.5)
 		face_h.append(b.y - a.y)
-		heads.append(camera.unproject_position(global_transform * Vector3(XS[i], 0.16 + h + 1.75, 0.1)) * k)
+		heads.append(at.call(global_transform * Vector3(XS[i], 0.16 + h + 1.75, 0.1)))
 	return {"faces": faces, "heads": heads, "face_h": face_h,
-		"centre": camera.unproject_position(global_transform * Vector3(0, 1.2, 0)) * k}
+		"centre": at.call(global_transform * Vector3(0, 1.2, 0))}

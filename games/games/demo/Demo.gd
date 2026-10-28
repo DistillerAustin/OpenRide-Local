@@ -68,9 +68,9 @@ func target_text(seg: Dictionary) -> String:
 func _ready() -> void:
 	var bg := ColorRect.new()
 	bg.color = BACKGROUND
-	bg.size = DemoLogic.FIELD
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+	Stage.bleed(bg)  # the whole window, past the centred stage (#57)
 	for i in STRIPES:
 		var stripe := ColorRect.new()
 		stripe.color = Color(1, 1, 1, 0.18)

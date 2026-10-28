@@ -312,7 +312,6 @@ func _ready() -> void:
 	var shown := TextureRect.new()
 	shown.name = "View3DImage"
 	shown.texture = _view.get_texture()
-	shown.size = Vector2(HudTheme.W, HudTheme.H)
 	shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -321,6 +320,8 @@ func _ready() -> void:
 	# are drawn as thin polygons by KartHud (a graded upscaling blit cost about 5 fps).
 	KartView.outlines = not _tuned or bool(_tuning.get_value("render", "outlines", true))
 	add_child(shown)
+	Stage.bleed(shown)  # the whole window, past the centred stage (#57)
+	Stage.changed.connect(_fit_view)
 	if _tuned:
 		print("OPENRIDE_GAMES kart_race render scale=%.2f size=%s msaa=%d" % [scale, _view.size, _view.msaa_3d])
 
@@ -886,14 +887,19 @@ func _apply_quality() -> void:
 			KartWorld.CROWD_TRIMMED if g.trims(&"crowd") else 1.0)
 	if _fx:
 		_fx.cap_share = FX_CAP_TRIMMED if g.trims(&"fx") else 1.0
-	var scale := minf(_render_scale, RENDER_SCALE_TRIMMED) if g.trims(&"scale") else _render_scale
-	var size := _view_size(scale)
+	_fit_view()
+
+
+## The 3D view's size for the window and the governor's tier.
+func _fit_view() -> void:
+	var trimmed := quality != null and quality.trims(&"scale")
+	var size := _view_size(minf(_render_scale, RENDER_SCALE_TRIMMED) if trimmed else _render_scale)
 	if _view.size != size:
 		_view.size = size
 
 
 func _view_size(scale: float) -> Vector2i:
-	return Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	return Stage.view_size(scale)
 
 
 ## One fixed step of the whole game.

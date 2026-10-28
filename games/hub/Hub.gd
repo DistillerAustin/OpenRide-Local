@@ -415,7 +415,7 @@ func _build_saved_layer() -> void:
 	add_child(_saved_layer)
 	var shade := Button.new()  # the whole screen is the tap target after the idle save
 	shade.focus_mode = Control.FOCUS_NONE
-	shade.size = Vector2(HubTheme.W, HubTheme.H)
+	Stage.bleed(shade)
 	var shade_style := StyleBoxFlat.new()
 	shade_style.bg_color = Color(HubTheme.look().ink.darkened(0.5), 0.9)
 	for st in ["normal", "hover", "pressed", "disabled", "focus"]:

@@ -46,6 +46,7 @@ var world: TugWorld
 var _view: SubViewport
 var _status: TugStatus
 var _shown: MeshInstance2D
+var _view_scale := RENDER_SCALE  ## the scale the 3D view renders at now
 var _flash := 0.0  ## 0-1: the lost-round flash
 var _creak_left := 0.0
 var _message_left := 0.0
@@ -147,11 +148,12 @@ func _ready() -> void:
 	# (TugMeshes.view_image), one draw like a TextureRect, and no vignette left per pixel.
 	var shown := MeshInstance2D.new()
 	shown.name = "View3DImage"
-	shown.mesh = TugMeshes.view_image(Vector2(HudTheme.W, HudTheme.H))
 	shown.texture = _view.get_texture()
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(shown)
 	_shown = shown
+	_fit_view()
+	Stage.changed.connect(_fit_view)
 
 
 func _on_prepare(seg: Dictionary) -> void:
@@ -328,9 +330,17 @@ func _set_bot(rung: int) -> void:
 
 ## The 3D view renders at `scale` of the screen's resolution (drawn scaled up under the HUD).
 func _set_render_scale(scale: float) -> void:
-	var size := Vector2i(roundi(HudTheme.W * scale), roundi(HudTheme.H * scale))
+	_view_scale = scale
+	var size := Stage.view_size(scale)
 	if _view.size != size:
 		_view.size = size
+
+
+## The view over the whole window, past the centred stage (#57), whenever the window changes.
+func _fit_view() -> void:
+	_shown.position = -Stage.pad
+	_shown.mesh = TugMeshes.view_image(Stage.visible_size)
+	_set_render_scale(_view_scale)
 
 
 func _show_message(text: String, seconds: float, color := GameTheme.INK) -> void:

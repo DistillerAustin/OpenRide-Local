@@ -109,7 +109,8 @@ func _ready() -> void:
 	world.name = "World"
 	_view = SubViewport.new()
 	_view.name = "View3D"
-	_view.size = Vector2i(roundi(HudTheme.W * RENDER_SCALE), roundi(HudTheme.H * RENDER_SCALE))
+	_fit_view()
+	Stage.changed.connect(_fit_view)
 	_view.msaa_3d = MSAA
 	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_view.audio_listener_enable_3d = false
@@ -118,12 +119,12 @@ func _ready() -> void:
 	var shown := TextureRect.new()
 	shown.name = "View3DImage"
 	shown.texture = _view.get_texture()
-	shown.size = Vector2(HudTheme.W, HudTheme.H)
 	shown.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shown.stretch_mode = TextureRect.STRETCH_SCALE
 	shown.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	shown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shown)
+	Stage.bleed(shown)  # the whole window, past the centred stage (#57)
 	# The target buttons (−5 and +5 rpm), bottom centre: far from End (top right). Built here in
 	# the free segment's look; `_on_prepare` restyles them in the segment's.
 	var layer := CanvasLayer.new()
@@ -187,6 +188,11 @@ func _restyle() -> void:
 	for b in [_minus, _plus]:
 		_style_pace_button(b)
 	ui_theme_changed.emit()  # the intro card, the pause screen and the summary follow
+
+
+## The 3D view's size for the window: it draws over the whole window (#57).
+func _fit_view() -> void:
+	_view.size = Stage.view_size(RENDER_SCALE)
 
 
 func _on_prepare(seg: Dictionary) -> void:

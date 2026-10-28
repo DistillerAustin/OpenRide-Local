@@ -27,6 +27,10 @@ var bake: SubViewport
 var room: Node2D
 var view: Sprite2D
 var bakes := 0  ## renders made, for tests
+## The room is painted for the 1920x1080 stage; on a wider window (#57) these strips fill the
+## canvas past its sides in the wall's shade (two strips, not a full-screen fill under the room:
+## the tablet's GPU pays for every pixel).
+var sides: Array[ColorRect] = []
 var rain: ColorRect
 var sea: ColorRect
 var lantern: Node2D
@@ -56,6 +60,15 @@ func _init() -> void:
 	view.texture = bake.get_texture()
 	view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(view)
+	for side in ["SideLeft", "SideRight"]:
+		var strip := ColorRect.new()
+		strip.name = side
+		strip.color = (SafePlaces.place(0).wall2 as Color).darkened(0.6)
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(strip)
+		sides.append(strip)
+	_fit_sides()
+	Stage.changed.connect(_fit_sides)
 	rain = _shader_rect("Rain", RAIN_RECT, preload("res://games/safe_cracker/safe_rain.gdshader"))
 	sea = _shader_rect("Sea", Rect2(PORTHOLE - Vector2.ONE * PORTHOLE_R, Vector2.ONE * PORTHOLE_R * 2.0),
 		preload("res://games/safe_cracker/safe_sea.gdshader"))
@@ -88,8 +101,21 @@ func _shader_rect(rect_name: String, r: Rect2, shader: Shader) -> ColorRect:
 	return c
 
 
+## The side strips: the visible canvas left and right of the stage.
+func _fit_sides() -> void:
+	var full := Stage.bleed_rect()
+	sides[0].position = full.position
+	sides[0].size = Vector2(-full.position.x, full.size.y)
+	sides[1].position = Vector2(SafePlaces.SIZE.x, full.position.y)
+	sides[1].size = Vector2(full.end.x - SafePlaces.SIZE.x, full.size.y)
+	for strip in sides:
+		strip.visible = strip.size.x > 0.0
+
+
 func set_place(index: int) -> void:
 	place_index = index
+	for strip in sides:
+		strip.color = (SafePlaces.place(index).wall2 as Color).darkened(0.6)
 	var id: String = SafePlaces.place(index).id
 	rain.visible = id == "office"
 	sea.visible = id == "cabin"
