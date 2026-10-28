@@ -111,6 +111,13 @@ val OrColorPairs: List<OrColorPair> = listOf(
         OrColors.DefaultAccent.copy(alpha = 0.3f).compositeOver(OrColors.SurfaceRaised),
         TEXT,
     ),
+    // The ride's output reading in its zone's colour: 72 sp and up, so large text.
+    *OrZoneColors.mapIndexed { i, zone ->
+        listOf(
+            OrColorPair("zone ${i + 1} numerals on background", zone, OrColors.Background, LARGE),
+            OrColorPair("zone ${i + 1} numerals on surface", zone, OrColors.Surface, LARGE),
+        )
+    }.flatten().toTypedArray(),
 )
 
 /** The accent in force: `OpenRideTheme` provides the active rider's ([riderAccent]). */

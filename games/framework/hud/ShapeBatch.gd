@@ -33,6 +33,13 @@ func circle(centre: Vector2, radius: float, color: Color, segments := 24) -> Sha
 
 
 ## A thick straight line with round ends.
+## A music note (the display faces have no ♪) centred on `c`; `scale` 1 suits a 120 px button.
+func note(c: Vector2, scale: float, color: Color) -> ShapeBatch:
+	circle(c + Vector2(-12, 20) * scale, 14.0 * scale, color)
+	line(c + Vector2(0, 20) * scale, c + Vector2(0, -28) * scale, 7.0 * scale, color)
+	return line(c + Vector2(0, -28) * scale, c + Vector2(22, -18) * scale, 7.0 * scale, color)
+
+
 func line(a: Vector2, b: Vector2, width: float, color: Color, round_ends := true) -> ShapeBatch:
 	var side := (b - a).normalized().orthogonal() * width * 0.5
 	quad(a + side, b + side, b - side, a - side, color)

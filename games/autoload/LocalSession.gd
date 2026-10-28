@@ -145,6 +145,15 @@ func update_setting(key: String, value: Variant) -> void:
 	hub.update_setting(key, value)
 
 
+## The desktop's stand-in player: play/pause flips `playing`, so the card can be tried.
+func music_control(action: String) -> void:
+	hub_calls.append(["music_control", action])
+	var track: Dictionary = _session.now_playing.duplicate()
+	if action == "play_pause" and not track.is_empty():
+		track.playing = not bool(track.get("playing", false))
+		_session._on_now_playing(track)
+
+
 func hub_calibrate(mode: String, full: bool) -> void:
 	hub_calls.append(["hub_calibrate", mode, full])
 	hub.hub_calibrate(mode, full)

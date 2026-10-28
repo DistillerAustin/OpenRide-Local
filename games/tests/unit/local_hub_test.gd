@@ -114,12 +114,13 @@ func test_rounds_and_presets_plan_as_kotlin_does() -> void:
 
 
 func test_settings_resend_the_state() -> void:
-	Session.update_setting("music", "off")
+	Session.update_setting("game_music", false)
 	Session.update_setting("music_volume", 1.5)
 	var s: Dictionary = states.back()
-	assert_str(s.settings.music).is_equal("off")
+	assert_bool(s.settings.game_music).is_false()
 	assert_bool(s.audio.music).is_false()
 	assert_float(s.settings.music_volume).is_equal(1.0)
+	assert_float(s.audio.music_volume).is_equal(1.0)
 
 
 func test_exit_ends_the_visit_then_a_new_one_starts() -> void:

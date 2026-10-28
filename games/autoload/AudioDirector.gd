@@ -12,9 +12,12 @@ extends Node
 ##   AudioDirector.set_intensity(power / target)   # stems fade in at their gate
 ##   AudioDirector.play_sfx("whoosh")
 ##
-## Session drives the rest: begin_segment honours `segment.audio` (music off when the rider
-## brings their own; the volumes), cues play for the countdown and the segment's end, and
-## pause pauses the music.
+## Session drives the rest: begin_segment applies `segment.audio` (the volumes), cues play for
+## the countdown and the segment's end, and pause pauses the music.
+##
+## The rider's own music wins: while their music app has a track (InputBus.rider_music, read
+## every frame), game music fades out and the game's request is kept; when it goes, the game's
+## music fades back in. Effects and cues always play. There is no switch (rider, 2026-10-27).
 ##
 ## A tempo change (the same style and seed at a new tempo, while that music plays) doesn't
 ## crossfade in when its render is ready. It waits, pending, for the playing loop's next
@@ -58,7 +61,8 @@ const CUE_PAUSE := "pause"
 const CUE_RESUME := "resume"
 const CUE_SUMMARY := "summary"  ## the session summary appears
 
-var music_enabled := true  ## `segment.audio.music`
+var music_enabled := true  ## `segment.audio.music` (false only from an older Kotlin, or a test)
+var rider_music := false  ## the rider's own music app has a track: game music stays off
 var music_volume := 0.8  ## `segment.audio.music_volume`, 0-1
 var sfx_volume := 1.0  ## `segment.audio.sfx_volume`, 0-1 (effects and cues)
 var intensity := 1.0  ## 0-1, set by the game; gates stems in
@@ -192,7 +196,7 @@ func duck_music(db: float, seconds: float) -> void:
 func play_music(style: Dictionary, tempo_bpm: float, music_seed := 0) -> void:
 	_requested = {"style": style, "tempo_bpm": tempo_bpm, "seed": music_seed}
 	_requested_key = music_key(_requested)
-	if music_enabled:
+	if _music_on():
 		_want(_requested_key)
 
 
@@ -301,6 +305,18 @@ func bus_effects(bus: String) -> Array[AudioEffect]:
 	return out
 
 
+## The rider's own music started (true) or went (false): game music fades out, or the kept
+## request fades back in. _process follows InputBus.rider_music with it.
+func set_rider_music(on: bool) -> void:
+	if on == rider_music:
+		return
+	rider_music = on
+	if on:
+		stop_music()
+	elif _music_on() and not _requested_key.is_empty():
+		_want(_requested_key)
+
+
 func set_paused(paused: bool) -> void:
 	_paused = paused
 	for player in _decks + _sfx_players:
@@ -321,6 +337,7 @@ func _render_key_tempo() -> String:
 
 
 func _process(delta: float) -> void:
+	set_rider_music(InputBus.rider_music)
 	_collect_render()
 	if not _pending_key.is_empty() and not _paused and _decks[_deck].playing:
 		_check_phrase_swap(_seconds_into_phrase())
@@ -339,6 +356,10 @@ func _process(delta: float) -> void:
 	var rate := absf(DUCK_DB) / (DUCK_ATTACK_SEC if target < duck_db else DUCK_RELEASE_SEC)
 	duck_db = move_toward(duck_db, target, rate * delta)
 	_apply_bus_volumes()
+
+
+func _music_on() -> bool:
+	return music_enabled and not rider_music
 
 
 func _want(key: String) -> void:
@@ -418,7 +439,7 @@ func _collect_render() -> void:
 		_cache_order.append(_render_key)
 		while _cache_order.size() > MUSIC_CACHE_SIZE or (_cache_order.size() > 1 and _cache_bytes() > MUSIC_CACHE_BYTES):
 			_music_cache.erase(_cache_order.pop_front())
-	if music_enabled and not _requested_key.is_empty():
+	if _music_on() and not _requested_key.is_empty():
 		_want(_requested_key)
 
 

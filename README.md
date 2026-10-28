@@ -135,7 +135,7 @@ Once it's installed, OpenRide checks this repo's [Releases](https://github.com/d
 
 The rest of this section is technical detail for anyone contributing to the code — feel free to skip it otherwise.
 
-- Kotlin + Jetpack Compose, single-activity, `minSdk 30` (the tablet's Android 11), package `dev.digitalducktape.openride`
+- Kotlin + Jetpack Compose, single-activity, `minSdk 29` (the Bike+'s Android 10), package `dev.digitalducktape.openride`
 - Sensor access sits behind a `BikeDataSource` abstraction with a `MockBikeDataSource` (simulated ride) so all UI/logic development runs in a standard emulator; only the real system-service binding needs the physical bike
 - Room database: `Profile` / `Ride` / `RideSample` (per-second samples — required for TCX export)
 - Content browser fetches per-channel YouTube RSS (`/feeds/videos.xml?channel_id=…`) on-device: no API key, no quota, no backend

@@ -402,15 +402,15 @@ class GameVisitManagerTest {
     fun `settings are stored and the hub state follows, coalesced`() {
         val v = visit().enter()
         val before = signals.names.count { it == "hub_state" }
-        v.call { onUpdateSetting("music", "\"off\"") }
+        v.call { onUpdateSetting("game_music", "false") }
         v.call { onUpdateSetting("music_volume", "0.4") }
         v.call { onUpdateSetting("brightness", "1") } // unknown: ignored
         seconds(1)
 
-        assertEquals(GameMusicMode.OFF, settings.settings.value.audio.music)
         assertEquals(0.4, settings.settings.value.audio.musicVolume, 0.0)
         assertEquals(before + 1, signals.names.count { it == "hub_state" })
-        assertEquals("off", hub()["settings"]!!.jsonObject.str("music"))
+        assertEquals(0.4, hub()["audio"]!!.jsonObject["music_volume"]!!.jsonPrimitive.double, 0.0)
+        assertFalse(settings.settings.value.audio.gameMusic)
         assertFalse(hub()["audio"]!!.jsonObject["music"]!!.jsonPrimitive.boolean)
     }
 

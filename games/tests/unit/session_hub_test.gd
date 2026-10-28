@@ -59,7 +59,7 @@ func test_plan_rejected_and_visit_ended_are_re_emitted() -> void:
 
 func test_hub_methods_reach_the_desktop_stand_in() -> void:
 	Session.start_plan({"kind": "circuit", "preset_id": "circuit-20", "difficulty": "standard"})
-	Session.update_setting("music", "off")
+	Session.update_setting("sfx_volume", 0.5)
 	Session.hub_calibrate("lean_x", true)
 	Session.cancel_calibration()
 	Session.request_camera_permission()
@@ -67,7 +67,7 @@ func test_hub_methods_reach_the_desktop_stand_in() -> void:
 	Session.exit_hub("edit_profile")
 	assert_array(local.hub_calls).is_equal([
 		["start_plan", {"kind": "circuit", "preset_id": "circuit-20", "difficulty": "standard"}],
-		["update_setting", "music", "off"],
+		["update_setting", "sfx_volume", 0.5],
 		["hub_calibrate", "lean_x", true],
 		["cancel_calibration"],
 		["request_camera_permission"],

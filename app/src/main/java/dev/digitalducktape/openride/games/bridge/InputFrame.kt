@@ -48,8 +48,10 @@ object InputFrame {
     const val TRACKER_STATE = 9
     const val SEGMENT_TIME_LEFT = 10
     const val SENSORS_OK = 11
+    /** Added after v1, at the end so the version stays 1: Godot reads it only when present. */
+    const val RIDER_MUSIC = 12
 
-    const val SIZE = 12
+    const val SIZE = 13
 
     /** [HEART_RATE] when no strap is connected. */
     const val NO_HEART_RATE = -1.0
@@ -60,6 +62,7 @@ object InputFrame {
         heartRateBpm: Int?,
         tracker: TrackerReading,
         segmentTimeLeftSec: Double,
+        riderMusic: Boolean = false,
     ): DoubleArray = DoubleArray(SIZE).apply {
         this[VERSION_INDEX] = VERSION.toDouble()
         this[CADENCE] = metrics.cadenceRpm.toDouble()
@@ -73,5 +76,6 @@ object InputFrame {
         this[TRACKER_STATE] = tracker.state.code.toDouble()
         this[SEGMENT_TIME_LEFT] = segmentTimeLeftSec
         this[SENSORS_OK] = if (sensorsOk) 1.0 else 0.0
+        this[RIDER_MUSIC] = if (riderMusic) 1.0 else 0.0
     }
 }

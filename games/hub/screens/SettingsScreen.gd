@@ -1,9 +1,11 @@
 class_name SettingsScreen
 extends HubScreen
 ## The app's game settings (spec §8.3), owned by Kotlin (GamesSettings) and changed through
-## `update_setting`: camera games On/Off, game music Auto/On/Off, and the music and effects
-## volumes as Steppers in 10% steps with a level bar (not sliders: a poor target while
+## `update_setting`: camera games On/Off, game music On/Off, and the music and effects volumes
+## as Steppers in 10% steps with a level bar (not sliders: a poor target while
 ## pedalling). A volume plays at once on its bus (`volume_preview`); hub_state confirms it.
+## Game music on still stays off by itself while the rider's own music app has a track
+## (AudioDirector); effects always play (rider, 2026-10-27).
 
 signal volume_preview(key: String, value: float)
 
@@ -13,7 +15,7 @@ const ROW_GAP := 36
 const VOLUMES := [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 var camera: Segmented
-var music: Segmented
+var game_music: Segmented
 var music_volume: Stepper
 var sfx_volume: Stepper
 var _bars := {}
@@ -33,10 +35,10 @@ func build() -> void:
 	camera.name = "CameraGames"
 	camera.changed.connect(func(v: String): setting.emit("camera_games", v == "on"))
 	col.add_child(_row("Camera games", "Lean to steer. The camera only runs in those games.", camera))
-	music = Segmented.new(["auto", "on", "off"], ["Auto", "On", "Off"], str(s.music))
-	music.name = "Music"
-	music.changed.connect(func(v: String): setting.emit("music", v))
-	col.add_child(_row("Game music", "Auto: off while your own music plays.", music))
+	game_music = Segmented.new(["on", "off"], ["On", "Off"], "on" if bool(s.get("game_music", true)) else "off")
+	game_music.name = "GameMusic"
+	game_music.changed.connect(func(v: String): setting.emit("game_music", v == "on"))
+	col.add_child(_row("Game music", "Your own music plays instead while it's on.", game_music))
 	music_volume = _volume("music_volume", float(s.music_volume))
 	col.add_child(_row("Music volume", "", _with_bar(music_volume, "music_volume")))
 	sfx_volume = _volume("sfx_volume", float(s.sfx_volume))
@@ -121,4 +123,4 @@ func refresh(hub_state: Dictionary) -> void:
 	state = hub_state
 	var s: Dictionary = state.settings
 	camera.show_value("on" if bool(s.camera_games) else "off")
-	music.show_value(str(s.music))
+	game_music.show_value("on" if bool(s.get("game_music", true)) else "off")

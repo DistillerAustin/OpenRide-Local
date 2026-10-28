@@ -34,6 +34,7 @@ func before_test() -> void:
 
 
 func after_test() -> void:
+	Session._on_now_playing({})
 	local.hub.rider.name = local.hub.RIDER_NAME
 	local.hub.phase = ""
 	Session.visit_id = ""
@@ -64,6 +65,29 @@ func test_home() -> void:
 	for card in home.game_cards.values() + home.circuit_cards.values():
 		var r: Rect2 = card.target_rect()
 		assert_float(minf(r.size.x, r.size.y)).override_failure_message("a card under 180 px").is_greater_equal(HubTheme.CARD_TARGET)
+
+
+func test_home_with_the_riders_music() -> void:
+	Session._on_now_playing({"title": "Nothin' on You (feat. Bruno Mars) - Extended Version", "artist": "B.o.B, Bruno Mars",
+		"art": "", "playing": true, "can_previous": true, "can_next": false})
+	await _settle()
+	var home: HomeScreen = hub.screen
+	assert_bool(home.header.music_button.visible).is_true()
+	_check_screen("home with the rider's music")
+	# The music panel over the hub: its targets keep the hub's sizes and gaps, and its text fits.
+	home.header.music_button.pressed.emit()
+	await _settle()
+	var panel: MusicPanel = Session.director.music_panel
+	assert_bool(panel.is_open()).is_true()
+	_check_targets("the music panel", panel.targets())
+	_check_text("the music panel", panel.card)
+	assert_float(panel.card.get_combined_minimum_size().y).override_failure_message("the panel's content outgrows its card") \
+		.is_less_equal(MusicPanel.CARD_SIZE.y + 0.5)
+	panel.close()
+	Session._on_now_playing({})
+	await _settle()
+	assert_bool(home.header.music_button.visible).is_false()
+	_check_screen("home after the music")
 
 
 func test_home_with_bests_and_without_the_camera() -> void:

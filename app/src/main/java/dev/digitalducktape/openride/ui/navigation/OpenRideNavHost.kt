@@ -131,6 +131,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                         appContainer.bleScanner,
                         appContainer.profileRepository,
                         appContainer.activeProfileHolder,
+                        appContainer.heartRateManager,
                     )
                 },
             )

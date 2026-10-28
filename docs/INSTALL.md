@@ -41,38 +41,56 @@ reinstall over the same package, only by `adb uninstall`).
 Launch it once manually to confirm it installed cleanly (app drawer icon, or):
 
 ```sh
-adb shell am start -n dev.digitalducktape.openride/.MainActivity
+adb shell am start -n dev.digitalducktape.openride.real/dev.digitalducktape.openride.MainActivity
 ```
+
+The released bike build's package is `dev.digitalducktape.openride.real`; a self-built
+mock-sensor debug APK is `dev.digitalducktape.openride` instead. The commands below use the
+released package, so swap it if yours is the other one.
 
 You should land on profile select. If it crashes or won't launch, check `adb logcat` before
 going further — no point enabling the launcher alias (next section) against a broken build.
 
-## 2. Enable the HOME launcher (opt-in, off by default)
+## 2. Make OpenRide the home screen (opt-in, off by default)
 
 The app ships with an **opt-in** launcher alias (`.HomeLauncherAlias`, an
 `<activity-alias>` targeting `MainActivity` with `HOME`/`DEFAULT` intent-filter categories)
 that is **disabled by default** — installing the app never hijacks the tablet's home screen
-on its own. You enable it explicitly:
+on its own. You turn it on from inside the app:
 
-```sh
-adb shell pm enable dev.digitalducktape.openride/.HomeLauncherAlias
-```
-
-Then either reboot the tablet or press the physical/software Home button — Android will
-either switch straight to OpenRide (if it's now the only enabled HOME app) or prompt you to
-choose a default launcher (if the stock Peloton launcher is still enabled alongside it; see
-OpenPelo's own notes on disabling/uninstalling the stock launcher and "Device Management"
-app if you want OpenRide to take over without that prompt each time).
+1. Open **Profile → Device → Home screen** and tap **Turn on**.
+2. Android asks *"Set OpenRide as your default home app?"* — pick **OpenRide** and tap
+   **Set as default**. If you cancel, the row stays **Off**. Where the prompt isn't
+   available, Android's own Home settings page opens instead.
 
 Once enabled, OpenRide is what boots after the tablet powers on, landing on profile select —
 there's no separate "boot receiver" needed for this, since being launched as HOME already
 starts `MainActivity`, whose nav graph always starts at profile select (PRD P0-8).
 
-**To revert** (stop OpenRide from being offered as a home screen, without uninstalling it):
+**To revert**, tap **Turn off** on the same row. The next time you press Home, Android asks
+which home app to use. OpenRide won't turn itself off if no other home app is installed,
+since the tablet would then have nothing to start into.
+
+**Why not `adb shell pm enable`?** Earlier versions of this guide used
+`adb shell pm enable …/.HomeLauncherAlias`. Since Android 10 that fails on every bike with
+`SecurityException: Shell cannot change component state` (#47): the shell may not switch
+components of an app that isn't `testOnly`, but an app may always switch its own. If you are
+on a build older than this setting, run it as the app instead (this works only while the
+release APK is debuggable, as v1.0.0 is):
 
 ```sh
-adb shell pm disable dev.digitalducktape.openride/.HomeLauncherAlias
+adb shell run-as dev.digitalducktape.openride.real cmd package enable --user 0 \
+  dev.digitalducktape.openride.real/dev.digitalducktape.openride.HomeLauncherAlias
+adb shell cmd package set-home-activity \
+  dev.digitalducktape.openride.real/dev.digitalducktape.openride.HomeLauncherAlias
 ```
+
+**Newer Peloton software draws over OpenRide.** On some bikes (seen on a `g700` /
+`PLTN-RTR01` tablet, Android 13, #63) the stock Peloton app puts a full-screen overlay on top
+of whatever is home a few minutes after boot — for example a "subscription cancelled" banner.
+It isn't a launcher, so the setting above can't stop it. Disabling the Peloton app does:
+`adb shell pm disable-user --user 0 com.peloton.activity` (undo with
+`adb shell pm enable com.peloton.activity`).
 
 ## 3. Block OTA updates
 
@@ -101,6 +119,7 @@ The Profile tab has two buttons for this (T12, PRD P1-5):
 
 - **Wi-Fi Settings** — opens Android's Wi-Fi settings screen directly.
 - **Device Settings** — opens Android's top-level Settings screen.
+- **Home screen** — makes OpenRide the tablet's home screen, or stops it (see section 2).
 
 Both just fire a standard `Settings.ACTION_*` intent at whatever Settings app is installed —
 no special permission or Peloton-specific hook involved.
@@ -109,9 +128,9 @@ no special permission or Peloton-specific hook involved.
 
 To fully back out of everything above, roughly in reverse order:
 
-1. Disable the launcher alias: `adb shell pm disable dev.digitalducktape.openride/.HomeLauncherAlias`
-   (or skip straight to step 2, which removes it entirely anyway).
-2. Uninstall OpenRide: `adb uninstall dev.digitalducktape.openride` — this also removes its
+1. Turn off **Profile → Device → Home screen** (or skip straight to step 2, which removes it
+   entirely anyway).
+2. Uninstall OpenRide: `adb uninstall dev.digitalducktape.openride.real` — this also removes its
    local database (profiles/ride history), so back up first if you want to keep that (see
    the PRD's P1-8 local backup/restore, once that Phase 2 item exists — until then, the Room
    database itself lives under the app's data directory and could be pulled via `adb backup`/

@@ -10,7 +10,11 @@ import dev.digitalducktape.openride.core.data.Profile
 import dev.digitalducktape.openride.core.data.ProfileRepository
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
 import dev.digitalducktape.openride.core.sensor.ConnectionState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -200,5 +204,66 @@ class HeartRateManagerTest {
 
         assertEquals(1, fake.stopCallCount)
         assertNull(manager.connectedAddress.value)
+    }
+
+    @Test
+    fun `lets go of the strap while OpenRide doesn't need it, and takes it back after`() = runTest {
+        val profileId = profileRepository.createProfile(
+            Profile(
+                name = "Ed", avatarEmoji = "🚴", avatarColor = 0xFF00AAFF.toInt(), weightKg = null, ftp = null,
+                pairedHrDeviceAddress = "AA:BB:CC:DD:EE:FF",
+            ),
+        )
+        activeProfileHolder.setActiveProfile(profileId)
+        val wanted = MutableStateFlow(true)
+        val manager = HeartRateManager(
+            activeProfileHolder,
+            profileRepository,
+            FakeManagedHeartRateDataSource.factory(),
+            backgroundScope,
+            wanted = wanted,
+        )
+        manager.connectedAddress.first { it == "AA:BB:CC:DD:EE:FF" }
+        val first = FakeManagedHeartRateDataSource.created.getValue("AA:BB:CC:DD:EE:FF")
+
+        wanted.value = false
+        manager.connectedAddress.first { it == null }
+        assertEquals(1, first.stopCallCount)
+
+        wanted.value = true
+        manager.connectedAddress.first { it == "AA:BB:CC:DD:EE:FF" }
+        assertEquals(1, FakeManagedHeartRateDataSource.created.getValue("AA:BB:CC:DD:EE:FF").startCallCount)
+    }
+
+    @Test
+    fun `the strap is wanted in front or mid-ride, and let go only after the grace period`() = runTest {
+        val foreground = MutableStateFlow(true)
+        val riding = MutableStateFlow(false)
+        val seen = mutableListOf<Boolean>()
+        backgroundScope.launch { strapWanted(foreground, riding, grace = 30.seconds).collect { seen += it } }
+        runCurrent()
+        assertEquals(listOf(true), seen)
+
+        // Riding with the music app in front: still wanted.
+        riding.value = true
+        foreground.value = false
+        advanceTimeBy(60.seconds)
+        assertEquals(listOf(true), seen)
+
+        // Ride over, still in the background: let go, but only after the grace.
+        riding.value = false
+        advanceTimeBy(29.seconds)
+        assertEquals(listOf(true), seen)
+        advanceTimeBy(2.seconds)
+        assertEquals(listOf(true, false), seen)
+
+        // Back in front within a grace period: never let go.
+        foreground.value = true
+        runCurrent()
+        foreground.value = false
+        advanceTimeBy(10.seconds)
+        foreground.value = true
+        advanceTimeBy(60.seconds)
+        assertEquals(listOf(true, false, true), seen)
     }
 }

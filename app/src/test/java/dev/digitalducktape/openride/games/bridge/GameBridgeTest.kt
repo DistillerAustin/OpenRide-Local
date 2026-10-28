@@ -44,6 +44,7 @@ private class RecordingEmitter : GameSignals {
     override fun hubState(stateJson: String) { events += "hub_state:$stateJson" }
     override fun planRejected(reasonJson: String) { events += "plan_rejected:$reasonJson" }
     override fun visitEnded(resultJson: String) { events += "visit_ended:$resultJson" }
+    override fun nowPlaying(nowPlayingJson: String) { events += "now_playing:$nowPlayingJson" }
 }
 
 class GameBridgeTest {
@@ -61,10 +62,19 @@ class GameBridgeTest {
         val frame = bridge.inputFrame()
 
         assertArrayEquals(
-            doubleArrayOf(1.0, 85.0, 160.0, 35.0, 16.0, 128.0, 0.0, 0.0, 0.0, 0.0, 33.0, 1.0),
+            doubleArrayOf(1.0, 85.0, 160.0, 35.0, 16.0, 128.0, 0.0, 0.0, 0.0, 0.0, 33.0, 1.0, 0.0),
             frame,
             0.0,
         )
+    }
+
+    @Test
+    fun `the rider's music reaches the frame as it changes`() {
+        var riderMusic = false
+        val withMusic = GameBridge(bike, sensorsOffline, heartRate, riderMusic = { riderMusic })
+        assertEquals(0.0, withMusic.inputFrame()[InputFrame.RIDER_MUSIC], 0.0)
+        riderMusic = true
+        assertEquals(1.0, withMusic.inputFrame()[InputFrame.RIDER_MUSIC], 0.0)
     }
 
     @Test
@@ -100,6 +110,26 @@ class GameBridgeTest {
         bridge.inputFrame()
 
         assertEquals(listOf("ready"), session.calls)
+    }
+
+    @Test
+    fun `now playing reaches Godot, and is sent again when it's next ready`() {
+        val emitter = RecordingEmitter()
+        bridge.publishNowPlaying("{\"title\":\"Before\"}")  // the engine isn't running yet: dropped, but kept
+        bridge.emitter = emitter
+        bridge.attach(RecordingSession())
+
+        bridge.inputFrame()
+        bridge.publishNowPlaying("{}")
+
+        assertEquals(listOf("now_playing:{\"title\":\"Before\"}", "now_playing:{}"), emitter.events)
+    }
+
+    @Test
+    fun `the music card's buttons reach the app`() {
+        val actions = mutableListOf<String>()
+        GameBridge(bike, sensorsOffline, heartRate, musicControl = { actions += it }).musicControl("next")
+        assertEquals(listOf("next"), actions)
     }
 
     @Test
@@ -213,9 +243,9 @@ class GameBridgeTest {
 
     @Test
     fun `tracker readings feed the head-tracker fields`() {
-        val tracked = GameBridge(bike, sensorsOffline, heartRate) {
+        val tracked = GameBridge(bike, sensorsOffline, heartRate, trackerReading = {
             TrackerReading(leanX = 0.3, leanDepth = -0.2, standing = true, state = TrackerState.TRACKING)
-        }
+        })
 
         val frame = tracked.inputFrame()
 

@@ -22,7 +22,7 @@ func test_a_partial_payload_keeps_its_values_and_fills_the_rest() -> void:
 	assert_str(s.rider.avatar_color).is_equal("#7A7CFF")
 	assert_bool(s.camera.available).is_false()
 	assert_str(s.camera.permission).is_equal("granted")
-	assert_str(s.settings.music).is_equal("auto")
+	assert_bool(s.settings.game_music).is_true()  # the Game music switch, on by default
 	assert_int(s.extra).is_equal(7)  # unknown keys pass through
 
 

@@ -141,15 +141,17 @@ func _run() -> void:
 	prefs.path = "user://hub_prefs.cfg"
 	prefs.reload()
 
-	# Settings: music off, through update_setting.
+	# Settings: game music off, through update_setting.
 	hub.screen.header.settings_button.pressed.emit()
 	await _frames(3)
 	_expect(hub.nav.top_id() == "settings", "the gear opens Settings")
-	hub.screen.music.pick("off")
+	hub.screen.game_music.pick("off")
 	await _frames(2)
-	_expect(_local.hub_calls.back() == ["update_setting", "music", "off"], "music off goes to Kotlin")
-	_expect(not bool(hub.state.audio.music), "hub_state confirms music off")
+	_expect(_local.hub_calls.back() == ["update_setting", "game_music", false], "game music off goes to Kotlin")
+	_expect(not bool(hub.state.audio.music), "hub_state confirms game music off")
 	_expect(not root.get_node("AudioDirector").music_enabled, "the hub's music stops")
+	hub.screen.game_music.pick("on")
+	await _frames(2)
 	_session.back()
 	await _frames(3)
 
