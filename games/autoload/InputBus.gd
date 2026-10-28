@@ -67,6 +67,7 @@ var _sim_lean_x := 0.0
 var _sim_lean_depth := 0.0
 var _sim_standing := false
 var _sim_rider_music := false
+var _sim_heart_rate := -1.0  ## H toggles a strap at 132 bpm; tests set it directly
 
 
 func _ready() -> void:
@@ -115,6 +116,9 @@ func _input(event: InputEvent) -> void:
 	elif event.keycode == KEY_M:
 		_sim_rider_music = not _sim_rider_music
 		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_H:
+		_sim_heart_rate = -1.0 if _sim_heart_rate >= 0.0 else 132.0
+		get_viewport().set_input_as_handled()
 
 
 func _simulate(delta: float) -> PackedFloat64Array:
@@ -134,7 +138,7 @@ func _simulate(delta: float) -> PackedFloat64Array:
 	f[I_POWER] = roundf(watts)
 	f[I_RESISTANCE] = roundf(_sim_resistance)
 	f[I_SPEED] = sim_speed(watts)
-	f[I_HEART_RATE] = -1.0
+	f[I_HEART_RATE] = _sim_heart_rate
 	f[I_LEAN_X] = _sim_lean_x
 	f[I_LEAN_DEPTH] = _sim_lean_depth
 	f[I_STANDING] = 1.0 if _sim_standing else 0.0

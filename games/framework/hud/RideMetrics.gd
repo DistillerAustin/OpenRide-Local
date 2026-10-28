@@ -2,7 +2,8 @@ class_name RideMetrics
 extends PanelContainer
 ## The shared ride readout in the HUD's ride panel (top left, under the effort badge): cadence,
 ## power and resistance in three equal columns, each a number at the same size with the same
-## small unit underneath (rpm · W · %).
+## small unit underneath (rpm · W · %), and heart rate (bpm) in a fourth while a strap is
+## sending (InputBus.heart_rate; rider's ask, 2026-10-27).
 ##
 ## A game sets its cadence floor or band with `set_cadence_band(low, high)` and its power target
 ## with `set_power_band(low, high)`. The rpm turns green in the band, amber just under it and red
@@ -15,6 +16,12 @@ extends PanelContainer
 const UNDER_WARN := 5.0  ## rpm under the floor that still reads amber; below that, red
 const VALUE_SIZE := 72
 const COLUMN_WIDTH := 170.0
+## With the bpm column, every column narrows and its number shrinks, so the top bar still fits
+## 1920 px beside the clock ("1888" W still fits).
+const VALUE_SIZE_FOUR := 60
+const COLUMN_WIDTH_FOUR := 140.0
+const COLUMN_GAP := 12
+const COLUMN_GAP_FOUR := 6
 const GAUGE_SIZE := Vector2(120, 8)
 const RPM_SCALE := 130.0  ## the rpm gauge's full scale
 const POWER_SCALE := 2.0  ## the watts gauge's full scale, × the target
@@ -31,6 +38,9 @@ var units: Array[Label] = []
 var _rpm: Label
 var _watts: Label
 var _resistance: Label
+var _bpm: Label
+var _bpm_column: Control
+var _row: HBoxContainer
 var _rpm_gauge: Control
 var _watts_gauge: Control
 var _cadence := 0.0
@@ -44,13 +54,17 @@ func _init(framed := true) -> void:
 	add_theme_stylebox_override("panel", HudTheme.panel_style() if framed else StyleBoxEmpty.new())
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 12)
+	row.add_theme_constant_override("separation", COLUMN_GAP)
 	add_child(row)
+	_row = row
 	_rpm_gauge = _gauge(_draw_rpm_gauge)
 	_rpm = _column(row, "rpm", _rpm_gauge)
 	_watts_gauge = _gauge(_draw_watts_gauge)
 	_watts = _column(row, "W", _watts_gauge)
 	_resistance = _column(row, "%", _gauge(Callable()))
+	_bpm = _column(row, "bpm", _gauge(Callable()))
+	_bpm_column = _bpm.get_parent()
+	_bpm_column.visible = false
 
 
 ## The cadence band the game asks for: `low` is a floor, `high` a ceiling (INF for none).
@@ -84,10 +98,11 @@ func cadence_color(cadence: float) -> Color:
 
 
 func _process(_delta: float) -> void:
-	refresh(InputBus.cadence, InputBus.power, InputBus.resistance)
+	refresh(InputBus.cadence, InputBus.power, InputBus.resistance, InputBus.heart_rate)
 
 
-func refresh(cadence: float, power: float, resistance: float) -> void:
+## `heart_rate` < 0: no strap sending, and the bpm column hides.
+func refresh(cadence: float, power: float, resistance: float, heart_rate := -1.0) -> void:
 	_show(_rpm, "rpm", str(roundi(cadence)), cadence_color(cadence))
 	var watts_color := HudTheme.INK
 	if power_low > -INF and power >= power_low:
@@ -96,6 +111,11 @@ func refresh(cadence: float, power: float, resistance: float) -> void:
 		watts_color = HudTheme.WARN
 	_show(_watts, "watts", str(roundi(power)), watts_color)
 	_show(_resistance, "resistance", str(roundi(resistance)), HudTheme.INK)
+	var has_heart := heart_rate >= 0.0
+	if _bpm_column.visible != has_heart:
+		_set_four_columns(has_heart)  # a layout change only when the strap comes or goes
+	if has_heart:
+		_show(_bpm, "heart_rate", str(roundi(heart_rate)), HudTheme.INK)
 	_rpm_gauge.visible = cadence_low > -INF or cadence_high < INF
 	_watts_gauge.visible = power_low > -INF or power_high < INF
 	if roundi(cadence) != roundi(_cadence):
@@ -104,6 +124,14 @@ func refresh(cadence: float, power: float, resistance: float) -> void:
 	if roundi(power) != roundi(_power):
 		_power = power
 		_watts_gauge.queue_redraw()
+
+
+func _set_four_columns(on: bool) -> void:
+	_bpm_column.visible = on
+	_row.add_theme_constant_override("separation", COLUMN_GAP_FOUR if on else COLUMN_GAP)
+	for value in values:
+		value.add_theme_font_size_override("font_size", VALUE_SIZE_FOUR if on else VALUE_SIZE)
+		(value.get_parent() as Control).custom_minimum_size.x = COLUMN_WIDTH_FOUR if on else COLUMN_WIDTH
 
 
 func _show(label: Label, key: String, text: String, color: Color) -> void:

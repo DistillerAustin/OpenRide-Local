@@ -159,6 +159,26 @@ func test_playing_with_the_riders_music() -> void:
 	Session._on_now_playing({})
 
 
+func test_playing_with_a_heart_rate_strap() -> void:
+	# A strap sending adds the bpm column to the ride panel: still no overlaps, road still clear.
+	InputBus._sim_heart_rate = 199.0
+	Session._on_now_playing({"title": "Die With A Smile", "artist": "Lady Gaga", "art": "", "playing": true})
+	await _settle()
+	assert_bool(hud.metrics.values[3].is_visible_in_tree()).is_true()
+	assert_str(hud.metrics.values[3].text).is_equal("199")
+	_assert_no_overlaps("playing with heart rate", [hud])
+	_assert_road_clear("playing with heart rate", [hud])
+	hud.set_skin(GameTheme.new(Color(0.22, 0.71, 1.0), Color(0.05, 0.1, 0.24)).hud_skin())
+	await _settle()
+	_assert_no_overlaps("game theme with heart rate", [hud])
+	_assert_road_clear("game theme with heart rate", [hud])
+	hud.clear_skin()
+	InputBus._sim_heart_rate = -1.0
+	Session._on_now_playing({})
+	await _settle()
+	assert_bool(hud.metrics.values[3].is_visible_in_tree()).is_false()
+
+
 func test_power_bonus() -> void:
 	status.set_state(1.0, false, true, 5, 2, 1)
 	hud.metrics.refresh(102, 260, 64)
@@ -199,14 +219,21 @@ func test_calibrating_is_a_full_screen_card() -> void:
 func test_ride_metrics_are_uniform_columns() -> void:
 	await _settle()
 	var m := hud.metrics
-	assert_int(m.values.size()).is_equal(3)
-	var size: int = m.values[0].get_theme_font_size("font_size")
-	var width: float = m.values[0].get_parent().size.x
-	for i in 3:
-		assert_int(m.values[i].get_theme_font_size("font_size")).is_equal(size)
-		assert_int(m.units[i].get_theme_font_size("font_size")).is_equal(m.units[0].get_theme_font_size("font_size"))
-		assert_float(m.values[i].get_parent().size.x).is_equal_approx(width, 0.5)
-	assert_array(m.units.map(func(u): return u.text)).is_equal(["rpm", "W", "%"])
+	assert_int(m.values.size()).is_equal(4)
+	assert_array(m.units.map(func(u): return u.text)).is_equal(["rpm", "W", "%", "bpm"])
+	# Three columns without a strap, four with one: every shown column alike.
+	for heart in [-1.0, 142.0]:
+		InputBus._sim_heart_rate = heart
+		await _settle()
+		var shown := m.values.filter(func(v): return v.is_visible_in_tree())
+		assert_int(shown.size()).is_equal(4 if heart >= 0.0 else 3)
+		var size: int = shown[0].get_theme_font_size("font_size")
+		var width: float = shown[0].get_parent().size.x
+		for i in shown.size():
+			assert_int(shown[i].get_theme_font_size("font_size")).is_equal(size)
+			assert_int(m.units[i].get_theme_font_size("font_size")).is_equal(m.units[0].get_theme_font_size("font_size"))
+			assert_float(shown[i].get_parent().size.x).is_equal_approx(width, 0.5)
+	InputBus._sim_heart_rate = -1.0
 
 
 

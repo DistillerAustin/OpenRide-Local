@@ -415,7 +415,8 @@ back in when it goes.
   belongs to (`getClientUid()` is a hidden system API). So it tells players apart by identity:
   the players that exist before the engine starts are other apps', and those that appear in the
   next 10 s are the engine's. Another app's paused player counts as its music while it exists.
-- The desktop keyboard simulator toggles `rider_music` with M.
+- The desktop keyboard simulator toggles `rider_music` with M, and a 132 bpm strap with H
+  (`capture_dodge.gd --heart=BPM` sets one for screenshots).
 
 **Recording.** The ride goes through the app's own `RideSessionManager`, so it is an ordinary
 ride in History, exports and backups:
@@ -771,7 +772,7 @@ horizon down to the bike:
 | Row | Left (expands) | Centre | Right (expands) |
 | --- | --- | --- | --- |
 | sensor banner | (full width, only on sensor loss) | | |
-| top bar | ride panel: effort ×, gauge, then rpm · W · % | the game's own status widgets (`add_widget`), slim | time left over the score, Pause and End under it |
+| top bar | ride panel: effort ×, gauge, then rpm · W · % (· bpm with a strap) | the game's own status widgets (`add_widget`), slim | time left over the score, Pause and End under it |
 | middle | | a brief, translucent message (`show_message`) | |
 | status slot | | the camera strip ("Camera steering is off", …) | |
 | bottom bar | | | Recalibrate (camera games) |
@@ -781,6 +782,9 @@ Dodge Ball, the mode).
 
 - **Ride metrics** (`RideMetrics`) are shared by every game: rpm, watts and resistance in three
   equal columns, each value at the same size with the same small unit underneath (rpm · W · %).
+  While a heart-rate strap is sending (`InputBus.heart_rate` ≥ 0), a fourth column shows bpm,
+  and all four narrow (140 px) with a 60 px value so the top bar still fits beside the clock
+  (rider's ask, 2026-10-27). Kart Race's own ride strip adds a BPM tile the same way.
   A game sets its bands with `hud.metrics.set_cadence_band(low, high)` and
   `set_power_band(low, high)`. The rpm turns green in the band, amber just under it and red well
   under; the watts turn gold at the target. A slim gauge under a banded value fills to the current
