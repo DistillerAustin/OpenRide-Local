@@ -85,6 +85,10 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
     @UsedByGodot
     fun hub_activity() = bridge.hubActivity()
 
+    /** v1.3: the hub's music card: `play_pause`, `next` or `previous` for the rider's music app. */
+    @UsedByGodot
+    fun music_control(action: String) = bridge.musicControl(action)
+
     // --- Kotlin → Godot signals (GodotPlugin queues them onto Godot's thread) ---
 
     override fun sessionStarted(planJson: String) = emitSignal(SESSION_STARTED.name, planJson)
@@ -105,6 +109,7 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
     override fun hubState(stateJson: String) = emitSignal(HUB_STATE.name, stateJson)
     override fun planRejected(reasonJson: String) = emitSignal(PLAN_REJECTED.name, reasonJson)
     override fun visitEnded(resultJson: String) = emitSignal(VISIT_ENDED.name, resultJson)
+    override fun nowPlaying(nowPlayingJson: String) = emitSignal(NOW_PLAYING.name, nowPlayingJson)
 
     companion object {
         const val NAME = "OpenRideBridge"
@@ -127,10 +132,11 @@ class OpenRideBridgePlugin(godot: Godot, private val bridge: GameBridge) : Godot
         private val HUB_STATE = SignalInfo("hub_state", String::class.java)
         private val PLAN_REJECTED = SignalInfo("plan_rejected", String::class.java)
         private val VISIT_ENDED = SignalInfo("visit_ended", String::class.java)
+        private val NOW_PLAYING = SignalInfo("now_playing", String::class.java)
 
         private val SIGNALS = setOf(
             SESSION_STARTED, SEGMENT_STARTED, SEGMENT_ENDING, SESSION_PAUSED, SESSION_RESUMED,
-            CALIBRATION_PROGRESS, SESSION_FINISHED, HUB_STATE, PLAN_REJECTED, VISIT_ENDED,
+            CALIBRATION_PROGRESS, SESSION_FINISHED, HUB_STATE, PLAN_REJECTED, VISIT_ENDED, NOW_PLAYING,
         )
     }
 }

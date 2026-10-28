@@ -9,9 +9,8 @@ import androidx.compose.ui.unit.sp
  * read from about a metre away. Anything read while riding is at least 18 sp; tracked-caps labels
  * are at least 14 sp; nothing is under 16 sp otherwise.
  *
- * Migrated screens and the design-system components use these styles. `MaterialTheme.typography`
- * stays at Material's defaults until every screen has moved (phase 7), so screens that have not
- * yet been rebuilt keep the layout they were tuned for.
+ * Every screen and design-system component uses these styles. `MaterialTheme.typography` is
+ * built from them too (`OpenRideTypography`), so Material's own text has the same floors.
  */
 object OrType {
     /** A screen's title, in the shared top bar ("Home", "History"). */
@@ -47,6 +46,27 @@ object OrType {
     /** A big number in a stat block (history totals, summary). */
     val StatValue = TextStyle(fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold)
 
+    // The ride screens' numbers (issue #60): read mid-ride from about a metre, so the live
+    // readings are 48 sp and up, and the supporting ones (AVG / BEST, the second strip) 28 sp.
+
+    /** Just Ride's current output, centre screen. */
+    val MetricHero = TextStyle(fontSize = 112.sp, lineHeight = 116.sp, fontWeight = FontWeight.Bold)
+
+    /** The three big current readings in the metrics bar (cadence, output, resistance). */
+    val MetricPrimary = TextStyle(fontSize = 72.sp, lineHeight = 76.sp, fontWeight = FontWeight.Bold)
+
+    /** Just Ride's elapsed timer. */
+    val MetricTimer = TextStyle(fontSize = 56.sp, lineHeight = 60.sp, fontWeight = FontWeight.Bold)
+
+    /** The video ride's elapsed timer, in the strip over the video. */
+    val MetricTimerCompact = TextStyle(fontSize = 48.sp, lineHeight = 52.sp, fontWeight = FontWeight.Bold)
+
+    /** The metrics bar's second strip: speed, distance, total output, heart rate. */
+    val MetricSecondary = TextStyle(fontSize = 32.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+
+    /** AVG and BEST beside each primary reading. */
+    val MetricFlank = TextStyle(fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)
+
     /** Every style, for the size-floor tests. */
     val all: Map<String, TextStyle> = mapOf(
         "ScreenTitle" to ScreenTitle,
@@ -60,5 +80,11 @@ object OrType {
         "Eyebrow" to Eyebrow,
         "Badge" to Badge,
         "StatValue" to StatValue,
+        "MetricHero" to MetricHero,
+        "MetricPrimary" to MetricPrimary,
+        "MetricTimer" to MetricTimer,
+        "MetricTimerCompact" to MetricTimerCompact,
+        "MetricSecondary" to MetricSecondary,
+        "MetricFlank" to MetricFlank,
     )
 }

@@ -11,7 +11,9 @@ import dev.digitalducktape.openride.core.data.ProfileRepository
 import dev.digitalducktape.openride.core.heartrate.BleDevice
 import dev.digitalducktape.openride.core.heartrate.BlePermissionState
 import dev.digitalducktape.openride.core.heartrate.BleScanner
+import dev.digitalducktape.openride.core.heartrate.FakeManagedHeartRateDataSource
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
+import dev.digitalducktape.openride.core.sensor.ConnectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -128,6 +130,29 @@ class HrPairingViewModelTest {
         val paired = viewModel.uiState.first { it.pairedAddress == "AA:BB:CC:DD:EE:FF" }
         assertEquals("AA:BB:CC:DD:EE:FF", paired.pairedAddress)
         assertEquals("AA:BB:CC:DD:EE:FF", profileRepository.getProfile(id)?.pairedHrDeviceAddress)
+    }
+
+    @Test
+    fun `the paired strap leaves the nearby list, named, and reads as connected once sending`() = runTest {
+        val strap = FakeManagedHeartRateDataSource("AA:BB:CC:DD:EE:FF")
+        val live = HrPairingViewModel(scanner, profileRepository, activeProfileHolder, liveHeartRate = strap)
+        val id = profileRepository.createProfile(
+            Profile(name = "Ed", avatarEmoji = "🚴", avatarColor = 0xFF00AAFF.toInt(), weightKg = null, ftp = null),
+        )
+        activeProfileHolder.setActiveProfile(id)
+        live.onPermissionState(BlePermissionState.Granted)
+        live.startScan()
+        scanner.emitDevice(BleDevice(address = "AA:BB:CC:DD:EE:FF", name = "TICKR 1A2B"))
+        scanner.emitDevice(BleDevice(address = "11:22:33:44:55:66", name = null))
+
+        live.selectDevice(BleDevice(address = "AA:BB:CC:DD:EE:FF", name = "TICKR 1A2B"))
+        val paired = live.uiState.first { it.pairedAddress == "AA:BB:CC:DD:EE:FF" }
+        assertEquals(listOf("11:22:33:44:55:66"), paired.nearbyDevices.map { it.address })
+        assertEquals("TICKR 1A2B", paired.pairedName)
+
+        strap.emitBpm(72)
+        assertEquals(ConnectionState.Connected, live.uiState.value.strapConnection)
+        assertEquals(72, live.uiState.value.strapBpm)
     }
 
     @Test

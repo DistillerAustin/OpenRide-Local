@@ -72,8 +72,6 @@ class GameSessionManager(
     /** The camera head tracker's plan side; null runs plans without a camera. */
     private val tracker: TrackerLink? = null,
     private val audioPrefs: () -> GameAudioPrefs = { GameAudioPrefs() },
-    /** The rider's own music (another app's) is playing: [OtherMusicDetector] in the app. */
-    private val otherMusicActive: () -> Boolean = { false },
     private val random: Random = Random.Default,
     private val log: (String) -> Unit = {},
 ) {
@@ -216,8 +214,7 @@ class GameSessionManager(
             difficulty = current.difficulty,
             effort = planned.effort,
             seed = random.nextLong(0, Int.MAX_VALUE.toLong()),
-            // Re-checked every segment, so the rider's music starting or stopping mid-plan counts.
-            audio = audioPrefs().resolve(otherMusicActive()),
+            audio = audioPrefs().resolve(),
             params = planned.params,
         )
         segment = message

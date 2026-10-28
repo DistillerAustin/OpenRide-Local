@@ -13,7 +13,8 @@ extends CanvasLayer
 ##     │  ├ Left (expand):   the ride panel: effort multiplier and gauge, then rpm (with the
 ##     │  │                  game's floor or band), watts and resistance
 ##     │  ├ Centre:          the game's own status widgets (`add_widget`), compact
-##     │  └ Right (expand):  time left over the score in one panel, Pause | End under it
+##     │  └ Right (expand):  time left over the score in one panel, [Music |] Pause | End under it
+##     │                     (Music while the rider's own music app has a track: opens the panel)
 ##     ├ Middle (expand):    a brief centred message (`show_message`), translucent
 ##     ├ status slot:        the camera strip ("Camera steering is off", …), when showing
 ##     └ BottomBar (HBox):   Recalibrate on the right (camera games)
@@ -26,10 +27,13 @@ extends CanvasLayer
 signal pause_pressed
 signal end_pressed
 signal recalibrate_pressed
+## The Music button: SessionDirector opens the music panel (it doesn't pause).
+signal music_pressed
 
 const LAYER := 10
 const GAP := 16
 const SIDE_BUTTON_WIDTH := 160.0
+const MUSIC_BUTTON_WIDTH := 110.0
 const MESSAGE_ALPHA := 0.85
 
 var timer: SegmentTimer
@@ -37,6 +41,7 @@ var score: BigNumber
 var effort: EffortBadge
 var metrics: RideMetrics
 var sensor_banner: SensorBanner
+var music_button: Button  ## only while the rider's music app has a track (Session.now_playing)
 var pause_button: Button
 var end_button: Button
 var recalibrate_button: Button
@@ -107,6 +112,17 @@ func _init() -> void:
 	clock.add_child(score)
 	var buttons := _box(HBoxContainer.new(), right, "Buttons")
 	buttons.size_flags_horizontal = Control.SIZE_SHRINK_END
+	# A drawn note rather than the word: three text buttons are wider than the right column.
+	music_button = HudTheme.button("", func(): music_pressed.emit())
+	music_button.name = "Music"
+	music_button.tooltip_text = "Music"
+	music_button.custom_minimum_size = Vector2(MUSIC_BUTTON_WIDTH, HudTheme.BUTTON_HEIGHT * 0.8)
+	var note := _NoteIcon.new()
+	note.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	music_button.add_child(note)
+	buttons.add_child(music_button)
+	Session.now_playing_changed.connect(func(track: Dictionary): music_button.visible = not track.is_empty())
+	music_button.visible = not Session.now_playing.is_empty()
 	pause_button = HudTheme.button("Pause", func(): pause_pressed.emit())
 	pause_button.custom_minimum_size = Vector2(SIDE_BUTTON_WIDTH, HudTheme.BUTTON_HEIGHT * 0.8)
 	buttons.add_child(pause_button)
@@ -236,7 +252,7 @@ func set_skin(skin: Dictionary) -> void:
 	if skin.has("panel"):
 		for panel in [ride_panel, clock_panel]:
 			_skin_set(panel, "stylebox", "panel", skin.panel)
-	for b: Button in [pause_button, end_button, recalibrate_button]:
+	for b: Button in [music_button, pause_button, end_button, recalibrate_button]:
 		if skin.has("font"):
 			_skin_set(b, "font", "font", skin.font)
 		var style: StyleBox = skin.get("button")
@@ -370,3 +386,14 @@ func _box(box: BoxContainer, parent: Control, node_name: String) -> BoxContainer
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(box)
 	return box
+
+
+## The Music button's note, drawn (the faces have no ♪); it follows the button's text colour.
+class _NoteIcon extends Control:
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var b := ShapeBatch.new()
+		b.note(size / 2.0, 0.85, Color.WHITE)
+		b.draw(self)

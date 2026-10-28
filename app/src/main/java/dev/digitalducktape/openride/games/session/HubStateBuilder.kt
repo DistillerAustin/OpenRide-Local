@@ -52,7 +52,6 @@ data class HubInputs(
     val profile: Profile?,
     val avatarPng: String?,
     val settings: GamesSettings,
-    val otherMusicActive: Boolean,
     val permission: CameraPermission,
     /** The camera couldn't be used (no face found, no camera): cleared by the next calibration. */
     val cameraFailed: Boolean,
@@ -91,11 +90,11 @@ object HubStateBuilder {
             } ?: HubRider(null, "", null, GUEST_COLOR, ftp.watts, ftp.isFallback),
             settings = HubSettings(
                 cameraGames = inputs.settings.cameraGames,
-                music = inputs.settings.audio.music.name.lowercase(),
+                gameMusic = inputs.settings.audio.gameMusic,
                 musicVolume = inputs.settings.audio.musicVolume,
                 sfxVolume = inputs.settings.audio.sfxVolume,
             ),
-            audio = inputs.settings.audio.resolve(inputs.otherMusicActive),
+            audio = inputs.settings.audio.resolve(),
             camera = HubCamera(inputs.permission, cameraAvailable, inputs.calibrated, inputs.sameDayExtremes),
             catalog = inputs.catalog.games.filter { it.id != GameCatalog.DEMO.id }.map(::catalogGame),
             circuits = CircuitPresets.ALL.map { preset ->

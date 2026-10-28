@@ -6,7 +6,8 @@ extends Node
 ## follows pedalling (0 still, 0.5 at 60 rpm, 1.0 at 90 rpm or more), so the music wakes up as
 ## the rider spins. One `set_intensity` per 0.5 s tick: no _process.
 ##
-## It honours `hub_state.audio` (music off: silence; the volumes apply at once), puts the mix
+## It honours `hub_state.audio` (the volumes apply at once; AudioDirector keeps the theme
+## silent while the rider's own music app has a track), puts the mix
 ## limiter on Master as the games do, and ducks under the hub's dialogs (held while one shows)
 ## and its messages. Starting a game crossfades to the game's theme (AudioDirector's 2 s
 ## crossfade covers the intro card); back in the hub, the theme crossfades in.
@@ -65,7 +66,7 @@ func leave() -> void:
 	_timer.stop()
 
 
-## hub_state.audio changed (Settings, or the rider's own music started).
+## hub_state.audio changed (the volumes, in Settings).
 func apply_audio(new_audio: Dictionary) -> void:
 	var was_on := bool(audio.get("music", true))
 	audio = new_audio

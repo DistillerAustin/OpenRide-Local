@@ -21,7 +21,7 @@ class InputFrameTest {
         )
 
         assertArrayEquals(
-            doubleArrayOf(1.0, 92.0, 187.0, 41.0, 17.5, 143.0, -0.5, 0.25, 1.0, 3.0, 42.0, 1.0),
+            doubleArrayOf(1.0, 92.0, 187.0, 41.0, 17.5, 143.0, -0.5, 0.25, 1.0, 3.0, 42.0, 1.0, 0.0),
             frame,
             0.0,
         )
@@ -41,8 +41,15 @@ class InputFrameTest {
         assertEquals(9, InputFrame.TRACKER_STATE)
         assertEquals(10, InputFrame.SEGMENT_TIME_LEFT)
         assertEquals(11, InputFrame.SENSORS_OK)
-        assertEquals(12, InputFrame.SIZE)
+        assertEquals(12, InputFrame.RIDER_MUSIC)
+        assertEquals(13, InputFrame.SIZE)
         assertEquals(1, InputFrame.VERSION)
+    }
+
+    @Test
+    fun `rider_music is 1 while the rider's own music app has a track`() {
+        assertEquals(1.0, InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0, riderMusic = true)[InputFrame.RIDER_MUSIC], 0.0)
+        assertEquals(0.0, InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0)[InputFrame.RIDER_MUSIC], 0.0)
     }
 
     @Test

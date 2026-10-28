@@ -146,7 +146,7 @@ just enough to stay at 4.5 : 1 both ways; lime (`DefaultAccent`) before a rider 
 - *Ride summary*: one screen (header with Export and Done; graph left; games and FTP right).
 - *In-ride and video ride*: same layout (it tested well on the bike); Pause and End ride are the
   design-system buttons, End ride in the rider's colour, with `OrConfirmDialog`. The metrics bar
-  itself is still to do.
+  keeps its two tiers on the bike's ride sizes (`OrType.Metric*`, phase 7).
 
 ## 4. Phased migration
 
@@ -162,7 +162,7 @@ app usable. No Room schema, migration, BLE or sensor code changes in any phase.
 | 4 | Rider select and Games launcher on the components; Route/Screen split for rider select | low | **done** |
 | 5 | Profile tab as grouped settings; Profile editor, HR pairing, App updates, Content sources | medium (many actions to keep) | **done** (5a Profile tab; 5b the other four, branch `ui-settings-screens`) |
 | 6 | History, Classes, Creator, Ride summary; the goal dialog, `GameBadge`, `ProfileAvatar`; shared browse components in `OrBrowse.kt` | medium | **done** (branch `ui-browse-screens`) |
-| 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | **follow-up after 1.0** (issue #60): needs a ride on the bike, and bike tests ended for 1.0. Until then these three screens (and the `OpenRideColors` facade and Material type scale they use) stay as they are |
+| 7 | In-ride, metrics bar, video ride: sizes and buttons only, tested on the bike before merge | **high** (the core screen) | **built** (issue #60, branch `in-ride-restyle`); Just Ride and a video ride run on the bike with mock sensors 2026-10-27; the rider's read at 1 m is still to do |
 | 8 | Type-safe navigation routes; optionally `:core:designsystem` as a module; Roborazzi screenshots | medium | |
 
 **Parity checklist per screen** (from section 1): every action, dialog, banner, empty / loading /
@@ -176,11 +176,11 @@ checks are Compose previews on the dev machine and, for phases 2, 3 and 7, a rid
 
 Decisions taken while building phases 1–5, for whoever picks up phase 6:
 
-- **Two type systems for a while.** `MaterialTheme.typography` is still Material's default, so
-  screens not yet rebuilt keep the layouts they were tuned for. Rebuilt screens use `OrType`.
-  Switch the Material scale to the bike scale only after phase 7, when nothing depends on it.
-- **`OpenRideColors` is a facade.** Its names now point at `OrColors`, which re-skinned every
-  screen at once. Rebuilt code uses `OrColors`; delete the facade when nothing refers to it.
+- **One type system.** Every screen uses `OrType`. Since phase 7, `MaterialTheme.typography`
+  (`OpenRideTypography`) is built from it too, so text Material draws with its own defaults
+  keeps the same floors.
+- **No more facade.** The `OpenRideColors` and `MetricTextStyles` facades were deleted in phase 7;
+  the power-zone ramp moved to `designsystem/OrZoneColors.kt`.
 - **The accent is the rider's avatar colour** (`riderAccent`), End ride included (rider,
   2026-10-21). `Danger` is kept for destructive confirms like Restore; it is a fill with white
   text only (red text fails contrast on the dark ground), so Material's `error` colour, used
@@ -241,4 +241,65 @@ Decisions taken while building phases 1–5, for whoever picks up phase 6:
 2. **Navigation:** a bottom bar, as on the stock bike software, with one shared top bar.
 3. **Density:** 240 dpi (1.5x), confirmed on the tablet; the window is 1920 × 1008 px because
    the tablet reserves the bottom strip (issue #57).
-4. **In-ride type sizes:** still to try on the bike, with the metrics bar.
+4. **In-ride type sizes:** built in phase 7 (below), still to try on the bike.
+
+## 7. Phase 7: the ride screens (issue #60)
+
+- **Ride sizes** are `OrType.Metric*`: output hero 112 sp, the three primary readings 72 sp (up
+  from 64), Just Ride's timer 56 sp, the video ride's timer 48 sp (up from 34), the second strip
+  32 sp (up from 24), AVG / BEST 28 sp (up from 22). Every label and unit is an `OrEyebrow`
+  (14 sp, up from 11–12). `OrTokensTest` holds the floors: live readings 48 sp, supporting ones
+  28 sp.
+- **The below-average arrow is muted, not red.** `Danger` is a fill only; the arrow's direction
+  carries the meaning. Above average stays `Success`.
+- **The zone chip names the zone in text colour beside a zone-coloured dot.** Zones 1, 2 and 7
+  are under 4.5 : 1 as text on the dark ground, so zone colours are only numerals (checked as
+  large text in `OrColorPairs`) or a swatch.
+- **Sensor-down and auto-pause notices are `OrBanner`s** (warning tone) inset by the gutter,
+  instead of full-bleed strips. Over video they stay a line of text in the top strip, so the
+  video isn't pushed down.
+- **The goal hairline is 4 dp in the rider's colour** on both screens (`GoalHairline`); route
+  progress is `Info` blue, so the two never read as the same bar.
+- **The video ride's Metrics pill is an `OrSecondaryButton`** on a raised fill, like Pause, so it
+  meets the 48 dp button height. Tapping the video still tucks the overlay away, so YouTube's
+  controls stay reachable.
+- **From the bike test (2026-10-27, mock sensors):** the AVG and BEST flanks share a fixed
+  label-row height and AVG keeps the arrow's place, so the numbers line up and don't jump as
+  the trend comes and goes. Over video, both scrims now go dark within the first fifth of the
+  metrics bar and hold dark down past ELAPSED: with plain fades, the muted labels vanished over
+  bright sky and water.
+
+## 8. The music mini player
+
+The rider's music, inside OpenRide, from whatever app plays it: no Spotify, Apple or Pandora
+integration (rider's call, 2026-10-26; it replaces PR #62's open-the-app button, whose idea is
+kept for when nothing plays).
+
+- **Built on Android's media sessions** (`NowPlayingMonitor`), the data the system's own media
+  controls use. Reading another app's session needs Notification access; the do-nothing
+  `NowPlayingListenerService` exists only so the rider can grant it.
+- **Two settings, in Profile → Music** (rider's ask, 2026-10-27): *Music app*, the app the
+  player opens, picked from icon tiles; and *Now playing*, which opens OpenRide's Notification
+  access switch and says what it reads before Android's own warning ("all notifications") does.
+- **Controls are media-button events**, the way a headset sends them: SiriusXM ignored another
+  app's direct play/pause, and Spotify doesn't offer a plain "play".
+- **Where:** a compact card in the top bar of every tab, and a larger panel in Just Ride, left
+  of the output, where the screen was empty (128 dp art, 64 dp controls). Not over a class
+  video: the class's own sound is the point. A scenic-ride "mute the video" option would need a
+  bike test of frame rate and audio focus first.
+- **Fixed sizes** (the card 440 dp, the panel 392 dp), so the controls don't move as titles
+  change; a title or artist too long for its space scrolls sideways. Previous and next stay in
+  place, dimmed, when an app doesn't offer them (Pandora has no previous and limits skips).
+  Tapping the song opens the app.
+- **With nothing playing** the button reads "Open Spotify" (the rider's music app) and opens it
+  in one tap; before an app is chosen it asks with the same picker. Just Ride's panel keeps its
+  size then, so nothing shifts when a song starts. Every app drops its session a while after a
+  pause (Spotify at once, SiriusXM in minutes), so this is the usual state before a ride.
+- **No playlist picking in OpenRide.** On the bike (2026-10-27) only SiriusXM let OpenRide browse
+  its library; Spotify, Apple Music, Pandora and Plexamp refuse anyone but Android Auto and the
+  like. The
+  rider changes playlist in the app, one tap away.
+- **Tested on the bike** with Apple Music, Spotify, Pandora, SiriusXM and Plexamp (art, title,
+  artist, play / pause / next / previous; Plexamp also seeks and offers repeat, shuffle, speed,
+  play-from-search and a "Love this track" action, but no queue or rating), and in Just Ride with mock sensors: the ride keeps recording
+  while the music app is in front.

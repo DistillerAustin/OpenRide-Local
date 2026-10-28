@@ -43,7 +43,7 @@ class TrackerLinkTest {
 
     @Test
     fun `tracker snapshots map onto input frame fields 6-9`() {
-        val bridge = GameBridge(FakeBikeDataSource(), MutableStateFlow(null)) { tracker.state.value.toTrackerReading() }
+        val bridge = GameBridge(FakeBikeDataSource(), MutableStateFlow(null), trackerReading = { tracker.state.value.toTrackerReading() })
         tracker.mutableState.value = HeadTrackerState(
             mode = CameraMode.LEAN_2D,
             trackerState = CameraTrackerState.TRACKING,

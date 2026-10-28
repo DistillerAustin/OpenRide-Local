@@ -3,7 +3,7 @@ extends SceneTree
 ##   $GODOT_BIN --path games -s res://tests/capture_dodge.gd -- --out=DIR
 ## Plays a local Just Ride, weaves with the arrow keys, and saves one PNG per time of day.
 ## Options: --nohud, --scenes=day,night, --mode=catch (set through the game, after it starts),
-## --bonus (the power bonus glow), --close (wait for a ball near the bars before each shot),
+## --bonus (the power bonus glow), --heart=BPM (a heart-rate strap sending: the bpm column), --close (wait for a ball near the bars before each shot),
 ## --perf (after each shot, vsync off for 3 s: prints the mean frame time, draw calls and
 ## vertices of the frame, for before/after comparisons on the desktop).
 ## With --play=SECONDS it instead rides that long above the cadence floor and the power target
@@ -47,6 +47,8 @@ func _run() -> void:
 			bonus = true
 		elif arg == "--intro":
 			intro = true
+		elif arg.begins_with("--heart="):
+			root.get_node("InputBus")._sim_heart_rate = float(arg.get_slice("=", 1))  # a strap sending
 		elif arg.begins_with("--play="):
 			play_sec = float(arg.get_slice("=", 1))
 	DirAccess.make_dir_recursive_absolute(out)

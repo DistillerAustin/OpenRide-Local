@@ -1,7 +1,8 @@
 class_name HubHeader
 extends Control
 ## The home screen's header (spec §8.3), 150 px: the rider (avatar, name, the ride so far),
-## live "88 rpm · 142 W", the camera's state, Settings and, at the far right, Exit games.
+## live "88 rpm · 142 W", the camera's state, ♪ (the rider's own music, while their app has a
+## track: opens the music panel), Settings and, at the far right, Exit games.
 ##
 ## Cheap by design (spec §8.4): the rider, the metrics and the camera chip are three bakes (one
 ## draw call each); the live metrics update on a 0.5 s Timer and touch their label only when
@@ -9,15 +10,18 @@ extends Control
 ## the rider is still. No _process.
 
 signal settings_pressed
+signal music_pressed
 signal exit_pressed
 ## The camera chip was tapped: the hub calibrates, recalibrates, asks for the permission or
 ## explains (plan phase E).
 signal camera_pressed
 
-const RIDER_SIZE := Vector2(560, 120)
-const METRICS_SIZE := Vector2(380, 104)
-const CAMERA_SIZE := Vector2(330, HubTheme.TARGET)
-const EXIT_SIZE := Vector2(300, HubTheme.TARGET)
+# Sized so the row fits 1808 px with ♪ showing: the right-hand items share one gap each, and
+# each is a little narrower than before ♪ (rider 560, metrics 380, camera 330, Exit 300).
+const RIDER_SIZE := Vector2(546, 120)
+const METRICS_SIZE := Vector2(350, 104)
+const CAMERA_SIZE := Vector2(300, HubTheme.TARGET)
+const EXIT_SIZE := Vector2(250, HubTheme.TARGET)
 const METRICS_SEC := 0.5
 
 var avatar: AvatarView
@@ -28,6 +32,7 @@ var camera_label: Label
 var camera_card: HubCard
 var camera_dot: Panel
 var camera_caption: Label
+var music_button: IconButton
 var settings_button: Button
 var exit_button: Button
 var bakes: Array[HubCard] = []
@@ -69,10 +74,15 @@ func _init(queue: BakeQueue = null) -> void:
 	names.add_child(ride_label)
 	_add_bake(row, rider, RIDER_SIZE)
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(spacer)
+	# Everything else sits right, in its own row: one gap from the rider instead of a spacer's two.
+	var right := HBoxContainer.new()
+	right.name = "Right"
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.alignment = BoxContainer.ALIGNMENT_END
+	right.add_theme_constant_override("separation", int(HubTheme.GAP))
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(right)
+	row = right
 
 	# Live metrics: a slim panel, the number upright.
 	var metrics := PanelContainer.new()
@@ -115,6 +125,11 @@ func _init(queue: BakeQueue = null) -> void:
 	camera_card.name = "Camera"
 	camera_card.hit.name = "Camera"
 	camera_card.pressed.connect(func(): camera_pressed.emit())
+
+	music_button = IconButton.new("music", func(): music_pressed.emit())
+	music_button.visible = not Session.now_playing.is_empty()
+	Session.now_playing_changed.connect(func(track: Dictionary): music_button.visible = not track.is_empty())
+	row.add_child(music_button)
 
 	settings_button = GearButton.new()
 	settings_button.pressed.connect(func(): settings_pressed.emit())
@@ -182,7 +197,10 @@ static func metrics_text(cadence: float, power: float) -> String:
 
 ## Every touch target in the header (for the layout test).
 func targets() -> Array[Control]:
-	return [camera_card.hit, settings_button, exit_button]
+	var out: Array[Control] = [camera_card.hit, settings_button, exit_button]
+	if music_button.visible:
+		out.append(music_button)
+	return out
 
 
 func _add_bake(parent: Control, content: Control, bake_size: Vector2, interactive := false) -> HubCard:

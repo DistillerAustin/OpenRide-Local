@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,26 +27,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.digitalducktape.openride.ui.classes.YouTubeEmbed
 import dev.digitalducktape.openride.ui.common.TimeFormat
-import dev.digitalducktape.openride.ui.theme.MetricTextStyles
-import dev.digitalducktape.openride.ui.theme.OpenRideColors
-import kotlinx.coroutines.launch
-import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
-import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
-import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
-import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrShapes
+import dev.digitalducktape.openride.ui.designsystem.OrSpacing
+import dev.digitalducktape.openride.ui.designsystem.OrType
+import dev.digitalducktape.openride.ui.designsystem.component.OrAccentButton
+import dev.digitalducktape.openride.ui.designsystem.component.OrConfirmDialog
+import dev.digitalducktape.openride.ui.designsystem.component.OrEyebrow
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
+import kotlinx.coroutines.launch
 
 /**
  * The in-app class player (v2 spec, superseding the T10 YouTube-app handoff): a full-bleed
@@ -122,7 +117,7 @@ fun VideoRideScreen(
                 onClick = { overlayVisible = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(OrSpacing.md),
             )
         }
     }
@@ -223,14 +218,7 @@ private fun TopScrimRow(
     Column(modifier = modifier.fillMaxWidth()) {
         // Goal progress runs across the very top edge, the way the class player runs the
         // class timeline there.
-        uiState.goalProgress?.let { progress ->
-            LinearProgressIndicator(
-                progress = { progress.toFloat() },
-                modifier = Modifier.fillMaxWidth().height(3.dp),
-                color = OpenRideColors.Accent,
-                trackColor = OpenRideColors.Divider,
-            )
-        }
+        uiState.goalProgress?.let { GoalHairline(it) }
         TopStripContent(
             uiState = uiState,
             onPauseResume = onPauseResume,
@@ -250,36 +238,33 @@ private fun TopStripContent(
         modifier = modifier
             .fillMaxWidth()
             .background(
-                Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent)),
+                Brush.verticalGradient(0f to VideoScrimTop, VideoScrimHoldEnd to VideoScrimTop, 1f to Color.Transparent),
             )
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = OrSpacing.lg, vertical = OrSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column {
             Text(
                 text = TimeFormat.elapsed(uiState.elapsedSec),
-                style = MetricTextStyles.BarValue,
-                color = OpenRideColors.OnBackground,
+                style = OrType.MetricTimerCompact,
+                color = OrColors.OnBackground,
             )
-            Text(
-                text = "ELAPSED",
-                style = MetricTextStyles.UnitLabel,
-                color = OpenRideColors.OnSurfaceVariant,
-            )
+            OrEyebrow("Elapsed")
         }
 
         val statusText = when {
             !uiState.sensorsAvailable -> "Sensors not detected"
-            uiState.autoPaused -> "Auto-paused — pedal to resume"
+            uiState.autoPaused -> "Auto-paused. Pedal to resume"
             uiState.isPaused -> "Ride paused"
             else -> null
         }
         if (statusText != null) {
             Text(
                 text = statusText,
-                color = if (uiState.sensorsAvailable) OpenRideColors.OnBackground else OpenRideColors.Warning,
-                fontWeight = FontWeight.Bold,
+                style = OrType.Subtitle,
+                color = if (uiState.sensorsAvailable) OrColors.OnBackground else OrColors.Warning,
+                maxLines = 1,
             )
         }
 
@@ -295,19 +280,19 @@ private fun TopStripContent(
     }
 }
 
-/** Small affordance to bring the overlay back once it's been tucked away. */
+/**
+ * The strip over video holds [VideoScrimTop] down past the ELAPSED label before it fades, so the
+ * label stays readable over bright cloud (bike test, 2026-10-27).
+ */
+private val VideoScrimTop = Color(0xCC000000)
+private const val VideoScrimHoldEnd = 0.8f
+
+/** Brings the overlay back once it's been tucked away. Raised fill: it sits on video. */
 @Composable
 private fun MetricsPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(color = OpenRideColors.ScrimOverlay, shape = RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-    ) {
-        Text(
-            text = "Metrics",
-            color = OpenRideColors.OnBackground,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    OrSecondaryButton(
+        text = "Metrics",
+        onClick = onClick,
+        modifier = modifier.background(OrColors.SurfaceRaised, OrShapes.Small),
+    )
 }

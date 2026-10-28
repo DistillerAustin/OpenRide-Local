@@ -269,7 +269,7 @@ private fun AvatarTile(
             modifier = Modifier.padding(top = OrSpacing.sm),
         )
 
-        OrEyebrow(text = "Colour", modifier = Modifier.padding(top = OrSpacing.md))
+        OrEyebrow(text = "Color", modifier = Modifier.padding(top = OrSpacing.md))
         Row(
             horizontalArrangement = Arrangement.spacedBy(OrSpacing.sm + OrSpacing.xs),
             modifier = Modifier.padding(top = OrSpacing.sm),

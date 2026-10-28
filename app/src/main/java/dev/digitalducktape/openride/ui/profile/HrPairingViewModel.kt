@@ -6,7 +6,9 @@ import dev.digitalducktape.openride.core.data.ProfileRepository
 import dev.digitalducktape.openride.core.heartrate.BleDevice
 import dev.digitalducktape.openride.core.heartrate.BlePermissionState
 import dev.digitalducktape.openride.core.heartrate.BleScanner
+import dev.digitalducktape.openride.core.heartrate.HeartRateDataSource
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
+import dev.digitalducktape.openride.core.sensor.ConnectionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +37,9 @@ class HrPairingViewModel(
     private val bleScanner: BleScanner,
     private val profileRepository: ProfileRepository,
     private val activeProfileHolder: ActiveProfileHolder,
+    /** The live strap feed ([dev.digitalducktape.openride.core.heartrate.HeartRateManager]), so
+     *  the paired row can say "Connected"; null leaves it reading as paired only. */
+    liveHeartRate: HeartRateDataSource? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -43,7 +48,16 @@ class HrPairingViewModel(
         val devices: List<BleDevice> = emptyList(),
         val error: String? = null,
         val pairedAddress: String? = null,
-    )
+        /** The paired strap's name, once this screen's scan has seen it advertise one. */
+        val pairedName: String? = null,
+        val strapConnection: ConnectionState = ConnectionState.Unavailable,
+        val strapBpm: Int? = null,
+    ) {
+        /** The scan's finds, less the strap already paired: that one is shown as paired instead
+         *  of still being offered as "nearby" (rider, 2026-10-27). */
+        val nearbyDevices: List<BleDevice>
+            get() = devices.filterNot { it.address == pairedAddress }
+    }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -59,6 +73,12 @@ class HrPairingViewModel(
         ) { id, profiles -> profiles.firstOrNull { it.id == id }?.pairedHrDeviceAddress }
             .onEach { address -> _uiState.value = _uiState.value.copy(pairedAddress = address) }
             .launchIn(viewModelScope)
+
+        if (liveHeartRate != null) {
+            combine(liveHeartRate.connectionState, liveHeartRate.bpm) { state, bpm -> state to bpm }
+                .onEach { (state, bpm) -> _uiState.value = _uiState.value.copy(strapConnection = state, strapBpm = bpm) }
+                .launchIn(viewModelScope)
+        }
     }
 
     /** Called by the screen once it has determined the current [BlePermissionState]. */
@@ -79,7 +99,8 @@ class HrPairingViewModel(
             onDeviceFound = { device ->
                 val current = _uiState.value
                 if (current.devices.none { it.address == device.address }) {
-                    _uiState.value = current.copy(devices = current.devices + device)
+                    val name = if (device.address == current.pairedAddress) device.name ?: current.pairedName else current.pairedName
+                    _uiState.value = current.copy(devices = current.devices + device, pairedName = name)
                 }
             },
             onScanFailed = { reason ->
@@ -96,6 +117,7 @@ class HrPairingViewModel(
     /** Persists [device]'s address as the active profile's paired strap and stops scanning. */
     fun selectDevice(device: BleDevice) {
         stopScan()
+        _uiState.value = _uiState.value.copy(pairedName = device.name)
         val activeId = activeProfileHolder.activeProfileId.value ?: return
         viewModelScope.launch {
             val profile = profileRepository.getProfile(activeId) ?: return@launch
@@ -110,6 +132,7 @@ class HrPairingViewModel(
             val profile = profileRepository.getProfile(activeId) ?: return@launch
             profileRepository.updateProfile(profile.copy(pairedHrDeviceAddress = null))
         }
+        _uiState.value = _uiState.value.copy(pairedName = null)
     }
 
     override fun onCleared() {

@@ -83,7 +83,7 @@ func info() -> GameInfo:
 	i.options = [
 		{"key": "metronome", "label": "Metronome", "choices": ["off", "on"],
 			"labels": ["Off", "On"], "default": "off", "kind": "segmented"},
-		{"key": "look", "label": "Colour", "choices": ["auto", "cyan", "green", "violet", "pink"],
+		{"key": "look", "label": "Color", "choices": ["auto", "cyan", "green", "violet", "pink"],
 			"labels": ["By workout part", "Cyan", "Green", "Violet", "Pink"], "default": "auto"},
 	]
 	return i

@@ -6,7 +6,7 @@ object ProfileEditorLabels {
     fun photoAction(hasPhoto: Boolean): String = if (hasPhoto) "Retake photo" else "Take photo"
 
     /** A colour swatch's spoken name: the colours have no names, so their place in the row. */
-    fun colorDescription(index: Int, count: Int): String = "Avatar colour ${index + 1} of $count"
+    fun colorDescription(index: Int, count: Int): String = "Avatar color ${index + 1} of $count"
 
     /** An icon swatch's spoken name. */
     fun emojiDescription(emoji: String): String = "Avatar icon $emoji"

@@ -375,12 +375,17 @@ func _ghost(ball: Dictionary) -> void:
 	_ball_speed.erase(ball.id)
 
 
+## Points lost to a hit with the shield down, floating up in red where the ball struck.
+func penalty_fx(x: float, points: float) -> void:
+	_popup(x, -points, false, GameTheme.DANGER)
+
+
 func _popup(x_at: float, points: float, _bonus: bool, color: Color) -> void:
-	if points <= 0.0:
+	if is_zero_approx(points):
 		return
 	var label := _popups[_next_popup]
 	_next_popup = (_next_popup + 1) % _popups.size()
-	label.text = "+%d" % roundi(points)
+	label.text = ("+%d" if points > 0.0 else "−%d") % roundi(absf(points))
 	label.modulate = color
 	var x := clampf(lerpf(x_at, _rig.position.x, 0.5), _rig.position.x - 1.2, _rig.position.x + 1.2)
 	label.position = Vector3(x, 0.9, RIDER_LINE_Z - 3.0)
