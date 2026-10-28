@@ -72,8 +72,8 @@ static func backdrop() -> TextureRect:
 	r.texture = tex
 	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	r.stretch_mode = TextureRect.STRETCH_SCALE
-	r.size = Vector2(W, H)
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Stage.bleed(r)  # the whole window, past the centred stage (#57)
 	return r
 
 

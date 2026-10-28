@@ -274,3 +274,24 @@ func _renders(bakes: Array) -> int:
 	for b in bakes:
 		total += (b as BakedView).renders
 	return total
+
+
+## The bike's window (#57: about 2057x1080 of canvas): the backdrop fills it and the home screen
+## sits in the middle, every target still on the 1920x1080 stage.
+func test_on_the_bike_window_the_backdrop_fills_it_and_home_is_centred() -> void:
+	var bike := Vector2(2057, 1080)
+	Stage.fit(bike)
+	await _settle(2)
+	var on_window := func(c: Control) -> Rect2: return c.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, c.size)
+	var backdrop: Control = hub.get_node("Backdrop")
+	assert_object(on_window.call(backdrop)).is_equal(Rect2(Vector2.ZERO, bike))
+	var stage := Rect2(Stage.pad, Vector2(HubTheme.W, HubTheme.H))
+	var targets: Array = hub.screen.find_children("*", "Control", true, false).filter(func(n): return (n is BaseButton or n is HubCard) and n.is_visible_in_tree())
+	assert_bool(targets.is_empty()).is_false()
+	var bounds: Rect2 = on_window.call(targets[0])
+	for t in targets:
+		var r: Rect2 = on_window.call(t)
+		assert_bool(stage.encloses(r)).override_failure_message("%s %s is off the stage %s" % [t.name, r, stage]).is_true()
+		bounds = bounds.merge(r)
+	Stage.fit(Vector2(HubTheme.W, HubTheme.H))
+	assert_float(bounds.get_center().x).is_equal_approx(bike.x / 2.0, 2.0)

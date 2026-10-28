@@ -41,18 +41,20 @@ func _init() -> void:
 	bake.disable_3d = true
 	bake.transparent_bg = false
 	bake.gui_disable_input = true
-	bake.size_2d_override = Vector2i(SafePlaces.SIZE)
+	bake.size_2d_override = Vector2i(SafePlaces.WIDE)  # past the stage's sides (#57)
 	bake.size_2d_override_stretch = true
 	bake.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	add_child(bake)
 	room = SafeDial.Layer.new()
 	room.name = "Room"
 	room.paint = _paint_room
+	room.position = Vector2(SafePlaces.BLEED, 0)
 	bake.add_child(room)
 	bake.add_child(vignette())
 	view = Sprite2D.new()
 	view.name = "Room"
 	view.centered = false
+	view.position = Vector2(-SafePlaces.BLEED, 0)
 	view.texture = bake.get_texture()
 	view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(view)
@@ -131,17 +133,17 @@ func _exit_tree() -> void:
 		get_tree().root.size_changed.disconnect(rebake)
 
 
-## Renders the room once, at the size the canvas is shown on screen (1792x1008 on the bike's
-## 1920x1008 panel), so the sprite maps one texel to one pixel.
+## Renders the room once, at the size the canvas is shown on screen (2090x1008 for the painted
+## room on the bike's 1920x1008 panel), so the sprite maps one texel to one pixel.
 func rebake() -> void:
 	if not is_inside_tree():
 		return
 	var win := Vector2(get_tree().root.size)
 	var s := clampf(minf(win.x / SafePlaces.SIZE.x, win.y / SafePlaces.SIZE.y), 0.25, 1.0)
-	var px := Vector2i((SafePlaces.SIZE * s).ceil())
+	var px := Vector2i((SafePlaces.WIDE * s).ceil())
 	if bake.size != px:
 		bake.size = px
-	view.scale = SafePlaces.SIZE / Vector2(px)
+	view.scale = SafePlaces.WIDE / Vector2(px)
 	room.queue_redraw()
 	bake.render_target_update_mode = SubViewport.UPDATE_ONCE
 	bakes += 1
@@ -178,7 +180,7 @@ static func vignette() -> TextureRect:
 	rect.texture = tex
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_SCALE
-	rect.size = SafePlaces.SIZE
+	rect.size = SafePlaces.WIDE  # over the whole painted room: its edges stay soot-dark (#57)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return rect
 

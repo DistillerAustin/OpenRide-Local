@@ -25,7 +25,7 @@ func _init() -> void:
 	visible = false
 	var shade := ColorRect.new()
 	shade.color = Color(HubTheme.look().ink.darkened(0.5), 0.78)
-	shade.size = Vector2(HubTheme.W, HubTheme.H)
+	Stage.bleed(shade)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(shade)
 	_card = PanelContainer.new()

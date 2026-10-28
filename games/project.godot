@@ -18,6 +18,7 @@ boot_splash/bg_color=Color(0.0470588, 0.0470588, 0.054902, 1)
 
 [autoload]
 
+Stage="*res://autoload/Stage.gd"
 InputBus="*res://autoload/InputBus.gd"
 Effort="*res://autoload/Effort.gd"
 AudioDirector="*res://autoload/AudioDirector.gd"
@@ -33,7 +34,10 @@ window/size/mode.pc=0
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
+; `keep_height`: the canvas is always 1080 high, and a wider window shows more of it; the Stage
+; autoload centres the 1920x1080 layouts on it (#57: the bike's 1920x1008 window shows about
+; 2057x1080). A taller window letterboxes, as before.
+window/stretch/aspect="keep_height"
 window/handheld/orientation=0
 
 [rendering]

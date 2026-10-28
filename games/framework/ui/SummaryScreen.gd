@@ -97,7 +97,7 @@ func _init() -> void:
 	_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_backdrop.stretch_mode = TextureRect.STRETCH_SCALE
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP  # takes every touch: only Done leaves
-	_backdrop.size = Vector2(HudTheme.W, HudTheme.H)
+	Stage.bleed(_backdrop)
 	add_child(_backdrop)
 
 	var frame := MarginContainer.new()

@@ -33,7 +33,7 @@ func _init() -> void:
 
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.6)
-	shade.size = Vector2(HudTheme.W, HudTheme.H)
+	Stage.bleed(shade)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(shade)
 

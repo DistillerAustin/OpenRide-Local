@@ -7,6 +7,10 @@ extends RefCounted
 ## descriptions; nothing here refers to any existing game or film. ART_BIBLE.md §3 and §6.
 
 const SIZE := Vector2(1920, 1080)
+## The room is painted this far past each side of the stage, so a wider window (#57: the bike's
+## shows 68 px more each side) sees more room, not bars. Props stay on the 1920 stage.
+const BLEED := 160.0
+const WIDE := Vector2(SIZE.x + 2.0 * BLEED, SIZE.y)  ## the painted room, from x = -BLEED
 const FLOOR_Y := 905.0
 const SAFE_AT := Vector2(960, 645)  ## the safe's centre (SafeCracker.BODY_HOME)
 ## The floor's vanishing point: boards and tiles converge on the safe.
@@ -116,7 +120,7 @@ static func build_room(m: SafeMesh, index: int) -> void:
 	var wall: Color = p.wall
 	var wall2: Color = p.wall2
 	var l: Dictionary = p.light
-	m.rect_v(Rect2(0, 0, SIZE.x, FLOOR_Y), wall, wall2)
+	m.rect_v(Rect2(-BLEED, 0, WIDE.x, FLOOR_Y), wall, wall2)
 	match str(p.id):
 		"office":
 			_office(m, p)
@@ -131,8 +135,8 @@ static func build_room(m: SafeMesh, index: int) -> void:
 		"library":
 			_library(m, p)
 	# The baseboard, then the key light's pool over the wall and the props.
-	m.rect_v(Rect2(0, FLOOR_Y - 22, SIZE.x, 22), wall2.darkened(0.35), wall2.darkened(0.5))
-	m.rect(Rect2(0, FLOOR_Y - 22, SIZE.x, 2), Color(wall2.lightened(0.3), 0.6))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y - 22, WIDE.x, 22), wall2.darkened(0.35), wall2.darkened(0.5))
+	m.rect(Rect2(-BLEED, FLOOR_Y - 22, WIDE.x, 2), Color(wall2.lightened(0.3), 0.6))
 	var lc: Color = l.color
 	m.glow(l.at, l.radius, Color(lc, l.strength), 16)
 	m.glow(l.at, l.radius * 0.35, Color(lc, l.strength * 0.6), 10)
@@ -143,7 +147,7 @@ static func build_room(m: SafeMesh, index: int) -> void:
 			_library_front(m, p)
 	# The floor's own key-light pool, under the light.
 	m.glow(Vector2((l.at as Vector2).x, FLOOR_Y + 70.0), Vector2((l.radius as Vector2).x * 0.9, 110.0), Color(lc, l.strength * 0.5), 10)
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, 10), Color(0, 0, 0, 0.45), Color(0, 0, 0, 0.0))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, 10), Color(0, 0, 0, 0.45), Color(0, 0, 0, 0.0))
 
 
 ## Where a floor line through `x` at the floor's back edge is at height `y` (one-point
@@ -156,8 +160,8 @@ static func floor_x(x: float, y: float) -> float:
 static func _boards(m: SafeMesh, base: Color, step: float, vary: float, seed: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var x := -step
-	while x < SIZE.x + step:
+	var x := -BLEED - step
+	while x < SIZE.x + BLEED + step:
 		var tone := base.lightened(rng.randf_range(0.0, vary)) if rng.randf() < 0.5 else base.darkened(rng.randf_range(0.0, vary))
 		var a := Vector2(x, FLOOR_Y)
 		var b := Vector2(x + step, FLOOR_Y)
@@ -179,8 +183,8 @@ static func _tiles(m: SafeMesh, a_col: Color, b_col: Color, step: float) -> void
 		var y0: float = rows[i]
 		var y1: float = rows[i + 1]
 		var j := 0
-		var x := -step * 2.0
-		while x < SIZE.x + step * 2.0:
+		var x := -BLEED - step * 2.0
+		while x < SIZE.x + BLEED + step * 2.0:
 			var col: Color = a_col if (i + j) % 2 == 0 else b_col
 			m.quad4(Vector2(floor_x(x, y0), y0), Vector2(floor_x(x + step, y0), y0),
 				Vector2(floor_x(x + step, y1), y1), Vector2(floor_x(x, y1), y1),
@@ -198,7 +202,7 @@ static func _frame(m: SafeMesh, r: Rect2, wood: Color, w: float) -> void:
 
 
 static func _office(m: SafeMesh, p: Dictionary) -> void:
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.05), (p.floor as Color).darkened(0.3))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.05), (p.floor as Color).darkened(0.3))
 	_boards(m, p.floor, 70.0, 0.12, 3)
 	# Moonlight through the blinds: soft slanted stripes from the window across the wall.
 	for i in 7:
@@ -222,8 +226,8 @@ static func _office(m: SafeMesh, p: Dictionary) -> void:
 ## The desk and its lamp, in front of the light's pool.
 static func _office_front(m: SafeMesh, p: Dictionary) -> void:
 	var wood := Color(0.24, 0.15, 0.1)
-	m.quad4(Vector2(1490, 768), Vector2(1920, 768), Vector2(1920, 802), Vector2(1460, 802), wood.lightened(0.35), wood.lightened(0.2), wood.lightened(0.05), wood.lightened(0.1))
-	m.rect_v(Rect2(1460, 802, 460, 103), wood, wood.darkened(0.45))
+	m.quad4(Vector2(1490, 768), Vector2(SIZE.x + BLEED, 768), Vector2(SIZE.x + BLEED, 802), Vector2(1460, 802), wood.lightened(0.35), wood.lightened(0.2), wood.lightened(0.05), wood.lightened(0.1))
+	m.rect_v(Rect2(1460, 802, 460 + BLEED, 103), wood, wood.darkened(0.45))
 	m.rect(Rect2(1500, 830, 380, 2), Color(0, 0, 0, 0.4))
 	m.circle(Vector2(1690, 852), 7.0, p.accent)
 	var metal := Color(0.16, 0.16, 0.18)
@@ -239,19 +243,19 @@ static func _office_front(m: SafeMesh, p: Dictionary) -> void:
 
 static func _bank(m: SafeMesh, p: Dictionary) -> void:
 	var wall: Color = p.wall
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.08), (p.floor as Color).darkened(0.25))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.08), (p.floor as Color).darkened(0.25))
 	_tiles(m, (p.floor as Color).lightened(0.1), (p.floor as Color).darkened(0.1), 150.0)
 	# Steel panels: seams, a lit lip under each, rivets along them.
 	var dir := Vector2(0, -1)
-	for x in range(0, 1921, 160):
+	for x in range(-160, 2081, 160):
 		m.line(Vector2(x, 0), Vector2(x, FLOOR_Y), 4.0, Color(0, 0, 0, 0.28))
 		m.line(Vector2(x + 3, 0), Vector2(x + 3, FLOOR_Y), 1.5, Color(1, 1, 1, 0.08))
-	m.line(Vector2(0, 450), Vector2(SIZE.x, 450), 4.0, Color(0, 0, 0, 0.25))
-	m.line(Vector2(0, 453), Vector2(SIZE.x, 453), 1.5, Color(1, 1, 1, 0.08))
-	for x in range(0, 1921, 160):
+	m.line(Vector2(-BLEED, 450), Vector2(SIZE.x + BLEED, 450), 4.0, Color(0, 0, 0, 0.25))
+	m.line(Vector2(-BLEED, 453), Vector2(SIZE.x + BLEED, 453), 1.5, Color(1, 1, 1, 0.08))
+	for x in range(-160, 2081, 160):
 		for y in [70.0, 380.0, 520.0, 830.0]:
 			for dx in [14.0, -14.0]:
-				if x + dx > 0.0 and x + dx < SIZE.x:
+				if x + dx > -BLEED and x + dx < SIZE.x + BLEED:
 					rivet(m, Vector2(x + dx, y), 6.0, wall.lightened(0.15), dir)
 	# The round vault door's rim on the wall behind the safe.
 	var c := Vector2(960, 560)
@@ -284,12 +288,12 @@ static func _bank(m: SafeMesh, p: Dictionary) -> void:
 
 static func _museum(m: SafeMesh, p: Dictionary) -> void:
 	var wall2: Color = p.wall2
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.05), (p.floor as Color).darkened(0.3))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.05), (p.floor as Color).darkened(0.3))
 	_boards(m, p.floor, 48.0, 0.1, 17)
 	# Wainscot panels under a rail.
-	m.rect_v(Rect2(0, 700, SIZE.x, FLOOR_Y - 700), wall2, wall2.darkened(0.2))
-	m.rect_v(Rect2(0, 692, SIZE.x, 14), wall2.lightened(0.25), wall2.darkened(0.25))
-	for x in range(30, 1920, 240):
+	m.rect_v(Rect2(-BLEED, 700, WIDE.x, FLOOR_Y - 700), wall2, wall2.darkened(0.2))
+	m.rect_v(Rect2(-BLEED, 692, WIDE.x, 14), wall2.lightened(0.25), wall2.darkened(0.25))
+	for x in range(-210, 2160, 240):
 		m.bevel(Rect2(x, 730, 200, 145), 2.0, 3.0, Vector2(0, -1), wall2.darkened(0.3), wall2.lightened(0.2))
 	# Two pictures under spotlights: a cone of light down each.
 	var frames := [Rect2(70, 330, 300, 380), Rect2(1550, 330, 300, 380)]
@@ -354,7 +358,7 @@ static func _rope(m: SafeMesh, a: Vector2, b: Vector2, brass: Color) -> void:
 
 static func _cabin(m: SafeMesh, p: Dictionary) -> void:
 	var wall: Color = p.wall
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.06), (p.floor as Color).darkened(0.3))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, SIZE.y - FLOOR_Y), (p.floor as Color).lightened(0.06), (p.floor as Color).darkened(0.3))
 	_boards(m, p.floor, 90.0, 0.1, 29)
 	# Timber planks, each its own tone, with a dark seam and a lit lip.
 	var rng := RandomNumberGenerator.new()
@@ -362,15 +366,15 @@ static func _cabin(m: SafeMesh, p: Dictionary) -> void:
 	var y := 0.0
 	while y < FLOOR_Y:
 		var tone := Color(1, 1, 1, rng.randf_range(0.0, 0.05)) if rng.randf() < 0.5 else Color(0, 0, 0, rng.randf_range(0.0, 0.08))
-		m.rect(Rect2(0, y, SIZE.x, 70), tone)
-		m.rect(Rect2(0, y + 67, SIZE.x, 3), Color(0, 0, 0, 0.3))
-		m.rect(Rect2(0, y + 70, SIZE.x, 1.5), Color(1, 1, 1, 0.06))
+		m.rect(Rect2(-BLEED, y, WIDE.x, 70), tone)
+		m.rect(Rect2(-BLEED, y + 67, WIDE.x, 3), Color(0, 0, 0, 0.3))
+		m.rect(Rect2(-BLEED, y + 70, WIDE.x, 1.5), Color(1, 1, 1, 0.06))
 		y += 70.0
 	# Ribs and the deck beam overhead.
 	for x in [420.0, 1480.0]:
 		m.rect_h(Rect2(x, 0, 60, FLOOR_Y), wall.darkened(0.35), wall.darkened(0.6))
 		m.rect(Rect2(x, 0, 4, FLOOR_Y), Color(1, 1, 1, 0.06))
-	m.rect_v(Rect2(0, 0, SIZE.x, 46), wall.darkened(0.45), wall.darkened(0.65))
+	m.rect_v(Rect2(-BLEED, 0, WIDE.x, 46), wall.darkened(0.45), wall.darkened(0.65))
 	# The porthole: a brass ring with bolts (the sea is SafeBackdrop's shader).
 	var c := Vector2(230, 520)
 	var acc: Color = p.accent
@@ -391,12 +395,12 @@ static func _lab(m: SafeMesh, p: Dictionary) -> void:
 	var wall2: Color = p.wall2
 	_tiles(m, Color(0.82, 0.86, 0.84), Color(0.3, 0.36, 0.36), 110.0)
 	# Wall tiles under a band.
-	m.rect_v(Rect2(0, 560, SIZE.x, FLOOR_Y - 560), wall2.lightened(0.15), wall2)
-	for x in range(0, 1921, 60):
+	m.rect_v(Rect2(-BLEED, 560, WIDE.x, FLOOR_Y - 560), wall2.lightened(0.15), wall2)
+	for x in range(-180, 2101, 60):
 		m.rect(Rect2(x, 560, 2, FLOOR_Y - 560), Color(1, 1, 1, 0.22))
 	for yy in range(560, int(FLOOR_Y), 60):
-		m.rect(Rect2(0, yy, SIZE.x, 2), Color(1, 1, 1, 0.22))
-	m.rect_v(Rect2(0, 548, SIZE.x, 14), wall.darkened(0.2), wall.darkened(0.35))
+		m.rect(Rect2(-BLEED, yy, WIDE.x, 2), Color(1, 1, 1, 0.22))
+	m.rect_v(Rect2(-BLEED, 548, WIDE.x, 14), wall.darkened(0.2), wall.darkened(0.35))
 	# Shelves on the left (the flasks' liquid is SafeBackdrop's shimmer layer).
 	for shelf in 3:
 		var y := 420.0 + shelf * 150.0
@@ -429,7 +433,7 @@ static func _lab(m: SafeMesh, p: Dictionary) -> void:
 
 static func _library(m: SafeMesh, p: Dictionary) -> void:
 	var fl: Color = p.floor
-	m.rect_v(Rect2(0, FLOOR_Y, SIZE.x, SIZE.y - FLOOR_Y), fl.lightened(0.06), fl.darkened(0.3))
+	m.rect_v(Rect2(-BLEED, FLOOR_Y, WIDE.x, SIZE.y - FLOOR_Y), fl.lightened(0.06), fl.darkened(0.3))
 	_boards(m, fl, 60.0, 0.12, 41)
 	# A rug under the safe.
 	var rug := Color(0.4, 0.1, 0.1)

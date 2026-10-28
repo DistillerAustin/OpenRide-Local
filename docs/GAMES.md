@@ -18,6 +18,7 @@ game and every builder depends on:
 | --- | --- |
 | `games/` | The Godot 4.7.2 project (Compatibility renderer, 1920x1080, landscape) |
 | `games/hub/` | The Games hub (`Hub.tscn`): the project's main scene and the idle scene, where the rider picks and starts plans. See "The Games hub on screen". |
+| `games/autoload/Stage.gd` | The centred 1920x1080 stage on a wider window (#57): shifts the canvas and layers, and stretches backdrops, shades and 3D views to the whole window |
 | `games/autoload/InputBus.gd` | Polls the input frame every frame, or runs the keyboard simulator |
 | `games/autoload/Session.gd` | Session signals and methods, with JSON already parsed. Its `SessionDirector` child runs the session on screen. On a desktop, `LocalSession.gd` plays a local plan, and its `LocalHub.gd` plays the hub's visit. |
 | `games/autoload/Effort.gd` | Scoring with the effort multiplier: games award points only through it |
@@ -820,6 +821,20 @@ Dodge Ball, the mode).
 
 It is sized for a 1920x1080 canvas read from about 1 m away (`HudTheme`). Numbers are 96 px,
 text is never below 34 px, and buttons are 110 px tall.
+
+**The centred stage (#57).** The bike's window is 1920x1008 (the tablet keeps the hidden nav
+bar's strip), so with stretch aspect `keep_height` the canvas is about 2057x1080. Every layout
+still uses `HudTheme.W` x `HudTheme.H`: the `Stage` autoload shifts the default canvas and every
+root-viewport `CanvasLayer` by `Stage.pad` (68 px on the bike, 0 on a 16:9 window), so (0, 0)
+is the stage's top left. Only full-screen pieces cover the whole window:
+
+- a backdrop or shade (a direct child of a layer, a game or the hub): `Stage.bleed(control)`;
+- a 3D view: size its SubViewport with `Stage.view_size(scale)`, bleed the image showing it,
+  and redo the size on `Stage.changed`; map a projected point back with `Stage.from_view()`;
+- painted 2D art: paint past the stage's sides (Safe Cracker's rooms reach `SafePlaces.BLEED`,
+  160 px, each side; the props stay on the 1920 stage) and bake it over the wider span.
+
+`stage_test` checks this at 2057x1080, and `hub_layout_test` checks the hub there too.
 
 Games add their own widgets to the top-centre slot with `hud.add_widget()`. Keep them slim (a
 row or two of small text, as Dodge Ball's status) so they stay above the horizon, for example a

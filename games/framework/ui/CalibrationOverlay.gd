@@ -105,15 +105,16 @@ func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	_full = ColorRect.new()
-	_full.size = Vector2(HudTheme.W, HudTheme.H)
 	_full.mouse_filter = Control.MOUSE_FILTER_STOP
 	_full.gui_input.connect(_on_gui_input)
 	add_child(_full)
+	Stage.bleed(_full)  # the whole window, past the centred stage (#57)
+	Stage.changed.connect(_centre_card)
 	_card = PanelContainer.new()
 	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_card.position = (Vector2(HudTheme.W, HudTheme.H) - CARD_SIZE) / 2
 	_card.size = CARD_SIZE
 	_full.add_child(_card)
+	_centre_card()
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 14)
@@ -215,6 +216,11 @@ func apply_theme(new_theme: GameTheme) -> void:
 
 ## Turns this overlay into the hub's: a Cancel button under the figure, and idle until
 ## `begin_hub`.
+## The card in the middle of the stage (`_full` covers the whole window, from `-Stage.pad`).
+func _centre_card() -> void:
+	_card.position = Stage.pad + (Vector2(HudTheme.W, HudTheme.H) - _card.size) / 2
+
+
 func use_hub_mode() -> void:
 	hub_mode = true
 	cancel_button = theme.button("Cancel", func(): cancel_pressed.emit(), GameTheme.SECONDARY)
@@ -223,7 +229,7 @@ func use_hub_mode() -> void:
 	cancel_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_tap_pill.get_parent().add_child(cancel_button)
 	_card.size = Vector2(CARD_SIZE.x, CARD_SIZE.y + 120)
-	_card.position = (Vector2(HudTheme.W, HudTheme.H) - _card.size) / 2
+	_centre_card()
 	set_process(false)
 	_show("")
 
