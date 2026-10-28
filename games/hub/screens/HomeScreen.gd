@@ -28,6 +28,7 @@ func build() -> void:
 	header.settings_pressed.connect(func(): open.emit(HubNav.SETTINGS, {}))
 	header.exit_pressed.connect(func(): exit_requested.emit())
 	header.camera_pressed.connect(func(): calibrate_requested.emit())
+	header.music_pressed.connect(func(): Session.director.music_panel.open())
 	add_child(header)
 	header.set_state(state)
 	_column = VBoxContainer.new()

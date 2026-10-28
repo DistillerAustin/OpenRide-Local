@@ -46,6 +46,8 @@ var results: Array = []  ## results reported this session, in order
 var hud: Hud
 var intro_card: IntroCard
 var pause_overlay: PauseOverlay
+var music_panel: MusicPanel  ## the rider's own music, from the HUD's Music button or the hub header's ♪
+var _music_pause := false  ## the ride is paused for the music panel: Done resumes it
 var calibration: CalibrationOverlay
 var summary_screen: SummaryScreen
 var done_panel: CanvasLayer  ## an open-ended plan's "segment done: end the session"
@@ -76,6 +78,10 @@ func _ready() -> void:
 	hud.end_pressed.connect(func(): pause_overlay.show_confirm())
 	hud.recalibrate_pressed.connect(_recalibrate)
 	add_child(hud)
+	music_panel = MusicPanel.new()
+	hud.music_pressed.connect(_open_music_in_game)
+	music_panel.closed.connect(_on_music_closed)
+	add_child(music_panel)
 	intro_card = IntroCard.new()
 	intro_card.skip_requested.connect(skip)
 	add_child(intro_card)
@@ -254,18 +260,38 @@ func is_calibrating() -> bool:
 	return Session.is_calibrating()
 
 
-## The pause screen shows while the session is paused, except under the calibration screen.
+## The HUD's Music button: the music panel, with the ride paused until Done (rider's ask,
+## 2026-10-27), so changing a song costs no score. A ride already paused stays as it was.
+func _open_music_in_game() -> void:
+	music_panel.open()
+	if Session.active and not Session.paused:
+		_music_pause = true
+		Session.request_pause()
+	_sync_pause_screen()
+
+
+func _on_music_closed() -> void:
+	if _music_pause:
+		_music_pause = false
+		if Session.active and Session.paused:
+			Session.request_resume()
+	_sync_pause_screen()
+
+
+## The pause screen shows while the session is paused, except under the calibration screen and
+## the music panel (its own pause: Done resumes).
 func _sync_pause_screen() -> void:
 	var calibrating := Session.paused and is_calibrating()
 	if calibrating:
 		_calibration_pause = true
-	var want := Session.paused and not calibrating
+	var want := Session.paused and not calibrating and not music_panel.is_open()
 	if want != _pause_screen_up:
 		_pause_screen_up = want
 		pause_overlay.set_paused(want)
 
 
 func _on_session_finished(summary: Dictionary) -> void:
+	music_panel.close()
 	phase = Phase.SUMMARY
 	Effort.set_live(false)
 	# The result card is a still UI screen, like the hub: the hub's frame cap, not the game's.

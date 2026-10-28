@@ -116,8 +116,9 @@ fun HrPairingRoute(
 }
 
 /**
- * Heart-rate strap pairing, stateless. The paired strap (with Forget) and the scan controls on
- * the left; on the right the straps the scan found, each one tap to pair, or, until Bluetooth
+ * Heart-rate strap pairing, stateless. The paired strap (with Forget, and "Connected" with the
+ * live bpm once it's sending) and the scan controls on the left; on the right the other straps
+ * the scan found, each one tap to pair, or, until Bluetooth
  * permission is granted, why it's needed and the one button that gets it (the system prompt, or
  * this app's Settings page once Android stops asking).
  */
@@ -148,10 +149,11 @@ fun HrPairingScreen(
             Column(modifier = Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
                 OrSettingsGroup(title = "Paired strap") {
                     val paired = uiState.pairedAddress != null
+                    val live = HrPairingLabels.pairedLive(uiState.strapConnection, uiState.strapBpm)
                     OrSettingsRow(
-                        title = HrPairingLabels.pairedTitle(uiState.pairedAddress),
-                        value = HrPairingLabels.pairedStatus(uiState.pairedAddress),
-                        valueColor = if (paired) OrColors.Success else OrColors.OnSurfaceMuted,
+                        title = HrPairingLabels.pairedTitle(uiState.pairedAddress, uiState.pairedName),
+                        value = HrPairingLabels.pairedStatus(uiState.pairedAddress, uiState.strapConnection, uiState.strapBpm),
+                        valueColor = if (live) OrColors.Success else OrColors.OnSurfaceMuted,
                         trailing = if (paired) {
                             { OrSecondaryButton(text = "Forget strap", onClick = onForget) }
                         } else {
@@ -182,7 +184,7 @@ fun HrPairingScreen(
                             modifier = Modifier.padding(top = OrSpacing.lg),
                         )
                     }
-                    uiState.devices.isNotEmpty() -> DeviceList(devices = uiState.devices, onSelectDevice = onSelectDevice)
+                    uiState.nearbyDevices.isNotEmpty() -> DeviceList(devices = uiState.nearbyDevices, onSelectDevice = onSelectDevice)
                     emptyHint != null -> OrTile(modifier = Modifier.fillMaxWidth()) {
                         Text(text = emptyHint, style = OrType.Body, color = OrColors.OnSurfaceMuted)
                     }

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import dev.digitalducktape.openride.core.backup.MediaStoreAutoBackupStore
+import dev.digitalducktape.openride.core.music.MusicApp
 import dev.digitalducktape.openride.core.route.RouteHolder
 import dev.digitalducktape.openride.ui.common.ExportShare
 import dev.digitalducktape.openride.core.data.Profile
@@ -41,6 +42,7 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsDivider
 import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsGroup
 import dev.digitalducktape.openride.ui.designsystem.component.OrSettingsRow
+import dev.digitalducktape.openride.ui.music.MusicAppPicker
 import kotlinx.coroutines.launch
 
 /** Width of the Profile tab's rider column. */
@@ -51,7 +53,7 @@ import kotlinx.coroutines.launch
  * mid-session can't silently log the next ride under the wrong rider), quick shortcuts to
  * stock Android Wi-Fi/device settings (PRD P1-5, T12), the home-screen switch (#47), and whole-database backup/restore
  * (PRD P1-8, T15). Laid out as the rider on the left and grouped settings rows on the right
- * (Ride, Classes, Device, Backup & restore), every row a 72 dp touch target.
+ * (Ride, Classes, Device, Music, Backup & restore), every row a 72 dp touch target.
  */
 @Composable
 fun ProfileTabScreen(
@@ -64,6 +66,12 @@ fun ProfileTabScreen(
     onManageAppUpdates: () -> Unit,
     onManageContentSources: () -> Unit,
     routeHolder: RouteHolder,
+    /** The app the music player's button opens, chosen here; null before one is. */
+    musicApp: MusicApp?,
+    onMusicAppChosen: (MusicApp) -> Unit,
+    /** Whether the rider has given OpenRide Notification access, which the mini player needs. */
+    musicControlsOn: Boolean,
+    onManageMusicControls: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val activeRoute by routeHolder.activeRoute.collectAsState()
@@ -74,6 +82,7 @@ fun ProfileTabScreen(
     var restoreError by remember { mutableStateOf<String?>(null) }
 
     var routeError by remember { mutableStateOf<String?>(null) }
+    var pickingMusicApp by remember { mutableStateOf(false) }
 
     // The home-screen alias (#47, #63). Re-read on resume: the default is picked in a system
     // dialog or the Home settings page, outside this screen.
@@ -210,6 +219,26 @@ fun ProfileTabScreen(
         }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OrSpacing.lg)) {
+            // The music player's two settings (rider's ask, 2026-10-27): which app its button
+            // opens, and the permission that lets it show what's playing. Here, not under Device:
+            // with the Home screen row, the middle column outgrew the page.
+            OrSettingsGroup(title = "Music") {
+                OrSettingsRow(
+                    title = "Music app",
+                    value = ProfileTabLabels.musicApp(musicApp?.label),
+                    onClick = { pickingMusicApp = true },
+                )
+                OrSettingsDivider()
+                // The player reads other apps' media sessions, which Android only allows with
+                // Notification access; the row says so before Android's own warning does.
+                OrSettingsRow(
+                    title = "Now playing",
+                    value = ProfileTabLabels.musicControls(musicControlsOn),
+                    valueColor = if (musicControlsOn) OrColors.Success else OrColors.OnSurfaceMuted,
+                    onClick = onManageMusicControls,
+                )
+            }
+
             // Whole-database backup and restore (PRD P1-8, T15).
             OrSettingsGroup(title = "Backup & restore") {
                 OrSettingsRow(
@@ -250,6 +279,17 @@ fun ProfileTabScreen(
                 confirmHomeOff = false
                 HomeScreenLauncher.setEnabled(context, false)
                 isHome = HomeScreenLauncher.isHome(context)
+            },
+        )
+    }
+
+    if (pickingMusicApp) {
+        MusicAppPicker(
+            selected = musicApp?.packageName,
+            onDismiss = { pickingMusicApp = false },
+            onPick = {
+                pickingMusicApp = false
+                onMusicAppChosen(it)
             },
         )
     }

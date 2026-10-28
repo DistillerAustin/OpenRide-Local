@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -46,13 +47,16 @@ import dev.digitalducktape.openride.ui.theme.OpenRideTheme
  */
 
 /**
- * A one-line text input on [OrColors.SurfaceRaised] with an [OrType.Body] value and a floating
- * [label]. [error] shows under the field in [OrColors.Warning] (red text fails contrast on the
- * dark ground, docs/MAIN_UI_REFRESH.md §5); the line under the field is always reserved, so a
- * message appearing never moves what's below it.
+ * A one-line text input on [OrColors.SurfaceRaised] with an [OrType.Body] value and its [label]
+ * above it, in [OrType.Caption]. [error] shows under the field in [OrColors.Warning] (red text
+ * fails contrast on the dark ground, docs/MAIN_UI_REFRESH.md §5); the line under the field is
+ * always reserved, so a message appearing never moves what's below it.
  *
- * Meant to sit on [OrColors.Surface] (an [OrTile]) or [OrColors.Background]: the floating label
- * and the error line are drawn on whatever is behind the field.
+ * The label sits above the box rather than floating on its border: at a readable 16 sp, the
+ * floated label overlapped the box's edge and the value (rider's report, 2026-10-27).
+ *
+ * Meant to sit on [OrColors.Surface] (an [OrTile]) or [OrColors.Background]: the label and the
+ * error line are drawn on whatever is behind the field.
  */
 @Composable
 fun OrTextField(
@@ -66,6 +70,30 @@ fun OrTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
+    Column(modifier = modifier) {
+        if (label != null) {
+            Text(
+                text = label,
+                style = OrType.Caption,
+                color = if (enabled) OrColors.OnSurfaceMuted else OrColors.Outline,
+                modifier = Modifier.padding(bottom = OrSpacing.xs),
+            )
+        }
+        OrOutlinedField(value, onValueChange, Modifier.fillMaxWidth(), placeholder, error, enabled, keyboardOptions, keyboardActions)
+    }
+}
+
+@Composable
+private fun OrOutlinedField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    placeholder: String?,
+    error: String?,
+    enabled: Boolean,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -74,7 +102,6 @@ fun OrTextField(
         singleLine = true,
         textStyle = OrType.Body,
         shape = OrShapes.Small,
-        label = label?.let { { Text(text = it, style = OrType.Caption) } },
         placeholder = placeholder?.let { { Text(text = it, style = OrType.Body) } },
         isError = error != null,
         supportingText = { Text(text = error ?: "", style = OrType.Caption) },

@@ -141,6 +141,36 @@ func test_pause_and_resume() -> void:
 	assert_bool(director.pause_overlay.visible).is_false()
 
 
+func test_the_music_panel_pauses_the_ride_until_done() -> void:
+	_start(_plan([_seg()]))
+	_step(local.calibration_left_sec() + LocalSession.INTRO_SEC + 0.1)
+	director.hud.music_pressed.emit()
+	assert_bool(director.music_panel.is_open()).is_true()
+	assert_bool(Session.paused).is_true()
+	assert_bool(director.game.paused).is_true()
+	assert_bool(director.pause_overlay.visible).override_failure_message("the panel, not the pause screen").is_false()
+	var played: float = director.game.played_sec
+	_step(3.0)
+	assert_float(director.game.played_sec).is_equal(played)
+	director.music_panel.done_button.pressed.emit()
+	assert_bool(director.music_panel.is_open()).is_false()
+	assert_bool(Session.paused).is_false()
+	assert_bool(director.game.paused).is_false()
+	assert_bool(director.pause_overlay.visible).is_false()
+
+
+func test_a_ride_paused_before_the_music_panel_stays_paused_after() -> void:
+	_start(_plan([_seg()]))
+	_step(local.calibration_left_sec() + LocalSession.INTRO_SEC + 0.1)
+	director.hud.pause_pressed.emit()
+	director.hud.music_pressed.emit()
+	assert_bool(director.pause_overlay.visible).is_false()
+	director.music_panel.close()
+	assert_bool(Session.paused).is_true()
+	assert_bool(director.pause_overlay.visible).override_failure_message("back to the pause screen").is_true()
+	director.pause_overlay.resume_pressed.emit()
+
+
 func test_pause_freezes_the_intro_countdown() -> void:
 	_start(_plan([_seg()]))
 	Session.request_pause()

@@ -284,7 +284,7 @@ func _frame(delta: float) -> void:
 		_fx_mat.set_shader_parameter("flash", _flash)
 	_status.set_state(logic.shield, cadence < logic.cadence_floor, bonus_on, logic.streak, maxi(logic.lives, 0), logic.wave)
 	if logic.game_over_left > 0.0:
-		hud.show_message("Game over! Best run: %d\nNext run in %d" % [roundi(_best_awarded), ceili(logic.game_over_left)],
+		hud.show_message("Game over! Best run: %d\nNext run in %d" % [roundi(_best_run()), ceili(logic.game_over_left)],
 			GameTheme.BAD)
 	elif _message_left > 0.0:
 		_message_left -= delta
@@ -362,7 +362,9 @@ func _handle(event: Dictionary) -> void:
 			AudioDirector.play_sfx("hit_body", -2.0)
 			GameMix.duck_for_moment(0.6)
 			if event.penalty > 0.0:
-				penalize(event.penalty)
+				var taken := penalize(event.penalty)
+				_run_awarded = maxf(0.0, _run_awarded - taken)
+				world.penalty_fx(event.ball.x1, taken)
 			# The loss on what was lost: a life (Just Ride) or the shield bar (circuit).
 			var lost: Control = _status.lives_box if _status.lives_box.visible else _status.bar
 			GameTheme.pop(lost, 0.8)
@@ -376,6 +378,7 @@ func _handle(event: Dictionary) -> void:
 			AudioDirector.play_sfx("game_over")
 			GameMix.duck_for_sting(2.2)
 		"new_run":
+			_best_awarded = _best_run()  # the run as it ended, penalties taken off
 			_run_awarded = 0.0
 			_show_message("Run %d: go!" % event.run, 1.4)
 
@@ -383,13 +386,17 @@ func _handle(event: Dictionary) -> void:
 func _score(points: float) -> float:
 	var got := award(points)
 	_run_awarded += got
-	_best_awarded = maxf(_best_awarded, _run_awarded)
 	return got
+
+
+## The best run so far: the finished ones as they ended, or this one if it's ahead.
+func _best_run() -> float:
+	return maxf(_best_awarded, _run_awarded)
 
 
 ## In a Just Ride with several runs, the score is the best run (#39, "Result").
 func score() -> float:
-	return _best_awarded if logic and logic.run > 1 else super()
+	return _best_run() if logic and logic.run > 1 else super()
 
 
 func _show_message(text: String, seconds: float) -> void:

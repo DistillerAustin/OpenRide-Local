@@ -22,4 +22,14 @@ object ProfileTabLabels {
 
     /** The home-screen row's value. */
     fun homeScreen(isHome: Boolean): String = if (isHome) "On" else "Off"
+
+    /** The Music app row's value: the chosen app, or what happens until one is chosen. */
+    fun musicApp(label: String?): String = label ?: "Not chosen. The player's Music button asks"
+
+    /**
+     * The Now playing row's value. Off, it names the permission Android will ask for, and
+     * what OpenRide does with it, since Android's own wording says "all notifications".
+     */
+    fun musicControls(on: Boolean): String =
+        if (on) "On. Shows what's playing, with controls" else "Off. Needs Notification access; reads only what's playing"
 }

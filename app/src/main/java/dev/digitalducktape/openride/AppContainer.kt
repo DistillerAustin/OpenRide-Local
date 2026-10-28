@@ -9,6 +9,8 @@ import android.media.AudioPlaybackConfiguration
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.core.content.ContextCompat
@@ -43,6 +45,7 @@ import dev.digitalducktape.openride.core.heartrate.AndroidBleScanner
 import dev.digitalducktape.openride.core.heartrate.BleHeartRateDataSource
 import dev.digitalducktape.openride.core.heartrate.BleScanner
 import dev.digitalducktape.openride.core.heartrate.HeartRateManager
+import dev.digitalducktape.openride.core.heartrate.strapWanted
 import dev.digitalducktape.openride.core.profile.ActiveProfileHolder
 import dev.digitalducktape.openride.core.profile.AvatarPhotoStore
 import dev.digitalducktape.openride.core.ride.RideSessionManager
@@ -60,7 +63,9 @@ import dev.digitalducktape.openride.games.session.GameVisitManager
 import dev.digitalducktape.openride.games.session.VisitNavigator
 import dev.digitalducktape.openride.games.session.GamesSettingsStore
 import dev.digitalducktape.openride.games.session.SharedPrefsGamesSettingsStore
+import dev.digitalducktape.openride.games.session.NowPlayingFeed
 import dev.digitalducktape.openride.games.session.OtherMusicDetector
+import dev.digitalducktape.openride.core.music.NowPlayingMonitor
 import dev.digitalducktape.openride.core.sensor.AffernetBikeDataSource
 import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import dev.digitalducktape.openride.core.sensor.MockBikeDataSource
@@ -69,11 +74,16 @@ import dev.digitalducktape.openride.core.data.Profile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
@@ -246,6 +256,13 @@ class AppContainer(private val applicationContext: Context) {
             profileRepository = profileRepository,
             connectionFactory = { address -> BleHeartRateDataSource(applicationContext, address) },
             scope = containerScope,
+            wanted = strapWanted(
+                foreground = ProcessLifecycleOwner.get().lifecycle.currentStateFlow
+                    .map { it.isAtLeast(Lifecycle.State.STARTED) },
+                // Read on first collection, not here: rideSessionManager takes this manager's
+                // bpm, so touching it while building this one loops forever (a crash on launch).
+                rideActive = flow { emitAll(rideSessionManager.isRideActive) },
+            ),
         )
     }
 
@@ -259,7 +276,27 @@ class AppContainer(private val applicationContext: Context) {
             bikeDataSource = bikeDataSource,
             heartRateBpm = heartRateManager.bpm,
             trackerReading = { headTracker.state.value.toTrackerReading() },
-        )
+            riderMusic = { riderMusic.value },
+            musicControl = { NowPlayingFeed.control(nowPlaying, it) },
+        ).also { bridge ->
+            // The hub's music card: the rider's track, sent as it changes.
+            NowPlayingFeed(applicationContext, nowPlaying, bridge::publishNowPlaying, containerScope)
+        }
+    }
+
+    /**
+     * The rider has their own music, so game music stays off (rider's call, 2026-10-27: no
+     * switch, sound effects keep playing). With Now playing access, that's the mini player
+     * having a track, playing or paused; without it, [otherMusicDetector]'s guess. Checked once
+     * a second off the main thread, since the games read it every frame.
+     */
+    val riderMusic: StateFlow<Boolean> by lazy {
+        flow {
+            while (true) {
+                emit(if (nowPlaying.hasAccess.value) nowPlaying.nowPlaying.value != null else otherMusicDetector.otherMusicActive())
+                delay(RIDER_MUSIC_CHECK_MS)
+            }
+        }.flowOn(Dispatchers.Default).stateIn(containerScope, SharingStarted.Eagerly, false)
     }
 
     /**
@@ -279,7 +316,6 @@ class AppContainer(private val applicationContext: Context) {
             signals = gameBridge,
             scope = gamesScope,
             tracker = gameTrackerLink,
-            otherMusicActive = otherMusicDetector::otherMusicActive,
             audioPrefs = { gamesSettings.settings.value.audio },
             log = gamesLog,
         )
@@ -314,7 +350,6 @@ class AppContainer(private val applicationContext: Context) {
             tracker = gameTrackerLink,
             pedalling = { bikeDataSource.metrics.value.cadenceRpm > 0 },
             avatar = BitmapAvatarRenderer(applicationContext.cacheDir)::render,
-            otherMusicActive = otherMusicDetector::otherMusicActive,
             navigator = visitNavigator,
             log = gamesLog,
         )
@@ -345,8 +380,9 @@ class AppContainer(private val applicationContext: Context) {
     val gamesLog: (String) -> Unit = { Log.i(GAMES_LOG_TAG, it) }
 
     /**
-     * Tells the rider's own music from the Godot engine's player, for game music on "auto"
-     * (#35). The games host calls [OtherMusicDetector.engineStarting] before the engine starts.
+     * Tells the rider's own music from the Godot engine's player (#35), for [riderMusic] while
+     * Now playing access is off. The games host calls [OtherMusicDetector.engineStarting]
+     * before the engine starts.
      */
     val otherMusicDetector: OtherMusicDetector by lazy {
         val audioManager = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -388,6 +424,9 @@ class AppContainer(private val applicationContext: Context) {
         RouteHolder()
     }
 
+    /** What the rider's music app is playing, for the mini player (top bar and Just Ride). */
+    val nowPlaying: NowPlayingMonitor by lazy { NowPlayingMonitor(applicationContext) }
+
     /** Fetch/download side of the GitHub-native self-updater (PRD #22/T22). */
     val updateRepository: UpdateRepository by lazy {
         UpdateRepository(applicationContext)
@@ -422,6 +461,9 @@ class AppContainer(private val applicationContext: Context) {
 }
 
 private const val GAMES_LOG_TAG = "OpenRideGames"
+
+/** How often [AppContainer.riderMusic] looks again: a song starting reaches the games within a second. */
+private const val RIDER_MUSIC_CHECK_MS = 1_000L
 
 /**
  * Builds a [ViewModelProvider.Factory] from a plain lambda, so screens can construct their

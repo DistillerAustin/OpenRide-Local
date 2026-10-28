@@ -2,6 +2,7 @@ package dev.digitalducktape.openride.core.heartrate
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -53,6 +54,12 @@ class AndroidBleScanner(private val context: Context) : BleScanner {
         }
 
         val seenAddresses = mutableSetOf<String>()
+        // A strap already connected to this tablet (by OpenRide's other build, say) stops
+        // advertising, so no scan finds it (rider, 2026-10-27). Android shares that link with
+        // any app that connects, so it's offered too.
+        connectedDevices().forEach { device ->
+            if (seenAddresses.add(device.address)) onDeviceFound(device)
+        }
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
                 val device = result?.device ?: return
@@ -90,6 +97,17 @@ class AndroidBleScanner(private val context: Context) : BleScanner {
             scanCallback = null
             onScanFailed("Missing Bluetooth permission")
         }
+    }
+
+    /** LE devices already connected to the tablet by any app, or none if that can't be read. */
+    private fun connectedDevices(): List<BleDevice> = try {
+        (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)
+            ?.getConnectedDevices(BluetoothProfile.GATT)
+            .orEmpty()
+            .map { BleDevice(address = it.address, name = it.name) }
+    } catch (e: SecurityException) {
+        Log.w(TAG, "Can't list connected devices — missing Bluetooth permission", e)
+        emptyList()
     }
 
     override fun stopScan() {

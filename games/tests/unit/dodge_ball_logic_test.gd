@@ -138,15 +138,21 @@ func test_a_hit_with_the_shield_up_only_breaks_the_shield() -> void:
 	assert_float(logic.shield).is_equal(0.0)
 
 
-func test_a_hit_with_the_shield_down_costs_a_life_in_just_ride() -> void:
+func test_a_hit_with_the_shield_down_costs_a_life_and_50_in_just_ride() -> void:
 	var logic := _logic()
+	_run(logic, 20.0, _dodger, 95.0)
+	var before := logic.run_points
+	assert_float(before).is_greater(DodgeBallLogic.PENALTY)
 	logic.shield = 0.0
 	var events: Array[Dictionary] = []
 	while logic.hits == 0:
 		events.append_array(logic.step(DT, _chaser(logic), FLOOR - 20.0, 150.0))
 	var hit: Dictionary = events.filter(func(e): return e.type == "hit")[0]
 	assert_int(logic.lives).is_equal(DodgeBallLogic.LIVES - 1)
-	assert_float(hit.penalty).is_equal(0.0)
+	assert_float(hit.penalty).is_equal(DodgeBallLogic.PENALTY)
+	assert_float(logic.run_points).is_less_equal(before - DodgeBallLogic.PENALTY + 2.0 * DodgeBallLogic.DODGE_POINTS)
+	# The best run counts the run as it stands, penalty and all.
+	assert_float(logic.best_run()).is_equal(logic.run_points)
 
 
 func test_a_hit_with_the_shield_down_costs_50_in_a_circuit() -> void:
@@ -172,8 +178,9 @@ func test_losing_every_life_ends_the_run_then_a_new_one_starts() -> void:
 	assert_int(_count(events, "game_over")).is_greater_equal(1)
 	assert_int(_count(events, "new_run")).is_greater_equal(1)
 	assert_int(logic.run).is_greater(1)
-	# The best run is kept as the score.
-	assert_float(logic.best_run_points).is_greater_equal(first)
+	# The best run is kept as the score, as the run ended: each of its three hits took PENALTY off.
+	assert_float(logic.best_run_points).is_less(first)
+	assert_float(logic.best_run()).is_greater_equal(logic.best_run_points)
 	# During the card nothing spawns.
 	var over := _logic()
 	over.shield = 0.0

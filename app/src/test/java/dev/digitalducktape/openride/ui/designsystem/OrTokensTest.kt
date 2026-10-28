@@ -47,6 +47,14 @@ class OrTokensTest {
     }
 
     @Test
+    fun `live ride readings are at least 48 sp, the supporting ones at least 28`() {
+        listOf(OrType.MetricHero, OrType.MetricPrimary, OrType.MetricTimer, OrType.MetricTimerCompact)
+            .forEach { assertTrue("${it.fontSize}", it.fontSize.value >= 48f) }
+        listOf(OrType.MetricSecondary, OrType.MetricFlank)
+            .forEach { assertTrue("${it.fontSize}", it.fontSize.value >= 28f) }
+    }
+
+    @Test
     fun `text read while riding is at least 18 sp`() {
         listOf(OrType.Body, OrType.Button, OrType.ButtonLarge, OrType.NavLabel, OrType.Subtitle, OrType.Title)
             .forEach { assertTrue("${it.fontSize}", it.fontSize.value >= 18f) }

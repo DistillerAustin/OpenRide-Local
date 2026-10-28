@@ -338,20 +338,10 @@ class SessionPlansTest {
     // --- Audio ------------------------------------------------------------------------------
 
     @Test
-    fun `game music defaults off while the rider's own music plays, effects stay on`() {
-        val auto = GameAudioPrefs(musicVolume = 0.5, sfxVolume = 0.7)
-
-        val withOwnMusic = auto.resolve(otherMusicActive = true)
-        assertFalse(withOwnMusic.music)
-        assertEquals(0.7, withOwnMusic.sfxVolume, 0.0)
-        assertEquals(0.5, withOwnMusic.musicVolume, 0.0)
-        assertTrue(auto.resolve(otherMusicActive = false).music)
-    }
-
-    @Test
-    fun `game music set on or off ignores the rider's music`() {
-        assertTrue(GameAudioPrefs(music = GameMusicMode.ON).resolve(otherMusicActive = true).music)
-        assertFalse(GameAudioPrefs(music = GameMusicMode.OFF).resolve(otherMusicActive = false).music)
+    fun `the audio sent is the rider's volumes, clamped`() {
+        val audio = GameAudioPrefs(musicVolume = 1.5, sfxVolume = 0.7).resolve()
+        assertEquals(1.0, audio.musicVolume, 0.0)
+        assertEquals(0.7, audio.sfxVolume, 0.0)
     }
 
     // --- Custom circuits (the Games hub, spec §3.4) ------------------------------------------
