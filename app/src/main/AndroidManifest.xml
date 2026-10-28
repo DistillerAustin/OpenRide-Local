@@ -74,8 +74,13 @@
         android:theme="@style/Theme.OpenRide"
         android:supportsRtl="true">
 
+        <!-- singleTask: with the HOME alias on (#47), pressing Home while the app was opened from
+             its icon would otherwise start a second MainActivity in a new home task — a second
+             rider-select screen over the first copy, which still owns the ride. One instance
+             means Home just brings the app forward where the rider left it. -->
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTask"
             android:exported="true"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OpenRide">
@@ -156,11 +161,10 @@
         <!--
           Opt-in HOME launcher alias for MainActivity (PRD P0-8, T12). Disabled by default
           (android:enabled="false") so simply installing the app never hijacks the tablet's
-          home screen — the rider opts in explicitly via:
-
-              adb shell pm enable dev.digitalducktape.openride/.HomeLauncherAlias
-
-          documented in docs/INSTALL.md, which also covers reverting it. Since MainActivity's
+          home screen — the rider opts in explicitly from Profile → Device → Home screen
+          (HomeScreenLauncher), documented in docs/INSTALL.md, which also covers reverting it.
+          Not `adb shell pm enable`: since Android 10 the shell may not change component state
+          for a non-testOnly app (#47), but the app may always change its own. Since MainActivity's
           own nav graph always starts at profile-select (see OpenRideNavHost), being launched
           as HOME already lands on profile-select with no separate boot-time logic needed —
           this alias just makes Android *offer* MainActivity as a home-screen replacement.

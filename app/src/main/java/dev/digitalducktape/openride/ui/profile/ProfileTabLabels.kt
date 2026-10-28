@@ -20,6 +20,9 @@ object ProfileTabLabels {
     /** The heart-rate row's value. */
     fun heartRateStrap(paired: Boolean): String = if (paired) "Paired" else "Not paired"
 
+    /** The home-screen row's value. */
+    fun homeScreen(isHome: Boolean): String = if (isHome) "On" else "Off"
+
     /** The Music app row's value: the chosen app, or what happens until one is chosen. */
     fun musicApp(label: String?): String = label ?: "Not chosen. The player's Music button asks"
 

@@ -35,6 +35,12 @@ class ProfileTabLabelsTest {
     }
 
     @Test
+    fun `the home-screen row says whether OpenRide is the bike's home screen`() {
+        assertEquals("Off", ProfileTabLabels.homeScreen(isHome = false))
+        assertEquals("On", ProfileTabLabels.homeScreen(isHome = true))
+    }
+
+    @Test
     fun `the music app row names the app, or says the player will ask`() {
         assertEquals("Spotify", ProfileTabLabels.musicApp("Spotify"))
         assertEquals("Not chosen. The player's Music button asks", ProfileTabLabels.musicApp(null))

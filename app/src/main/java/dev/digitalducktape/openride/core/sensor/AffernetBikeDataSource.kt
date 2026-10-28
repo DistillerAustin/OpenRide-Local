@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
  * |---|---|---|
  * | Bike Gen 2 (`RB1VQ`) | 11 | `IV1Interface` ([PelotonBikeDataSource]) |
  * | Bike+ (`topaz`) | 10 | `IBikeInterface` ([PelotonBikeInterfaceDataSource]) |
+ * | `g700` (`PLTN-RTR01`, TITAN sensor board) | 13 | `IBikeInterface`; the V1 bind returns null (#63) |
  *
  * There is no reliable way to tell them apart up front. A build-property check would be a guess,
  * and the failure mode is silent: on the Bike+ the `IV1Interface` bind *succeeds* and
