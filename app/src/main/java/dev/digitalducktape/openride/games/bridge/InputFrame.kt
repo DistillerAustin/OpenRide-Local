@@ -1,7 +1,6 @@
 package dev.digitalducktape.openride.games.bridge
 
 import dev.digitalducktape.openride.core.sensor.BikeMetrics
-import dev.digitalducktape.openride.core.sensor.ConnectionState
 
 /** Head-tracker state, input frame index 9 (Bridge contract v1, docs/GAMES.md). */
 enum class TrackerState(val code: Int) {
@@ -59,7 +58,7 @@ object InputFrame {
 
     fun pack(
         metrics: BikeMetrics,
-        connection: ConnectionState,
+        sensorsOk: Boolean,
         heartRateBpm: Int?,
         tracker: TrackerReading,
         segmentTimeLeftSec: Double,
@@ -76,7 +75,7 @@ object InputFrame {
         this[STANDING] = if (tracker.standing) 1.0 else 0.0
         this[TRACKER_STATE] = tracker.state.code.toDouble()
         this[SEGMENT_TIME_LEFT] = segmentTimeLeftSec
-        this[SENSORS_OK] = if (connection == ConnectionState.Connected) 1.0 else 0.0
+        this[SENSORS_OK] = if (sensorsOk) 1.0 else 0.0
         this[RIDER_MUSIC] = if (riderMusic) 1.0 else 0.0
     }
 }

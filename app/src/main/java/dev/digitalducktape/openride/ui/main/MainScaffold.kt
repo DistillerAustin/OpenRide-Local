@@ -33,7 +33,6 @@ import dev.digitalducktape.openride.ui.classes.ClassesRoute
 import dev.digitalducktape.openride.core.music.MusicApps
 import dev.digitalducktape.openride.ui.music.MiniPlayer
 import dev.digitalducktape.openride.ui.music.openMusicAccessSettings
-import dev.digitalducktape.openride.core.sensor.offlineFor
 import dev.digitalducktape.openride.ui.designsystem.OrColors
 import dev.digitalducktape.openride.ui.designsystem.OrSpacing
 import dev.digitalducktape.openride.ui.designsystem.component.OrNavBar
@@ -115,9 +114,8 @@ fun MainScaffold(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // null until offlineFor() first answers: the dot stays neutral rather than claiming "connected".
-    val sensorsOffline by remember { appContainer.bikeDataSource.connectionState.offlineFor() }
-        .collectAsState(initial = null as Boolean?)
+    // null until the shared rule first answers: the dot stays neutral rather than claiming "connected".
+    val sensorsOffline by appContainer.sensorsOffline.collectAsState()
     val heartRateState by appContainer.heartRateManager.connectionState.collectAsState()
     val heartRateBpm by appContainer.heartRateManager.bpm.collectAsState()
     val availableUpdate by appContainer.updateAvailability.collectAsState()

@@ -1,7 +1,6 @@
 package dev.digitalducktape.openride.games.bridge
 
 import dev.digitalducktape.openride.core.sensor.BikeMetrics
-import dev.digitalducktape.openride.core.sensor.ConnectionState
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -14,7 +13,7 @@ class InputFrameTest {
     fun `packs every field at its contract index`() {
         val frame = InputFrame.pack(
             metrics = metrics,
-            connection = ConnectionState.Connected,
+            sensorsOk = true,
             heartRateBpm = 143,
             tracker = TrackerReading(leanX = -0.5, leanDepth = 0.25, standing = true, state = TrackerState.TRACKING),
             segmentTimeLeftSec = 42.0,
@@ -48,30 +47,29 @@ class InputFrameTest {
 
     @Test
     fun `rider_music is 1 while the rider's own music app has a track`() {
-        assertEquals(1.0, InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0, riderMusic = true)[InputFrame.RIDER_MUSIC], 0.0)
-        assertEquals(0.0, InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0)[InputFrame.RIDER_MUSIC], 0.0)
+        assertEquals(1.0, InputFrame.pack(metrics, true, null, TrackerReading.OFF, 0.0, riderMusic = true)[InputFrame.RIDER_MUSIC], 0.0)
+        assertEquals(0.0, InputFrame.pack(metrics, true, null, TrackerReading.OFF, 0.0)[InputFrame.RIDER_MUSIC], 0.0)
     }
 
     @Test
     fun `no heart-rate strap reads -1`() {
-        val frame = InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0)
+        val frame = InputFrame.pack(metrics, true, null, TrackerReading.OFF, 0.0)
 
         assertEquals(-1.0, frame[InputFrame.HEART_RATE], 0.0)
     }
 
     @Test
-    fun `sensors_ok is 1 only while Connected`() {
-        fun sensorsOk(state: ConnectionState) =
-            InputFrame.pack(metrics, state, null, TrackerReading.OFF, 0.0)[InputFrame.SENSORS_OK]
+    fun `sensors_ok is 1 only while the sensors are ok`() {
+        fun sensorsOk(ok: Boolean) =
+            InputFrame.pack(metrics, ok, null, TrackerReading.OFF, 0.0)[InputFrame.SENSORS_OK]
 
-        assertEquals(1.0, sensorsOk(ConnectionState.Connected), 0.0)
-        assertEquals(0.0, sensorsOk(ConnectionState.Disconnected), 0.0)
-        assertEquals(0.0, sensorsOk(ConnectionState.Unavailable), 0.0)
+        assertEquals(1.0, sensorsOk(true), 0.0)
+        assertEquals(0.0, sensorsOk(false), 0.0)
     }
 
     @Test
     fun `tracker off reads zero lean, seated, state 0`() {
-        val frame = InputFrame.pack(metrics, ConnectionState.Connected, null, TrackerReading.OFF, 0.0)
+        val frame = InputFrame.pack(metrics, true, null, TrackerReading.OFF, 0.0)
 
         assertEquals(0.0, frame[InputFrame.LEAN_X], 0.0)
         assertEquals(0.0, frame[InputFrame.LEAN_DEPTH], 0.0)
@@ -82,7 +80,7 @@ class InputFrameTest {
     @Test
     fun `lean is clamped to -1 to 1`() {
         val frame = InputFrame.pack(
-            metrics, ConnectionState.Connected, null,
+            metrics, true, null,
             TrackerReading(leanX = 1.4, leanDepth = -3.0, standing = false, state = TrackerState.TRACKING),
             0.0,
         )

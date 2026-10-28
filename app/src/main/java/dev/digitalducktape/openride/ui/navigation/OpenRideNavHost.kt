@@ -183,6 +183,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                         appContainer.activeProfileHolder,
                         appContainer.heartRateManager,
                         appContainer.routeHolder,
+                        sensorsOffline = appContainer.sensorsOffline,
                     )
                 },
             )
@@ -211,6 +212,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
                         appContainer.activeProfileHolder,
                         appContainer.heartRateManager,
                         appContainer.routeHolder,
+                        sensorsOffline = appContainer.sensorsOffline,
                     )
                 },
             )

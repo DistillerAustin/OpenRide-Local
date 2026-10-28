@@ -57,7 +57,7 @@ GDScript accesses it only through the `InputBus` and `Session` autoloads, never 
 | 8 | `standing` | 0 / 1 |
 | 9 | `tracker_state` | 0 off · 1 needs calibration · 2 calibrating · 3 tracking · 4 face lost |
 | 10 | `segment_time_left` | seconds, from Kotlin's clock |
-| 11 | `sensors_ok` | 0 / 1 (`ConnectionState.Connected`) |
+| 11 | `sensors_ok` | 0 / 1: 0 once the app's one "sensors offline" rule says so (`AppContainer.sensorsOffline`: not Connected, or no frames, for 10 s; issue #56), the same moment as the top bar's notice |
 | 12 | `rider_music` | 0 / 1: the rider's own music app has a track, so game music stays off. Added after v1 at the end, so the version stays `1`; `InputBus` reads it only when the frame has it |
 
 **Kotlin → Godot signals:**

@@ -40,6 +40,8 @@ class AffernetBikeDataSourceTest {
             private set
         var pollCount = 0
             private set
+        override var framesReceived = 0L
+            private set
 
         override fun start() { started = true }
         override fun stop() { stopped = true }
@@ -47,6 +49,7 @@ class AffernetBikeDataSourceTest {
         override fun pollBikeData(): BikeMetrics? {
             pollCount++
             val result = pollResult ?: return null
+            framesReceived++
             _metrics.value = result
             _connectionState.value = ConnectionState.Connected
             return result
@@ -54,6 +57,7 @@ class AffernetBikeDataSourceTest {
 
         /** Models a pushed frame arriving on this path. */
         fun push(frame: BikeMetrics) {
+            framesReceived++
             _metrics.value = frame
             _connectionState.value = ConnectionState.Connected
         }
@@ -154,6 +158,31 @@ class AffernetBikeDataSourceTest {
         assertNull(source.activePath)
         assertEquals(ConnectionState.Unavailable, source.connectionState.value)
         assertEquals(BikeMetrics.ZERO, source.metrics.value)
+    }
+
+    @Test
+    fun `a board that goes quiet behind a live binding reads Disconnected, then recovers (issue 56)`() = runTest {
+        // 2026-10-19: the service stayed bound and the callback registered, but the board stopped
+        // answering, so frames simply stopped. The path's own state never left Connected.
+        val v1 = FakeSource()
+        val bike = FakeSource()
+        val source = AffernetBikeDataSource(scope = backgroundScope, v1 = v1, bikeInterface = bike)
+        source.start()
+        repeat(20) {
+            v1.push(gen2Frame)
+            advanceTimeBy(50)
+        }
+        assertEquals(ConnectionState.Connected, source.connectionState.value)
+
+        advanceTimeBy(2_000)
+        assertEquals("a short gap is not silence", ConnectionState.Connected, source.connectionState.value)
+        advanceTimeBy(1_500)
+        assertEquals(ConnectionState.Connected, v1.connectionState.value)
+        assertEquals(ConnectionState.Disconnected, source.connectionState.value)
+
+        v1.push(gen2Frame)
+        advanceTimeBy(300)
+        assertEquals(ConnectionState.Connected, source.connectionState.value)
     }
 
     @Test

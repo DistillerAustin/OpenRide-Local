@@ -8,6 +8,9 @@ package dev.digitalducktape.openride.core.sensor
  * on a plain JVM, with no device and no Robolectric.
  */
 interface BoundBikeDataSource : BikeDataSource {
+    /** Frames decoded since [start], pushed or polled: the heartbeat [watchFrames] checks. */
+    val framesReceived: Long
+
     /** Opens the binding. Must never throw, on any device. */
     fun start()
 

@@ -117,9 +117,31 @@ class MockBikeDataSourceTest {
             source.simulateDropout(5)
             assertEquals(ConnectionState.Disconnected, awaitItem())
 
-            advanceTimeBy(5_000)
+            advanceTimeBy(5_300)
             assertEquals(ConnectionState.Connected, awaitItem())
         }
+    }
+
+    @Test
+    fun `simulateSilence freezes the metrics, reads Disconnected, then recovers (issue 56)`() = runTest {
+        val source = MockBikeDataSource(scope = backgroundScope, random = Random(1))
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(ConnectionState.Connected, source.connectionState.value)
+
+        source.simulateSilence(10)
+        advanceTimeBy(1_500)
+        val frozen = source.metrics.value
+        assertEquals("the link is still up a moment in", ConnectionState.Connected, source.connectionState.value)
+
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(ConnectionState.Disconnected, source.connectionState.value)
+        assertEquals("no frame while silent", frozen, source.metrics.value)
+
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertEquals(ConnectionState.Connected, source.connectionState.value)
     }
 
     @Test

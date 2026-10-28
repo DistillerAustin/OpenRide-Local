@@ -16,6 +16,7 @@ import dev.digitalducktape.openride.core.ride.RideGoal
 import dev.digitalducktape.openride.core.ride.RideSessionManager
 import dev.digitalducktape.openride.core.ride.RideSessionState
 import dev.digitalducktape.openride.core.sensor.ConnectionState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -59,7 +60,7 @@ class InRideViewModelTest {
     }
 
     @Test
-    fun `sensorsAvailable is false while the connection is down`() = runTest {
+    fun `sensorsAvailable is false once the connection has been down for 10 s`() = runTest {
         val manager = RideSessionManager(fakeBikeDataSource, rideRepository, backgroundScope)
         val viewModel = InRideViewModel(manager, fakeBikeDataSource, profileRepository, activeProfileHolder)
         val values = mutableListOf<InRideUiState>()
@@ -67,8 +68,34 @@ class InRideViewModelTest {
         runCurrent()
 
         fakeBikeDataSource.setConnectionState(ConnectionState.Disconnected)
+        advanceTimeBy(9_000)
         runCurrent()
+        // The same rule as the top bar (issue #56): a blip never shows.
+        assertTrue(values.last().sensorsAvailable)
 
+        advanceTimeBy(1_001)
+        runCurrent()
+        assertFalse(values.last().sensorsAvailable)
+
+        fakeBikeDataSource.setConnectionState(ConnectionState.Connected)
+        runCurrent()
+        assertTrue(values.last().sensorsAvailable)
+    }
+
+    @Test
+    fun `the ride screen follows the shared offline rule it is given`() = runTest {
+        val manager = RideSessionManager(fakeBikeDataSource, rideRepository, backgroundScope)
+        val offline = MutableStateFlow<Boolean?>(null)
+        val viewModel = InRideViewModel(
+            manager, fakeBikeDataSource, profileRepository, activeProfileHolder, sensorsOffline = offline,
+        )
+        val values = mutableListOf<InRideUiState>()
+        backgroundScope.launch { viewModel.uiState.collect { values.add(it) } }
+        runCurrent()
+        assertTrue("unknown counts as available", values.last().sensorsAvailable)
+
+        offline.value = true
+        runCurrent()
         assertFalse(values.last().sensorsAvailable)
     }
 

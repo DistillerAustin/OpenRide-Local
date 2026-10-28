@@ -42,19 +42,31 @@ class MockBikeDataSource(
     private val _metrics = MutableStateFlow(BikeMetrics.ZERO)
     override val metrics: StateFlow<BikeMetrics> = _metrics.asStateFlow()
 
+    /** The link as the simulation sets it; [connectionState] adds the frame check on top. */
+    private val linkState = MutableStateFlow<ConnectionState>(ConnectionState.Connected)
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    /** Frames published so far: what the real source's silence check counts too (issue #56). */
+    @Volatile
+    var framesReceived: Long = 0L
+        private set
+
     private var elapsedSec = 0
     private var dropoutJob: Job? = null
+    private var silentUntilSec = -1
 
     private val tickJob: Job = scope.launch {
         while (isActive) {
             delay(TICK_INTERVAL_MS)
             elapsedSec++
+            if (elapsedSec < silentUntilSec) continue
             _metrics.value = computeMetrics(elapsedSec)
+            framesReceived++
         }
     }
+
+    private val watchJob: Job = scope.watchFrames(linkState, { framesReceived }, _connectionState)
 
     /**
      * Simulates the sensor feed dropping out for [seconds]: [connectionState] flips to
@@ -64,16 +76,28 @@ class MockBikeDataSource(
      */
     fun simulateDropout(seconds: Int) {
         dropoutJob?.cancel()
+        linkState.value = ConnectionState.Disconnected
         _connectionState.value = ConnectionState.Disconnected
         dropoutJob = scope.launch {
             delay(seconds * 1000L)
-            _connectionState.value = ConnectionState.Connected
+            linkState.value = ConnectionState.Connected
         }
+    }
+
+    /**
+     * Simulates the sensor board going quiet behind a live binding for [seconds] (issue #56):
+     * the link stays up but no frame arrives, so the metrics freeze and, after the silence
+     * check's window, [connectionState] reads [ConnectionState.Disconnected] until frames flow
+     * again — what the real bike did on 2026-10-19.
+     */
+    fun simulateSilence(seconds: Int) {
+        silentUntilSec = elapsedSec + seconds + 1
     }
 
     /** Stops the internal ticker and any pending dropout timer. */
     fun stop() {
         tickJob.cancel()
+        watchJob.cancel()
         dropoutJob?.cancel()
     }
 

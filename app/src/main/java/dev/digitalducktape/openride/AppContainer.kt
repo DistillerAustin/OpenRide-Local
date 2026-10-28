@@ -71,6 +71,7 @@ import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import dev.digitalducktape.openride.core.sensor.MockBikeDataSource
 import java.io.File
 import dev.digitalducktape.openride.core.data.Profile
+import dev.digitalducktape.openride.core.sensor.offlineFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -167,6 +168,15 @@ class AppContainer(private val applicationContext: Context) {
         } else {
             MockBikeDataSource(scope = containerScope)
         }
+    }
+
+    /**
+     * Whether the bike's sensors count as offline, by the app's one rule (issue #56,
+     * [offlineFor]): anything but Connected, a silent board included, for 10 s. `null` until
+     * that is known. The top bar, the ride screens and the games all read this, so they agree.
+     */
+    val sensorsOffline: StateFlow<Boolean?> by lazy {
+        bikeDataSource.connectionState.offlineFor().stateIn(containerScope, SharingStarted.Eagerly, null)
     }
 
     val rideSessionManager: RideSessionManager by lazy {
@@ -274,6 +284,7 @@ class AppContainer(private val applicationContext: Context) {
     val gameBridge: GameBridge by lazy {
         GameBridge(
             bikeDataSource = bikeDataSource,
+            sensorsOffline = sensorsOffline,
             heartRateBpm = heartRateManager.bpm,
             trackerReading = { headTracker.state.value.toTrackerReading() },
             riderMusic = { riderMusic.value },

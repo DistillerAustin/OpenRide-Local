@@ -16,6 +16,7 @@ import dev.digitalducktape.openride.core.route.RoutePosition
 import dev.digitalducktape.openride.core.sensor.BikeDataSource
 import dev.digitalducktape.openride.core.sensor.BikeMetrics
 import dev.digitalducktape.openride.core.sensor.ConnectionState
+import dev.digitalducktape.openride.core.sensor.offlineFor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -27,9 +28,9 @@ import kotlinx.coroutines.flow.scan
  * than the screen collecting five separate flows) so a single [combine] is the only place
  * that has to reason about how the pieces line up.
  *
- * @param connectionState anything other than [ConnectionState.Connected] means the screen
- *   must show the "Sensors not detected" banner and blank tiles (PRD P0-9) — never a fake
- *   zero reading.
+ * @param sensorsOffline the app's one "sensors offline" rule said so (issue #56: anything but
+ *   Connected, a silent board included, for 10 s): the screen shows the "Sensors not
+ *   detected" banner and blank tiles (PRD P0-9) — never a fake zero reading.
  * @param goal the rider's pre-ride target (PRD P1-3), or [RideGoal.None].
  * @param ftp the active rider's FTP in watts, or `null` if not set — drives [currentZone].
  * @param heartRateBpm live bpm from the active profile's paired strap (PRD P1-4, T17), or
@@ -45,7 +46,7 @@ data class InRideUiState(
     val sessionState: RideSessionState = RideSessionState.Idle,
     val metrics: BikeMetrics = BikeMetrics.ZERO,
     val aggregates: LiveAggregates = LiveAggregates(),
-    val connectionState: ConnectionState = ConnectionState.Connected,
+    val sensorsOffline: Boolean = false,
     val distanceMiles: Double = 0.0,
     val goal: RideGoal = RideGoal.None,
     val ftp: Int? = null,
@@ -56,7 +57,7 @@ data class InRideUiState(
     val route: Route? = null,
     val routePosition: RoutePosition? = null,
 ) {
-    val sensorsAvailable: Boolean get() = connectionState == ConnectionState.Connected
+    val sensorsAvailable: Boolean get() = !sensorsOffline
     val isPaused: Boolean get() = sessionState == RideSessionState.Paused
 
     /** Whether the BPM tile should be shown at all (PRD P1-4, T17) — only once a strap is
@@ -104,6 +105,8 @@ class InRideViewModel(
     activeProfileHolder: ActiveProfileHolder,
     private val heartRateManager: HeartRateManager? = null,
     routeHolder: RouteHolder? = null,
+    /** The app's one "sensors offline" rule ([dev.digitalducktape.openride.AppContainer.sensorsOffline]); `null` = not known yet. */
+    sensorsOffline: Flow<Boolean?> = bikeDataSource.connectionState.offlineFor(),
 ) : ViewModel() {
     // profileRepository.observeProfiles() is backed by a Room @Query Flow, which (unlike the
     // rest of this view model's plain in-memory StateFlows) doesn't necessarily emit its first
@@ -120,9 +123,10 @@ class InRideViewModel(
         rideSessionManager.state,
         bikeDataSource.metrics,
         rideSessionManager.liveAggregates,
-        bikeDataSource.connectionState,
-    ) { elapsedSec, sessionState, metrics, aggregates, connectionState ->
-        CoreRideFlow(elapsedSec, sessionState, metrics, aggregates, connectionState)
+        // An unknown start counts as online: the banner waits for the rule, like the top bar.
+        sensorsOffline.onStart { emit(null) },
+    ) { elapsedSec, sessionState, metrics, aggregates, offline ->
+        CoreRideFlow(elapsedSec, sessionState, metrics, aggregates, offline == true)
     }
 
     // Live heart rate from the active profile's paired strap (PRD P1-4, T17). When no manager
@@ -164,7 +168,7 @@ class InRideViewModel(
             sessionState = core.sessionState,
             metrics = core.metrics,
             aggregates = core.aggregates,
-            connectionState = core.connectionState,
+            sensorsOffline = core.sensorsOffline,
             goal = goal,
             ftp = ftp,
             heartRateBpm = secondary.hr.bpm,
@@ -208,7 +212,7 @@ class InRideViewModel(
         val sessionState: RideSessionState,
         val metrics: BikeMetrics,
         val aggregates: LiveAggregates,
-        val connectionState: ConnectionState,
+        val sensorsOffline: Boolean,
     )
 
     private data class HeartRateSnapshot(
