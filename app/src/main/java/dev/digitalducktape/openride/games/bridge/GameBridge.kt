@@ -77,6 +77,8 @@ interface GameSession {
  */
 class GameBridge(
     private val bikeDataSource: BikeDataSource,
+    /** The app's one "sensors offline" rule (issue #56): `sensors_ok` is 0 only once it says so. */
+    private val sensorsOffline: StateFlow<Boolean?>,
     private val heartRateBpm: StateFlow<Int?>,
     /** Head-tracker fields 6-9: the camera tracker's latest snapshot (see [toTrackerReading]). */
     private val trackerReading: () -> TrackerReading = { TrackerReading.OFF },
@@ -109,7 +111,7 @@ class GameBridge(
         if (current != null && readyPending.compareAndSet(true, false)) current.onGameReady()
         return InputFrame.pack(
             metrics = bikeDataSource.metrics.value,
-            connection = bikeDataSource.connectionState.value,
+            sensorsOk = sensorsOffline.value != true,
             heartRateBpm = heartRateBpm.value,
             tracker = trackerReading(),
             segmentTimeLeftSec = current?.segmentTimeLeftSec ?: -1.0,

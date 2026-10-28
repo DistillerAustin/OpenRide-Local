@@ -47,7 +47,9 @@ import kotlinx.coroutines.launch
  *
  * [ConnectionState.Connected] is reported only once a real frame has been decoded, from either
  * path. A bind that never produces data leaves this [ConnectionState.Unavailable] rather than
- * showing zeros as if they were live readings (PRD P0-9).
+ * showing zeros as if they were live readings (PRD P0-9). Once adopted, a path that stops
+ * delivering frames for [SENSOR_SILENT_AFTER_MS] reads [ConnectionState.Disconnected] until they
+ * return ([watchFrames], issue #56).
  */
 class AffernetBikeDataSource(
     private val scope: CoroutineScope,
@@ -123,7 +125,7 @@ class AffernetBikeDataSource(
         }
     }
 
-    private fun adopt(winner: BikeDataSource, path: String, loser: BoundBikeDataSource) {
+    private fun adopt(winner: BoundBikeDataSource, path: String, loser: BoundBikeDataSource) {
         activePath = path
         // The single most useful line in a field bug report: which binder this board feeds.
         Log.i(TAG, "sensor path adopted: $path (releasing the other binding)")
@@ -134,7 +136,8 @@ class AffernetBikeDataSource(
             pollJob = null
         }
         jobs += scope.launch { winner.metrics.collect { _metrics.value = it } }
-        jobs += scope.launch { winner.connectionState.collect { _connectionState.value = it } }
+        // The winner's own state, but a board gone quiet behind a live binding reads Disconnected.
+        jobs += scope.watchFrames(winner.connectionState, { winner.framesReceived }, _connectionState)
     }
 
     /**

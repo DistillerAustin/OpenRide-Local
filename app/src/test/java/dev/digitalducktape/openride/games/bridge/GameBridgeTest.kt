@@ -49,7 +49,8 @@ private class RecordingEmitter : GameSignals {
 class GameBridgeTest {
     private val bike = FakeBikeDataSource()
     private val heartRate = MutableStateFlow<Int?>(null)
-    private val bridge = GameBridge(bike, heartRate)
+    private val sensorsOffline = MutableStateFlow<Boolean?>(false)
+    private val bridge = GameBridge(bike, sensorsOffline, heartRate)
 
     @Test
     fun `the input frame carries live bike metrics and the session's time left`() {
@@ -67,10 +68,17 @@ class GameBridgeTest {
     }
 
     @Test
-    fun `sensor loss reads sensors_ok 0`() {
+    fun `sensors_ok follows the app's one offline rule, not the raw connection`() {
+        // A blip: the shared rule hasn't called it yet (issue #56), so the game carries on.
         bike.setConnectionState(ConnectionState.Disconnected)
+        assertEquals(1.0, bridge.inputFrame()[InputFrame.SENSORS_OK], 0.0)
 
+        sensorsOffline.value = true
         assertEquals(0.0, bridge.inputFrame()[InputFrame.SENSORS_OK], 0.0)
+
+        // Not known yet (the app's first 10 s) counts as ok, as on the top bar.
+        sensorsOffline.value = null
+        assertEquals(1.0, bridge.inputFrame()[InputFrame.SENSORS_OK], 0.0)
     }
 
     @Test
@@ -205,7 +213,7 @@ class GameBridgeTest {
 
     @Test
     fun `tracker readings feed the head-tracker fields`() {
-        val tracked = GameBridge(bike, heartRate) {
+        val tracked = GameBridge(bike, sensorsOffline, heartRate) {
             TrackerReading(leanX = 0.3, leanDepth = -0.2, standing = true, state = TrackerState.TRACKING)
         }
 

@@ -86,7 +86,7 @@ class PelotonBikeDataSource(
 
     /** Count of sensor frames decoded since [start]. Exposed for on-device verification. */
     @Volatile
-    var framesReceived: Long = 0L
+    override var framesReceived: Long = 0L
         private set
 
     /** True between [start] and [stop]; a rebind that fires outside that window does nothing. */

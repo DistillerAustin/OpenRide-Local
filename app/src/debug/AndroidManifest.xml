@@ -11,5 +11,11 @@
             android:exported="true"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+        <!-- Sensor fault simulator (#56): a silent board or a dropout on the mock build, sent
+             with `adb shell am broadcast` (see SensorFaultReceiver). Exported for adb; debug
+             builds only. -->
+        <receiver
+            android:name="dev.digitalducktape.openride.debug.SensorFaultReceiver"
+            android:exported="true" />
     </application>
 </manifest>
