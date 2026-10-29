@@ -1,3 +1,10 @@
+> **OpenRide Local fork:** Optional Synology cycling-class playback alongside all original
+> YouTube classes and ride history. See [OpenRide Local setup](docs/LOCAL_LIBRARY.md) and
+> [NAS Docker server](nas-server/README.md). Default NAS: `192.168.1.73:8766`.
+>
+> Android APK integration is **source-ready but unverified** until Gradle builds and a
+> Peloton tablet test have been completed. No source features were intentionally removed.
+
 # OpenRide
 
 <p align="center">

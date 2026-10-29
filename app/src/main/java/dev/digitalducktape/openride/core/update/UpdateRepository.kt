@@ -79,6 +79,6 @@ class UpdateRepository(
 
         /** The public repo's latest-release endpoint. Unauthenticated — the repo must stay public. */
         const val LATEST_RELEASE_URL =
-            "https://api.github.com/repos/digitalducktape/openride/releases/latest"
+            "https://api.github.com/repos/DistillerAustin/OpenRide-Local/releases/latest"
     }
 }

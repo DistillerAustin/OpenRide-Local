@@ -3,6 +3,7 @@ package dev.digitalducktape.openride.ui.classes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.digitalducktape.openride.core.content.ChannelSection
+import dev.digitalducktape.openride.core.content.LocalLibraryRepository
 import dev.digitalducktape.openride.core.content.Video
 import dev.digitalducktape.openride.core.content.YouTubeContentRepository
 import dev.digitalducktape.openride.core.data.RideRepository
@@ -42,6 +43,7 @@ class ClassesViewModel(
     private val activeProfileHolder: ActiveProfileHolder,
     rideRepository: RideRepository,
     private val random: Random = Random.Default,
+    private val localLibraryRepository: LocalLibraryRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ClassesUiState>(ClassesUiState.Loading)
@@ -63,6 +65,22 @@ class ClassesViewModel(
      * scrolls but reshuffles when they ask for a new order.
      */
     private val shuffleSeed = MutableStateFlow(random.nextLong())
+
+    /** Stored server address can be edited from Classes without rebuilding the APK. */
+    private val _localServerUrl = MutableStateFlow(localLibraryRepository?.serverUrl.orEmpty())
+    val localServerUrl: StateFlow<String> = _localServerUrl.asStateFlow()
+    private var lastLocalSections: List<ChannelSection> = emptyList()
+
+    fun setLocalServerUrl(raw: String) {
+        val repository = localLibraryRepository ?: return
+        val normalized = repository.normalizeServerUrl(raw)
+        if (normalized != repository.serverUrl) {
+            lastLocalSections = emptyList() // Never display a previous NAS under a new address.
+        }
+        repository.serverUrl = normalized
+        _localServerUrl.value = normalized
+    }
+
 
     private val loadedSections: StateFlow<List<ChannelSection>> = _uiState
         .map { state -> (state as? ClassesUiState.Loaded)?.sections.orEmpty() }
@@ -152,10 +170,27 @@ class ClassesViewModel(
         if (_uiState.value !is ClassesUiState.Loaded) {
             _uiState.value = ClassesUiState.Loading
         }
-        val sections = contentRepository.channelSections()
+        // NAS failures must never block the YouTube library or discard previous local rows.
+        // The source remains optional, so a blank URL restores original YouTube-only behavior.
+        val youtubeSections = contentRepository.channelSections()
+        var localError: String? = null
+        val localSections = if (localLibraryRepository?.serverUrl.isNullOrBlank()) {
+            emptyList()
+        } else {
+            try {
+                localLibraryRepository!!.sections().also { lastLocalSections = it }
+            } catch (e: Exception) {
+                // Cancellation should still propagate, not turn into an offline banner.
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                localError = "NAS library unavailable. Check the server address and Wi-Fi, then retry."
+                lastLocalSections
+            }
+        }
+        val sections = localSections + youtubeSections
         _uiState.value = ClassesUiState.Loaded(
             sections = sections,
-            anyRefreshFailed = sections.any { it.refreshFailed },
+            anyRefreshFailed = youtubeSections.any { it.refreshFailed },
+            localLibraryError = localError,
         )
     }
 

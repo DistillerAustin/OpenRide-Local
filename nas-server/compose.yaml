@@ -1,0 +1,20 @@
+services:
+  openride-local-nas:
+    build: .
+    container_name: openride-local-nas
+    restart: unless-stopped
+    environment:
+      PORT: "8765"
+      VIDEO_ROOT: /videos
+      CACHE_ROOT: /cache
+      PROBE_DURATION: "true"
+    ports:
+      - "8766:8765"
+    volumes:
+      - /volume1/Media/Videos/peloton:/videos:ro
+      - openride_thumbnail_cache:/cache
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  openride_thumbnail_cache:

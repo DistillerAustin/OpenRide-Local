@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -18,6 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +40,7 @@ import dev.digitalducktape.openride.ui.designsystem.component.OrChip
 import dev.digitalducktape.openride.ui.designsystem.component.OrDropdownChip
 import dev.digitalducktape.openride.ui.designsystem.component.OrEmptyState
 import dev.digitalducktape.openride.ui.designsystem.component.OrLoading
+import dev.digitalducktape.openride.ui.designsystem.component.OrSecondaryButton
 import dev.digitalducktape.openride.ui.theme.OpenRideTheme
 import kotlinx.coroutines.launch
 
@@ -56,6 +63,10 @@ fun ClassesRoute(
     val rows by viewModel.rows.collectAsStateWithLifecycle()
     val gridVideos by viewModel.gridVideos.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val serverUrl by viewModel.localServerUrl.collectAsStateWithLifecycle()
+    var showLocalSettings by remember { mutableStateOf(false) }
+    var editedServerUrl by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -75,8 +86,46 @@ fun ClassesRoute(
         onVideoSelected = { video -> if (viewModel.startRideForVideo(video)) onStartVideoRide(video.id) },
         onOpenCreator = onOpenCreator,
         onRetry = { scope.launch { viewModel.refresh() } },
+        onConfigureLocalServer = {
+            editedServerUrl = serverUrl
+            validationError = null
+            showLocalSettings = true
+        },
         modifier = modifier,
     )
+
+    if (showLocalSettings) {
+        AlertDialog(
+            onDismissRequest = { showLocalSettings = false },
+            title = { Text("Local class library") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(OrSpacing.sm)) {
+                    Text("Point OpenRide at your Synology class server. Leave blank to turn NAS classes off. YouTube classes are unaffected.")
+                    OutlinedTextField(
+                        value = editedServerUrl,
+                        onValueChange = { editedServerUrl = it; validationError = null },
+                        label = { Text("Server URL") },
+                        placeholder = { Text("http://192.168.1.73:8766") },
+                        singleLine = true,
+                        isError = validationError != null,
+                    )
+                    validationError?.let { Text(it) }
+                }
+            },
+            confirmButton = {
+                OrSecondaryButton(text = "Save & refresh", onClick = {
+                    try {
+                        viewModel.setLocalServerUrl(editedServerUrl)
+                        showLocalSettings = false
+                        scope.launch { viewModel.refresh() }
+                    } catch (e: IllegalArgumentException) {
+                        validationError = e.message ?: "Invalid server URL"
+                    }
+                })
+            },
+            dismissButton = { OrSecondaryButton(text = "Cancel", onClick = { showLocalSettings = false }) },
+        )
+    }
 }
 
 /**
@@ -98,6 +147,7 @@ fun ClassesScreen(
     onOpenCreator: (sourceId: Long) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    onConfigureLocalServer: () -> Unit = {},
 ) {
     if (state.body is ClassesBody.Loading) {
         OrLoading(modifier = modifier)
@@ -117,10 +167,14 @@ fun ClassesScreen(
             onSortSelected = onSortSelected,
             onLengthSelected = onLengthSelected,
             onHideTakenToggled = onHideTakenToggled,
+            onConfigureLocalServer = onConfigureLocalServer,
         )
 
         if (state.refreshFailed) {
             OrBanner(text = ClassesScreenState.REFRESH_FAILED_MESSAGE, tone = OrBannerTone.Warning)
+        }
+        state.localLibraryError?.let { message ->
+            OrBanner(text = message, tone = OrBannerTone.Warning)
         }
 
         when (val body = state.body) {
@@ -151,8 +205,10 @@ fun ClassesScreen(
                         takenVideos = state.takenVideos,
                         onVideoSelected = onVideoSelected,
                         // The creator's own page: their full recent catalog and playlists.
-                        onTitleClick = { onOpenCreator(section.sourceId) },
-                        onTitleClickLabel = "Open ${section.channelName}",
+                        onTitleClick = if (section.channelId.startsWith("local:")) null
+                            else ({ onOpenCreator(section.sourceId) }),
+                        onTitleClickLabel = if (section.channelId.startsWith("local:")) null
+                            else "Open ${section.channelName}",
                     )
                 }
             }
@@ -169,6 +225,7 @@ private fun FilterBar(
     onSortSelected: (ClassSort) -> Unit,
     onLengthSelected: (LengthFilter) -> Unit,
     onHideTakenToggled: (Boolean) -> Unit,
+    onConfigureLocalServer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -202,6 +259,7 @@ private fun FilterBar(
             selected = filters.hideTaken,
             onClick = { onHideTakenToggled(!filters.hideTaken) },
         )
+        OrSecondaryButton(text = "NAS settings", onClick = onConfigureLocalServer)
     }
 }
 

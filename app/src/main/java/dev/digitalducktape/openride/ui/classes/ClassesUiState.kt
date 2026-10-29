@@ -14,5 +14,6 @@ sealed interface ClassesUiState {
     data class Loaded(
         val sections: List<ChannelSection>,
         val anyRefreshFailed: Boolean,
+        val localLibraryError: String? = null,
     ) : ClassesUiState
 }

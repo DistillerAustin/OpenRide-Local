@@ -2,6 +2,9 @@ package dev.digitalducktape.openride.ui.ride
 
 import android.annotation.SuppressLint
 import android.view.ViewGroup
+import android.net.Uri
+import android.widget.MediaController
+import android.widget.VideoView
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -64,11 +67,13 @@ fun VideoRideScreen(
     videoId: String,
     onRideEnded: (rideId: Long) -> Unit,
     modifier: Modifier = Modifier,
+    localVideoUrl: String? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState(initial = InRideUiState())
     val scope = rememberCoroutineScope()
     var overlayVisible by remember { mutableStateOf(true) }
     var showEndConfirmation by remember { mutableStateOf(false) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
 
     // Shared by the End Ride dialog and the video-completion auto-end. endRide() returns
     // null if the ride is already over, so the two paths can't double-fire navigation.
@@ -80,12 +85,25 @@ fun VideoRideScreen(
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-        ClassPlayer(
-            videoId = videoId,
-            paused = uiState.isPaused,
-            onVideoEnded = endRideAndShowSummary,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (localVideoUrl != null) {
+            LocalClassPlayer(
+                url = localVideoUrl,
+                paused = uiState.isPaused,
+                onVideoEnded = endRideAndShowSummary,
+                onPlaybackError = { playbackError = it },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            ClassPlayer(
+                videoId = videoId,
+                paused = uiState.isPaused,
+                onVideoEnded = endRideAndShowSummary,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        playbackError?.let { message ->
+            Text(text = message, color = OrColors.Warning, modifier = Modifier.align(Alignment.Center))
+        }
 
         if (overlayVisible) {
             // Full-screen tap catcher: any tap on the video area tucks the overlay away so
@@ -199,6 +217,59 @@ private fun ClassPlayer(
                 destroy()
             }
         }
+    }
+}
+
+/**
+ * Local NAS playback with the tablet's Android video decoder (no third-party streaming app).
+ * VideoView supports HTTP Range seeking via the NAS server and exposes native media controls
+ * when the rider hides the metrics overlay. An MP4 with H.264 video and AAC audio is the
+ * safest codec combination on older Peloton Bike tablets.
+ */
+@Composable
+private fun LocalClassPlayer(
+    url: String,
+    paused: Boolean,
+    onVideoEnded: () -> Unit,
+    onPlaybackError: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var player by remember(url) { mutableStateOf<VideoView?>(null) }
+    val currentOnEnded by rememberUpdatedState(onVideoEnded)
+    val currentOnError by rememberUpdatedState(onPlaybackError)
+    val currentPaused by rememberUpdatedState(paused)
+
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            VideoView(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                setBackgroundColor(android.graphics.Color.BLACK)
+                val controls = MediaController(context)
+                controls.setAnchorView(this)
+                setMediaController(controls)
+                setOnPreparedListener {
+                    if (!currentPaused) start()
+                }
+                setOnCompletionListener { currentOnEnded() }
+                setOnErrorListener { _, _, _ ->
+                    currentOnError("Couldn't play this NAS video. Check your connection and try H.264/AAC MP4.")
+                    true // Suppress the system error dialog; rider can still save the session.
+                }
+                setVideoURI(Uri.parse(url))
+                player = this
+            }
+        },
+    )
+
+    LaunchedEffect(player, paused) {
+        player?.let { if (paused) it.pause() else it.start() }
+    }
+    DisposableEffect(player) {
+        onDispose { player?.stopPlayback() }
     }
 }
 

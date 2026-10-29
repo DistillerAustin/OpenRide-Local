@@ -219,6 +219,7 @@ fun OpenRideNavHost(appContainer: AppContainer) {
             VideoRideScreen(
                 viewModel = viewModel,
                 videoId = videoId,
+                localVideoUrl = appContainer.localLibraryRepository.playbackUrl(videoId),
                 onRideEnded = { rideId ->
                     navController.navigate(Destinations.rideSummary(rideId)) {
                         popUpTo(Destinations.Main) { inclusive = false }

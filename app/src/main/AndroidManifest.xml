@@ -65,9 +65,11 @@
         </intent>
     </queries>
 
+    <!-- Optional HTTP streaming from configurable NAS LAN endpoint on Android 10/11. -->
     <application
         android:name=".OpenRideApplication"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

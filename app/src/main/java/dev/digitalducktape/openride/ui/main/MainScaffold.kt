@@ -97,6 +97,7 @@ fun MainScaffold(
                 appContainer.rideSessionManager,
                 appContainer.activeProfileHolder,
                 appContainer.rideRepository,
+                localLibraryRepository = appContainer.localLibraryRepository,
             )
         },
     )

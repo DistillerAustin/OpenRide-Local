@@ -30,6 +30,7 @@ import dev.digitalducktape.openride.core.camera.UnavailableReason
 import dev.digitalducktape.openride.core.content.ChannelHandleResolver
 import dev.digitalducktape.openride.core.content.ContentSourceRepository
 import dev.digitalducktape.openride.core.content.YouTubeContentRepository
+import dev.digitalducktape.openride.core.content.LocalLibraryRepository
 import dev.digitalducktape.openride.core.data.MIGRATION_1_2
 import dev.digitalducktape.openride.core.data.MIGRATION_2_3
 import dev.digitalducktape.openride.core.data.MIGRATION_3_4
@@ -423,6 +424,11 @@ class AppContainer(private val applicationContext: Context) {
     /** Curated YouTube-channel content for the Classes browser (PRD P0-6, T9/T10). */
     val contentRepository: YouTubeContentRepository by lazy {
         YouTubeContentRepository(applicationContext, contentSourceRepository)
+    }
+
+    /** Optional, read-only cycling class library hosted in Synology Docker. */
+    val localLibraryRepository: LocalLibraryRepository by lazy {
+        LocalLibraryRepository(applicationContext)
     }
 
     /** Resolves pasted channel/playlist links for the Content Sources screen. */

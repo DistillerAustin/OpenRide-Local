@@ -1,0 +1,51 @@
+name: Build OpenRide Local APK (test)
+
+on:
+  # Branch pushes produce a test APK without merging into fork main.
+  push:
+    branches: [feature/local-library]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install pinned Godot editor for mini-games export
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(sed -n 's/^godot = "\([0-9.]*\)\.stable"/\1/p' gradle/libs.versions.toml)
+          test -n "$V"
+          curl --retry 3 --fail --location \
+            "https://github.com/godotengine/godot/releases/download/${V}-stable/Godot_v${V}-stable_linux.x86_64.zip" \
+            --output /tmp/godot.zip
+          mkdir -p "$RUNNER_TEMP/godot"
+          unzip -q /tmp/godot.zip -d "$RUNNER_TEMP/godot"
+          GODOT_PATH="$RUNNER_TEMP/godot/Godot_v${V}-stable_linux.x86_64"
+          chmod +x "$GODOT_PATH"
+          "$GODOT_PATH" --headless --version
+          echo "GODOT_BIN=$GODOT_PATH" >> "$GITHUB_ENV"
+      - name: Compile live-bike APK
+        run: ./gradlew :app:assembleDebugReal --stacktrace
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRide-Local-debugReal-test-APK
+          path: app/build/outputs/apk/debugReal/*.apk
+          if-no-files-found: error
+          retention-days: 14

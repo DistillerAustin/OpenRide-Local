@@ -13,6 +13,8 @@ data class ClassesScreenState(
     val filters: ClassFilters = ClassFilters(),
     /** Some channel's live feed failed and cached content is showing: the refresh-failed banner. */
     val refreshFailed: Boolean = false,
+    /** Local NAS availability is independent of the YouTube source refresh. */
+    val localLibraryError: String? = null,
     /** Video id to when the active rider last finished it, for the TAKEN badge. */
     val takenVideos: Map<String, Long> = emptyMap(),
 ) {
@@ -40,7 +42,7 @@ data class ClassesScreenState(
             gridVideos: List<Video>?,
             takenVideos: Map<String, Long>,
         ): ClassesScreenState = when (uiState) {
-            ClassesUiState.Loading -> ClassesScreenState(ClassesBody.Loading, filters, false, takenVideos)
+            ClassesUiState.Loading -> ClassesScreenState(body = ClassesBody.Loading, filters = filters, takenVideos = takenVideos)
             is ClassesUiState.Loaded -> {
                 val hasAnything = gridVideos?.isNotEmpty() ?: rows.any { it.videos.isNotEmpty() }
                 val body = when {
@@ -48,7 +50,7 @@ data class ClassesScreenState(
                     gridVideos != null -> ClassesBody.Grid(gridVideos)
                     else -> ClassesBody.Shelves(rows)
                 }
-                ClassesScreenState(body, filters, uiState.anyRefreshFailed, takenVideos)
+                ClassesScreenState(body = body, filters = filters, refreshFailed = uiState.anyRefreshFailed, localLibraryError = uiState.localLibraryError, takenVideos = takenVideos)
             }
         }
     }

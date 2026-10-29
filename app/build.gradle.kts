@@ -58,15 +58,15 @@ android {
         // T3/#3: the real-sensor build. Identical to debug but flips USE_REAL_BIKE_SENSOR on
         // so AppContainer wires PelotonBikeDataSource (the live Gen 2 affernet binding) instead
         // of MockBikeDataSource. Installs alongside the mock build via a .real applicationId
-        // suffix so both can coexist on the tablet. Build/install the real-sensor APK with:
+        // suffix so the fork can coexist with upstream OpenRide on the tablet.
         //     ./gradlew :app:installDebugReal
         create("debugReal") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".real"
-            versionNameSuffix = "-real"
+            applicationIdSuffix = ".local"
+            versionNameSuffix = "-local"
             buildConfigField("boolean", "USE_REAL_BIKE_SENSOR", "true")
-            // This is the build published to the bike, so it updates from the `real` asset.
-            buildConfigField("String", "UPDATE_APK_ASSET_INFIX", "\"real\"")
+            // Fork builds must not offer to install upstream-signed APKs over themselves.
+            buildConfigField("String", "UPDATE_APK_ASSET_INFIX", "\"local\"")
             matchingFallbacks += "debug"
             // Bike-only build: arm64 alone (initWith copied debug's emulator ABI too).
             ndk {
